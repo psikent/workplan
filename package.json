@@ -1,0 +1,16 @@
+{
+  "name": "workplan",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.16.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "corepack pnpm --filter @workplan/contracts build && corepack pnpm --parallel --filter @workplan/server --filter @workplan/web dev",
+    "build": "corepack pnpm --filter @workplan/contracts build && corepack pnpm --filter @workplan/server build && corepack pnpm --filter @workplan/web build",
+    "typecheck": "corepack pnpm --filter @workplan/contracts build && corepack pnpm -r typecheck",
+    "test": "corepack pnpm --filter @workplan/contracts build && corepack pnpm -r test",
+    "start": "corepack pnpm --filter @workplan/server start"
+  }
+}

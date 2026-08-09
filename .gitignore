@@ -1,0 +1,12 @@
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+.vite/
+.DS_Store
+.clipboard-*
+.shot-*
+.env
+data/
+playwright-report/
+test-results/
