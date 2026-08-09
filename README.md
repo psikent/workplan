@@ -44,7 +44,7 @@ corepack pnpm install
 corepack pnpm dev
 ```
 
-前端默认运行在 `http://localhost:5173`，并将 `/api` 和 `/health` 转发到 `http://localhost:3000`。
+前端默认运行在 `http://localhost:5173`，开发后端运行在 `http://localhost:3002`，前端会将 `/api` 和 `/health` 转发到开发后端。Docker/生产环境仍默认使用 `3000`。
 
 常用检查：
 
