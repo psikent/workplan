@@ -1,11 +1,10 @@
 services:
   workplan:
-    build: .
-    image: workplan:local
+    image: "${WORKPLAN_IMAGE:-workplan:0.1.0}"
     container_name: workplan
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${WORKPLAN_PORT:-3000}:3000"
     environment:
       APP_SECRET: "${APP_SECRET:?Set APP_SECRET to at least 32 random characters}"
       APP_BASE_URL: "${APP_BASE_URL:-http://localhost:3000}"

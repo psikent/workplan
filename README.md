@@ -10,19 +10,28 @@
    printf 'APP_SECRET=%s\n' "$(openssl rand -base64 32)" > .env
    ```
 
-2. 构建并启动：
+2. 在发布目录构建版本化镜像：
 
    ```bash
-   docker compose up --build -d
+   docker build --pull --tag workplan:0.1.0 .
    ```
 
-3. 查看首次初始化令牌：
+3. 校验 Compose 配置并启动已经构建的镜像：
+
+   ```bash
+   docker compose config
+   docker compose up -d
+   ```
+
+   Compose 默认使用 `workplan:0.1.0`。如需使用其他标签，在 `.env` 中设置 `WORKPLAN_IMAGE`；宿主机端口可通过 `WORKPLAN_PORT` 调整。
+
+4. 查看首次初始化令牌：
 
    ```bash
    docker compose logs workplan
    ```
 
-4. 打开 `http://localhost:3000`，输入日志中的一次性令牌并设置管理员用户名和密码。初始化令牌 30 分钟后失效，完成初始化后立即作废。
+5. 打开 `http://localhost:3000`，输入日志中的一次性令牌并设置管理员用户名和密码。初始化令牌 30 分钟后失效，完成初始化后立即作废。
 
 数据保存在 Docker 卷 `workplan-data` 中的 `/data/workplan.db`。生产环境应通过反向代理提供 HTTPS，并将 `APP_BASE_URL` 设置为外部 HTTPS 地址。
 
@@ -49,6 +58,8 @@ corepack pnpm build
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
+| `WORKPLAN_IMAGE` | `workplan:0.1.0` | Compose 启动的发布镜像标签 |
+| `WORKPLAN_PORT` | `3000` | Compose 映射到宿主机的端口 |
 | `APP_SECRET` | 开发环境使用临时值 | 生产环境必填，至少 32 个字符，用于签名会话 Cookie |
 | `APP_BASE_URL` | `http://localhost:3000` | 外部访问地址，用于 Origin 校验和 OpenAPI |
 | `DATA_DIR` | `./data` | SQLite 数据目录；容器内固定为 `/data` |
