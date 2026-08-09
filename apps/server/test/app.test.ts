@@ -83,23 +83,37 @@ async function createOwnerField(context: TestContext) {
 }
 
 describe("work plan API", () => {
-  it("always lists plans by start time ascending and end time descending", async () => {
+  it("lists plans by start ascending, end descending, then recurring first", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2027-08-08T00:00:00.000Z"));
     const context = await createContext();
     const inputs = [
-      { title: "最晚开始", startAt: "2026-08-09T03:00:00.000Z", endAt: "2026-08-09T07:00:00.000Z" },
-      { title: "同起点较早结束", startAt: "2026-08-09T02:00:00.000Z", endAt: "2026-08-09T04:00:00.000Z" },
-      { title: "最早开始", startAt: "2026-08-09T01:00:00.000Z", endAt: "2026-08-09T02:00:00.000Z" },
-      { title: "同起点较晚结束", startAt: "2026-08-09T02:00:00.000Z", endAt: "2026-08-09T06:00:00.000Z" },
+      { title: "最晚开始", startAt: "2027-08-09T03:00:00.000Z", endAt: "2027-08-09T07:00:00.000Z" },
+      { title: "同起点较早结束", startAt: "2027-08-09T02:00:00.000Z", endAt: "2027-08-09T04:00:00.000Z" },
+      { title: "最早开始", startAt: "2027-08-09T01:00:00.000Z", endAt: "2027-08-09T02:00:00.000Z" },
+      { title: "同起点较晚结束", startAt: "2027-08-09T02:00:00.000Z", endAt: "2027-08-09T06:00:00.000Z" },
+      { title: "同时间单次", startAt: "2027-08-09T02:00:00.000Z", endAt: "2027-08-09T05:00:00.000Z" },
     ];
     for (const input of inputs) {
       const response = await context.request({ method: "POST", url: "/api/v1/work-plans", payload: planInput(input) });
       expect(response.statusCode).toBe(201);
     }
+    const recurring = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plan-series",
+      payload: {
+        workPlan: planInput({ title: "同时间重复", startAt: "2027-08-09T02:00:00.000Z", endAt: "2027-08-09T05:00:00.000Z" }),
+        recurrence: { frequency: "daily", interval: 1, count: 1, timeZone: "Asia/Shanghai" },
+      },
+    });
+    expect(recurring.statusCode).toBe(201);
 
     const listed = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
     expect(listed.json<Array<{ title: string }>>().map((item) => item.title)).toEqual([
       "最早开始",
       "同起点较晚结束",
+      "同时间重复",
+      "同时间单次",
       "同起点较早结束",
       "最晚开始",
     ]);

@@ -67,7 +67,7 @@ export class WorkPlanService {
       values.push(query.to);
     }
     values.push(query.limit ?? 100, query.offset ?? 0);
-    const sql = `SELECT wp.* FROM work_plans wp ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY julianday(wp.start_at) ASC, julianday(wp.end_at) DESC, wp.sort_order ASC, wp.id ASC LIMIT ? OFFSET ?`;
+    const sql = `SELECT wp.* FROM work_plans wp ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY julianday(wp.start_at) ASC, julianday(wp.end_at) DESC, wp.series_id IS NULL ASC, wp.sort_order ASC, wp.id ASC LIMIT ? OFFSET ?`;
     const rows = this.database.sqlite.prepare(sql).all(...values) as WorkPlanRow[];
     const now = Date.parse(timestamp);
     const ownerAccountByValue = this.ownerAccounts.indexByOwnerValue();

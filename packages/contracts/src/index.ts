@@ -378,11 +378,12 @@ export function deriveWorkPlanStatus(startAt: string, endAt: string, now = Date.
 }
 
 export function compareWorkPlansBySchedule(
-  left: Pick<WorkPlan, "id" | "startAt" | "endAt" | "sortOrder">,
-  right: Pick<WorkPlan, "id" | "startAt" | "endAt" | "sortOrder">,
+  left: Pick<WorkPlan, "id" | "startAt" | "endAt" | "sortOrder" | "seriesId">,
+  right: Pick<WorkPlan, "id" | "startAt" | "endAt" | "sortOrder" | "seriesId">,
 ): number {
   return Date.parse(left.startAt) - Date.parse(right.startAt)
     || Date.parse(right.endAt) - Date.parse(left.endAt)
+    || Number(right.seriesId !== null) - Number(left.seriesId !== null)
     || left.sortOrder - right.sortOrder
     || left.id.localeCompare(right.id);
 }
