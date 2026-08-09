@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CalendarRange, ChevronLeft, ChevronRight, LayoutDashboard, LogOut, Moon, Settings, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
+import { CalendarRange, ChevronLeft, ChevronRight, LayoutDashboard, LogOut, MonitorCog, Moon, Settings, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useSession } from "../App";
 
@@ -108,6 +108,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
             onClick={() => setThemePreference(activeTheme === "dark" ? "light" : "dark")}
           >
             {activeTheme === "dark" ? <Sun /> : <Moon />}
+          </button>
+          <button
+            className={`icon-button auto-theme-toggle ${themePreference === "system" ? "active" : ""}`}
+            type="button"
+            role="switch"
+            aria-checked={themePreference === "system"}
+            aria-label="自动跟随系统主题"
+            title={themePreference === "system" ? "自动模式已开启" : "自动模式已关闭"}
+            onClick={() => setThemePreference(themePreference === "system" ? activeTheme : "system")}
+          >
+            <MonitorCog aria-hidden="true" />
           </button>
           <button
             className="signout-button"

@@ -1,8 +1,22 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AppShell from "./AppShell";
+
+let systemThemeIsDark = false;
+const systemThemeListeners = new Set<(event: MediaQueryListEvent) => void>();
+
+const matchMediaMock = vi.fn((query: string) => ({
+  matches: query === "(prefers-color-scheme: dark)" && systemThemeIsDark,
+  media: query,
+  onchange: null,
+  addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => systemThemeListeners.add(listener),
+  removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => systemThemeListeners.delete(listener),
+  addListener: vi.fn(),
+  removeListener: vi.fn(),
+  dispatchEvent: vi.fn(),
+}));
 
 const sessionMock = vi.hoisted(() => ({
   user: { username: "lxj", role: "admin" as "admin" | "editor", loginMode: "password" as "password" | "token" },
@@ -15,6 +29,9 @@ vi.mock("../App", () => ({
 
 beforeEach(() => {
   sessionMock.user = { username: "lxj", role: "admin", loginMode: "password" };
+  systemThemeIsDark = false;
+  systemThemeListeners.clear();
+  vi.stubGlobal("matchMedia", matchMediaMock);
   localStorage.clear();
   delete document.documentElement.dataset.theme;
   document.documentElement.style.colorScheme = "";
@@ -43,6 +60,32 @@ describe("AppShell navigation", () => {
     const secondRender = renderShell();
     expect(document.documentElement.dataset.theme).toBe("dark");
     secondRender.unmount();
+  });
+
+  it("follows system appearance changes while automatic mode is enabled", () => {
+    const view = renderShell();
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(screen.getByRole("switch", { name: "自动跟随系统主题" }).getAttribute("aria-checked")).toBe("true");
+
+    systemThemeIsDark = true;
+    act(() => {
+      systemThemeListeners.forEach((listener) => listener({ matches: true } as MediaQueryListEvent));
+    });
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem("workplan:theme:v1")).toContain('"preference":"system"');
+    view.unmount();
+  });
+
+  it("can disable automatic mode while preserving the current theme", () => {
+    const view = renderShell();
+    const automaticMode = screen.getByRole("switch", { name: "自动跟随系统主题" });
+
+    fireEvent.click(automaticMode);
+    expect(automaticMode.getAttribute("aria-checked")).toBe("false");
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(localStorage.getItem("workplan:theme:v1")).toContain('"preference":"light"');
+    view.unmount();
   });
 
   it("collapses, restores and persists the sidebar", () => {
