@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight, LayoutDashboard, LogOut, MonitorCog, Moon, Settings, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useSession } from "../App";
+import { applyTheme, useSystemTheme, type Theme } from "../lib/theme";
+import BrandMark from "./BrandMark";
 
 const navItems = [
   { to: "/overview", label: "工作台", icon: LayoutDashboard, end: true, adminOnly: false },
@@ -13,7 +15,6 @@ const navItems = [
 
 const sidebarPreferenceKey = "workplan:sidebar:v1";
 const themePreferenceKey = "workplan:theme:v1";
-type Theme = "light" | "dark";
 type ThemePreference = Theme | "system";
 
 function loadSidebarCollapsed() {
@@ -38,15 +39,11 @@ function loadThemePreference(): ThemePreference {
   }
 }
 
-function getSystemTheme(): Theme {
-  return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
 export default function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useSession();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
-  const [systemTheme, setSystemTheme] = useState<Theme>(getSystemTheme);
+  const systemTheme = useSystemTheme();
   const activeTheme = themePreference === "system" ? systemTheme : themePreference;
   const visibleNavItems = navItems.filter((item) => !item.adminOnly || user.role === "admin");
 
@@ -59,16 +56,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, [sidebarCollapsed]);
 
   useEffect(() => {
-    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
-    if (!media) return;
-    const handleChange = (event: MediaQueryListEvent) => setSystemTheme(event.matches ? "dark" : "light");
-    media.addEventListener("change", handleChange);
-    return () => media.removeEventListener("change", handleChange);
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = activeTheme;
-    document.documentElement.style.colorScheme = activeTheme;
+    applyTheme(activeTheme);
     try {
       window.localStorage.setItem(themePreferenceKey, JSON.stringify({ version: 1, preference: themePreference }));
     } catch {
@@ -80,7 +68,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="brand-mark">工</span>
+          <BrandMark className="brand-mark" />
           <strong>工作计划</strong>
         </div>
         <nav className="sidebar-nav" aria-label="主导航">

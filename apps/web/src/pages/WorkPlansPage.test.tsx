@@ -131,11 +131,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderPage() {
+function renderPage(initialEntry = "/work-plans") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/work-plans"]}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <ToastProvider>
           <WorkPlansPage />
         </ToastProvider>
@@ -291,6 +291,31 @@ describe("work plan ordering and copying", () => {
 });
 
 describe("work plan range and Gantt display", () => {
+  it("opens a linked plan in the week containing its schedule", async () => {
+    const linkedPlan = {
+      ...plan,
+      id: "f6251b28-a2d2-4f7f-bff1-b901cb1d9a53",
+      title: "下周计划",
+      startAt: new Date(2026, 7, 17, 8, 30).toISOString(),
+      endAt: new Date(2026, 7, 21, 18).toISOString(),
+    };
+    mockMutableWorkPlans([plan, linkedPlan]);
+
+    const view = renderPage(`/work-plans?view=week&date=${encodeURIComponent(linkedPlan.startAt)}&plan=${linkedPlan.id}`);
+
+    await screen.findByText("下周计划");
+    expect(screen.getByText("8月第3周")).toBeTruthy();
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      rangeStart: new Date(2026, 7, 17),
+      view: "week",
+    }));
+    await waitFor(() => expect(drawerPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      plan: { id: linkedPlan.id },
+      open: true,
+    }));
+    view.unmount();
+  });
+
   it("places the timeline controls over the timeline pane", async () => {
     const view = renderPage();
     await screen.findByText("示例计划");
@@ -322,6 +347,18 @@ describe("work plan range and Gantt display", () => {
     expect(screen.getByRole("tab", { name: "月视图" }).getAttribute("aria-selected")).toBe("true");
     expect(view.container.querySelector(".planner-panel")?.classList.contains("view-month")).toBe(true);
     await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ view: "month" }));
+    view.unmount();
+  });
+
+  it("keeps the schedule callback stable across unrelated page state changes", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    const initialProps = ganttPropsMock.mock.calls.at(-1)?.[0] as { onScheduleChange: unknown };
+
+    fireEvent.click(screen.getByRole("button", { name: "甘特条属性" }));
+
+    const latestProps = ganttPropsMock.mock.calls.at(-1)?.[0] as { onScheduleChange: unknown };
+    expect(latestProps.onScheduleChange).toBe(initialProps.onScheduleChange);
     view.unmount();
   });
 

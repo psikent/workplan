@@ -316,6 +316,53 @@ describe("GanttTimeline rendered grid", () => {
     );
   });
 
+  it("keeps the existing SVG while using the latest refreshed plan and schedule callback", async () => {
+    const firstScheduleChange = vi.fn();
+    const latestScheduleChange = vi.fn();
+    const rangeStart = new Date(2026, 7, 3);
+    const rangeEnd = new Date(2026, 7, 10);
+    const view = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        onScheduleChange={firstScheduleChange}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const bar = await waitFor(() => {
+      const element = view.container.querySelector<SVGRectElement>(".bar-wrapper .bar");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    const originalSvg = view.container.querySelector("svg.gantt");
+    const refreshedPlan = { ...plan, version: plan.version + 1, updatedAt: "2026-08-10T00:00:00.000Z" };
+
+    view.rerender(
+      <GanttTimeline
+        plans={[refreshedPlan]}
+        view="week"
+        rangeStart={new Date(rangeStart)}
+        rangeEnd={new Date(rangeEnd)}
+        onScheduleChange={latestScheduleChange}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(view.container.querySelector("svg.gantt")).toBe(originalSvg);
+    const wrapper = bar.closest<SVGGElement>(".bar-wrapper")!;
+    const centerX = Number(bar.getAttribute("x")) + Number(bar.getAttribute("width")) / 2;
+    fireEvent(wrapper, mouseEventWithOffset("mousedown", centerX, 1_000));
+    fireEvent(document, mouseEventWithOffset("mousemove", centerX + 100, 1_100));
+    fireEvent(document, mouseEventWithOffset("mouseup", centerX + 100, 1_100));
+
+    await waitFor(() => expect(latestScheduleChange).toHaveBeenCalledOnce());
+    expect(firstScheduleChange).not.toHaveBeenCalled();
+    expect(latestScheduleChange.mock.calls[0]?.[0]).toBe(refreshedPlan);
+  });
+
   it("rerenders a resized midnight end at the selected date boundary", async () => {
     const onScheduleChange = vi.fn();
     const midnightPlan = {

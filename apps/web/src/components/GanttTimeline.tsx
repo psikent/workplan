@@ -29,14 +29,28 @@ type RangedGantt = {
 const MIN_DAY_COLUMN_WIDTH = 32;
 const EMPTY_DISPLAY_PROPERTIES: GanttDisplayProperty[] = [];
 
-function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, view, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect }: Props) {
+function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
+  const plansByIdRef = useRef(plansById);
+  const onScheduleChangeRef = useRef(onScheduleChange);
+  const onSelectRef = useRef(onSelect);
   const rangeStartTime = rangeStart.getTime();
   const rangeEndTime = rangeEnd.getTime();
   const dayCount = calendarDaySpan(rangeStart, rangeEnd);
-  const columnWidth = Math.max(MIN_DAY_COLUMN_WIDTH, availableWidth / dayCount);
+  const columnWidth = availableWidth > 0 ? Math.max(MIN_DAY_COLUMN_WIDTH, availableWidth / dayCount) : 0;
+  const ganttInputSignature = useMemo(() => JSON.stringify(plans.map((plan) => [
+    plan.id,
+    plan.startAt,
+    plan.endAt,
+    plan.status,
+    formatGanttLabel(plan, displayProperties),
+  ])), [displayProperties, plans]);
+
+  plansByIdRef.current = plansById;
+  onScheduleChangeRef.current = onScheduleChange;
+  onSelectRef.current = onSelect;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -68,6 +82,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, vi
       container.replaceChildren();
       return;
     }
+    if (columnWidth <= 0) return;
 
     void loadGantt().then((Gantt) => {
       if (disposed || !containerRef.current) return;
@@ -110,8 +125,8 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, vi
         today_button: false,
         popup_on: "click",
         on_click: (task: { id: string }) => {
-          const plan = plansById.get(task.id);
-          if (plan) onSelect(plan);
+          const plan = plansByIdRef.current.get(task.id);
+          if (plan) onSelectRef.current(plan);
         },
       }) as unknown as RangedGantt;
 
@@ -138,8 +153,8 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, vi
       cleanupPlanRowHover = synchronizePlanRowHover(containerRef.current, verticalScrollPeerRef?.current ?? null, plans);
       cleanupScheduleInteraction = configureScheduleInteraction(containerRef.current, {
         columnWidth,
-        onScheduleChange,
-        plansById,
+        getPlanById: (planId) => plansByIdRef.current.get(planId),
+        onScheduleChange: (plan, startAt, endAt) => onScheduleChangeRef.current(plan, startAt, endAt),
       });
     });
     return () => {
@@ -150,7 +165,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, vi
       cleanupPlanRowHover();
       cleanupScheduleInteraction();
     };
-  }, [columnWidth, displayProperties, onScheduleChange, onSelect, plans, plansById, rangeEndTime, rangeStartTime, verticalScrollPeerRef, view]);
+  }, [columnWidth, ganttInputSignature, rangeEndTime, rangeStartTime, verticalScrollPeerRef]);
 
   return (
     <div className="gantt-shell">
@@ -425,8 +440,8 @@ export function alignCurrentDateMarker(mount: HTMLElement) {
 
 function configureScheduleInteraction(mount: HTMLElement, options: {
   columnWidth: number;
+  getPlanById: (planId: string) => WorkPlan | undefined;
   onScheduleChange: Props["onScheduleChange"];
-  plansById: Map<string, WorkPlan>;
 }) {
   const cleanups: Array<() => void> = [];
   const snapPixels = options.columnWidth;
@@ -435,8 +450,8 @@ function configureScheduleInteraction(mount: HTMLElement, options: {
 
   for (const wrapper of mount.querySelectorAll<SVGGElement>(".bar-wrapper")) {
     const bar = wrapper.querySelector<SVGRectElement>(".bar");
-    const plan = options.plansById.get(wrapper.dataset.id ?? "");
-    if (!bar || !plan) continue;
+    const planId = wrapper.dataset.id;
+    if (!bar || !planId) continue;
     let handleGroup = wrapper.querySelector<SVGGElement>(".handle-group");
     if (!handleGroup) {
       handleGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -483,6 +498,8 @@ function configureScheduleInteraction(mount: HTMLElement, options: {
     };
     const startScheduleChange = (event: MouseEvent) => {
       if (event.button !== 0) return;
+      const plan = options.getPlanById(planId);
+      if (!plan) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
       const rect = bar.getBoundingClientRect();

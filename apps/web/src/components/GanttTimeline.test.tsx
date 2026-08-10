@@ -136,4 +136,46 @@ describe("GanttTimeline adapter", () => {
     await waitFor(() => expect(ganttMock.tasks).toHaveLength(1));
     expect(ganttMock.tasks[0]?.name).toBe("");
   });
+
+  it("keeps the existing Gantt when refreshed plans have the same rendered content", async () => {
+    const rangeStart = new Date(2026, 7, 3);
+    const rangeEnd = new Date(2026, 7, 10);
+    const firstSelect = vi.fn();
+    const view = render(
+      <GanttTimeline plans={[plan]} displayProperties={[]} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={firstSelect} />,
+    );
+
+    await waitFor(() => expect(ganttMock.renderCount).toBeGreaterThan(0));
+    const renderCount = ganttMock.renderCount;
+    const onClick = ganttMock.options?.on_click as ((task: { id: string }) => void);
+    const refreshedPlan = { ...plan, version: plan.version + 1, updatedAt: "2026-08-10T00:00:00.000Z" };
+    const latestSelect = vi.fn();
+
+    view.rerender(
+      <GanttTimeline plans={[refreshedPlan]} displayProperties={[]} view="week" rangeStart={new Date(rangeStart)} rangeEnd={new Date(rangeEnd)} onScheduleChange={vi.fn()} onSelect={latestSelect} />,
+    );
+
+    await waitFor(() => expect(ganttMock.renderCount).toBe(renderCount));
+    onClick({ id: plan.id });
+    expect(firstSelect).not.toHaveBeenCalled();
+    expect(latestSelect).toHaveBeenCalledWith(refreshedPlan);
+  });
+
+  it("rerenders the Gantt when rendered plan content changes", async () => {
+    const rangeStart = new Date(2026, 7, 3);
+    const rangeEnd = new Date(2026, 7, 10);
+    const view = render(
+      <GanttTimeline plans={[plan]} displayProperties={[{ id: "status", label: "状态" }]} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+
+    await waitFor(() => expect(ganttMock.renderCount).toBeGreaterThan(0));
+    const renderCount = ganttMock.renderCount;
+
+    view.rerender(
+      <GanttTimeline plans={[{ ...plan, status: "in_progress" }]} displayProperties={[{ id: "status", label: "状态" }]} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+
+    await waitFor(() => expect(ganttMock.renderCount).toBeGreaterThan(renderCount));
+    expect(ganttMock.tasks[0]?.name).toBe("进行中");
+  });
 });

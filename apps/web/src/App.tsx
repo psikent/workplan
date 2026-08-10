@@ -1,8 +1,10 @@
-import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { api, setCsrfToken } from "./lib/api";
+import { applyTheme, useSystemTheme } from "./lib/theme";
 import AppShell from "./components/AppShell";
 import AuthPage from "./pages/AuthPage";
+import BrandMark from "./components/BrandMark";
 
 const WorkPlansPage = lazy(() => import("./pages/WorkPlansPage"));
 const OverviewPage = lazy(() => import("./pages/OverviewPage"));
@@ -36,6 +38,14 @@ type BootstrapState =
   | { status: "loading" }
   | { status: "anonymous"; setupRequired: boolean; setupTokenExpiresAt: string | null }
   | { status: "authenticated"; user: User };
+
+function SystemTheme({ children }: { children: ReactNode }) {
+  const systemTheme = useSystemTheme();
+  useEffect(() => {
+    applyTheme(systemTheme);
+  }, [systemTheme]);
+  return <>{children}</>;
+}
 
 export default function App() {
   const [state, setState] = useState<BootstrapState>({ status: "loading" });
@@ -71,17 +81,16 @@ export default function App() {
     };
   }, [state]);
 
+  let content: ReactNode;
   if (state.status === "loading") {
-    return (
+    content = (
       <main className="boot-screen" aria-live="polite">
-        <div className="brand-mark">工</div>
+        <BrandMark className="brand-mark" />
         <p>正在载入工作计划…</p>
       </main>
     );
-  }
-
-  if (state.status === "anonymous") {
-    return (
+  } else if (state.status === "anonymous") {
+    content = (
       <AuthPage
         setupRequired={state.setupRequired}
         setupTokenExpiresAt={state.setupTokenExpiresAt}
@@ -91,23 +100,25 @@ export default function App() {
         }}
       />
     );
+  } else {
+    return (
+      <SessionContext.Provider value={session}>
+        <AppShell>
+          <Suspense fallback={<div className="page-loading">正在载入…</div>}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/work-plans" replace />} />
+              <Route path="/overview" element={<OverviewPage />} />
+              <Route path="/work-plans" element={<WorkPlansPage />} />
+              <Route path="/custom-fields" element={state.user.role === "admin" ? <CustomFieldsPage /> : <Navigate to="/work-plans" replace />} />
+              <Route path="/accounts" element={state.user.role === "admin" ? <AccountManagementPage /> : <Navigate to="/work-plans" replace />} />
+              <Route path="/settings" element={state.user.role === "admin" ? <SettingsPage /> : <Navigate to="/work-plans" replace />} />
+              <Route path="*" element={<Navigate to="/work-plans" replace />} />
+            </Routes>
+          </Suspense>
+        </AppShell>
+      </SessionContext.Provider>
+    );
   }
 
-  return (
-    <SessionContext.Provider value={session}>
-      <AppShell>
-        <Suspense fallback={<div className="page-loading">正在载入…</div>}>
-          <Routes>
-            <Route path="/" element={<Navigate to="/work-plans" replace />} />
-            <Route path="/overview" element={<OverviewPage />} />
-            <Route path="/work-plans" element={<WorkPlansPage />} />
-            <Route path="/custom-fields" element={state.user.role === "admin" ? <CustomFieldsPage /> : <Navigate to="/work-plans" replace />} />
-            <Route path="/accounts" element={state.user.role === "admin" ? <AccountManagementPage /> : <Navigate to="/work-plans" replace />} />
-            <Route path="/settings" element={state.user.role === "admin" ? <SettingsPage /> : <Navigate to="/work-plans" replace />} />
-            <Route path="*" element={<Navigate to="/work-plans" replace />} />
-          </Routes>
-        </Suspense>
-      </AppShell>
-    </SessionContext.Provider>
-  );
+  return <SystemTheme>{content}</SystemTheme>;
 }

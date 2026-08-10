@@ -4,6 +4,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { compareWorkPlansBySchedule, deriveWorkPlanStatus } from "@workplan/contracts";
 import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus } from "@workplan/contracts";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, Plus, RotateCcw, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import GanttTimeline, { type GanttDisplayProperty } from "../components/GanttTimeline";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
@@ -113,18 +114,30 @@ function duplicateWorkPlanInput(plan: WorkPlan): CreateWorkPlan {
   };
 }
 
+function initialTimelineView(value: string | null): "week" | "month" {
+  return value === "month" ? "month" : "week";
+}
+
+function initialTimelineAnchor(value: string | null) {
+  if (!value) return new Date();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
 export default function WorkPlansPage() {
   const { user } = useSession();
   const { showSuccess } = useToast();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const requestedPlanId = searchParams.get("plan");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [status, setStatus] = useState<WorkPlanStatus | "all">("all");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [customFilterKey, setCustomFilterKey] = useState("");
   const [customFilterValue, setCustomFilterValue] = useState("");
-  const [view, setView] = useState<"week" | "month">("week");
-  const [anchor, setAnchor] = useState(() => new Date());
+  const [view, setView] = useState<"week" | "month">(() => initialTimelineView(searchParams.get("view")));
+  const [anchor, setAnchor] = useState(() => initialTimelineAnchor(searchParams.get("date")));
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selected, setSelected] = useState<WorkPlan | null>(null);
   const [showColumnSettings, setShowColumnSettings] = useState(false);
@@ -141,6 +154,7 @@ export default function WorkPlansPage() {
   const [exporting, setExporting] = useState(false);
   const plannerPanelRef = useRef<HTMLDivElement>(null);
   const planRowsRef = useRef<HTMLDivElement>(null);
+  const openedRequestedPlanIdRef = useRef<string | null>(null);
 
   const plansQuery = useQuery({ queryKey: ["work-plans"], queryFn: () => api<WorkPlan[]>("/work-plans?limit=500"), refetchInterval: 30_000 });
   const fieldsQuery = useQuery({ queryKey: ["custom-fields"], queryFn: () => api<CustomFieldDefinition[]>("/custom-fields") });
@@ -231,6 +245,16 @@ export default function WorkPlansPage() {
     }
     return Date.parse(plan.endAt) >= range[0]!.getTime() && Date.parse(plan.startAt) <= range[1]!.getTime();
   }), [customFilterKey, customFilterValue, deferredSearch, fieldsQuery.data, plans, range, status]);
+
+  useEffect(() => {
+    if (!requestedPlanId || openedRequestedPlanIdRef.current === requestedPlanId) return;
+    const requestedPlan = plans.find((plan) => plan.id === requestedPlanId);
+    if (!requestedPlan) return;
+    openedRequestedPlanIdRef.current = requestedPlanId;
+    setAnchor(new Date(requestedPlan.startAt));
+    setSelected(requestedPlan);
+    setDrawerOpen(true);
+  }, [plans, requestedPlanId]);
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) setSelectedTemplateId(selectedTemplate.id);
@@ -355,7 +379,7 @@ export default function WorkPlansPage() {
 
   const handleScheduleChange = useCallback((plan: WorkPlan, startAt: string, endAt: string) => {
     scheduleMutation.mutate({ plan, startAt, endAt });
-  }, [scheduleMutation]);
+  }, [scheduleMutation.mutate]);
   const handleSelect = useCallback((plan: WorkPlan) => {
     setSelected(plan);
     setDrawerOpen(true);

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { CalendarRange, KeyRound, LockKeyhole, UserRound } from "lucide-react";
 import type { User } from "../App";
 import { api, ApiError, jsonBody } from "../lib/api";
+import BrandMark from "../components/BrandMark";
 
 type Props = {
   setupRequired: boolean;
@@ -41,7 +42,7 @@ export default function AuthPage({ setupRequired, setupTokenExpiresAt, onAuthent
   return (
     <main className="auth-screen">
       <section className="auth-intro">
-        <div className="auth-brand"><span className="brand-mark">工</span><strong>工作计划</strong></div>
+        <div className="auth-brand"><BrandMark className="brand-mark" /><strong>工作计划</strong></div>
         <div>
           <CalendarRange aria-hidden="true" />
           <h1>把计划放到时间轴上</h1>

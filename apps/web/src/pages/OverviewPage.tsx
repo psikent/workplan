@@ -6,6 +6,15 @@ import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { formatDate } from "../lib/format";
 
+function workPlanTimelineLink(plan: WorkPlan) {
+  const params = new URLSearchParams({
+    view: "week",
+    date: plan.startAt,
+    plan: plan.id,
+  });
+  return `/work-plans?${params.toString()}`;
+}
+
 export default function OverviewPage() {
   const plans = useQuery({ queryKey: ["work-plans"], queryFn: () => api<WorkPlan[]>("/work-plans?limit=500"), refetchInterval: 30_000 });
   const data = plans.data ?? [];
@@ -26,7 +35,7 @@ export default function OverviewPage() {
       <div className="summary-rail">{summary.map(({ label, value, icon: Icon }) => <div key={label}><Icon /><span><strong>{value}</strong><small>{label}</small></span></div>)}</div>
       <section className="upcoming-section">
         <header><div><h2>接下来的工作计划</h2><p>按开始时间排列的未完成计划</p></div><Link to="/work-plans">查看全部<ArrowRight /></Link></header>
-        <div className="upcoming-list">{upcoming.map((plan) => <Link to="/work-plans" key={plan.id}><span className={`upcoming-date status-rail-${plan.status}`}><strong>{new Date(plan.startAt).getDate()}</strong><small>{new Intl.DateTimeFormat("zh-CN", { month: "short" }).format(new Date(plan.startAt))}</small></span><span className="upcoming-title"><strong>{plan.title}</strong><small>{formatDate(plan.startAt, true)} — {formatDate(plan.endAt, true)}</small></span><StatusBadge status={plan.status} /><ArrowRight /></Link>)}{!plans.isLoading && upcoming.length === 0 ? <div className="empty-state"><CircleCheckBig /><h3>当前没有待跟进计划</h3><p>前往工作计划页面创建下一项安排。</p></div> : null}</div>
+        <div className="upcoming-list">{upcoming.map((plan) => <Link to={workPlanTimelineLink(plan)} key={plan.id}><span className={`upcoming-date status-rail-${plan.status}`}><strong>{new Date(plan.startAt).getDate()}</strong><small>{new Intl.DateTimeFormat("zh-CN", { month: "short" }).format(new Date(plan.startAt))}</small></span><span className="upcoming-title"><strong>{plan.title}</strong><small>{formatDate(plan.startAt, true)} — {formatDate(plan.endAt, true)}</small></span><StatusBadge status={plan.status} /><ArrowRight /></Link>)}{!plans.isLoading && upcoming.length === 0 ? <div className="empty-state"><CircleCheckBig /><h3>当前没有待跟进计划</h3><p>前往工作计划页面创建下一项安排。</p></div> : null}</div>
       </section>
     </section>
   );
