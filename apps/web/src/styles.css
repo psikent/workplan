@@ -196,7 +196,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .gantt-mount .gantt-pending .bar { fill: #edac22; }.gantt-mount .gantt-pending .bar-progress { fill: #d58d00; }
 .gantt-mount .gantt-completed .bar { fill: #7f91aa; }.gantt-mount .gantt-completed .bar-progress { fill: #667890; }
 .gantt-mount .gantt-cancelled .bar { fill: #b5bdc9; }.gantt-mount .gantt-cancelled .bar-progress { fill: #9aa5b3; }
-.gantt-mount .popup-wrapper { font-family: inherit; border: 1px solid var(--line); box-shadow: 0 10px 30px rgb(25 40 70 / 18%); }
+.gantt-mount .popup-wrapper { font-family: inherit; border: 1px solid var(--line); box-shadow: 0 10px 30px rgb(25 40 70 / 18%); pointer-events: none; }
 
 .drawer-backdrop, .modal-backdrop { position: fixed; inset: 0; z-index: 80; border: 0; background: rgb(16 26 47 / 16%); cursor: default; }
 .editor-drawer { position: fixed; z-index: 90; inset: 0 0 0 auto; width: min(440px, 100vw); display: grid; grid-template-rows: auto minmax(0, 1fr); background: #fff; box-shadow: var(--shadow-drawer); animation: drawer-in .2s ease-out; }

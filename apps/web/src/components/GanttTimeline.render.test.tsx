@@ -644,6 +644,35 @@ describe("GanttTimeline rendered grid", () => {
     expect(planRow.classList.contains("gantt-row-hovered")).toBe(false);
   });
 
+  it("moves the hover popup with the pointer over a Gantt bar", async () => {
+    const { container } = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const { barWrapper, popup } = await waitFor(() => {
+      const barWrapper = container.querySelector<SVGGElement>(".bar-wrapper");
+      const popup = container.querySelector<HTMLElement>(".popup-wrapper");
+      expect(barWrapper).not.toBeNull();
+      expect(popup).not.toBeNull();
+      return { barWrapper: barWrapper!, popup: popup! };
+    });
+
+    fireEvent.mouseMove(barWrapper, { clientX: 140, clientY: 90 });
+    expect(popup.style.left).toBe("152px");
+    expect(popup.style.top).toBe("102px");
+
+    fireEvent.mouseMove(barWrapper, { clientX: 180, clientY: 120 });
+    expect(popup.style.left).toBe("192px");
+    expect(popup.style.top).toBe("132px");
+  });
+
   it("centers the today line and ball under the current date block", () => {
     const mount = document.createElement("div");
     const header = document.createElement("div");

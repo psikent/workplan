@@ -76,6 +76,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, ra
     let cleanupCenteredLabels = () => {};
     let cleanupVerticalScrollSync = () => {};
     let cleanupPlanRowHover = () => {};
+    let cleanupPopupFollow = () => {};
     const container = containerRef.current;
     if (!container) return;
     if (plans.length === 0) {
@@ -123,7 +124,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, ra
         readonly_progress: true,
         move_dependencies: false,
         today_button: false,
-        popup_on: "click",
+        popup_on: "hover",
         on_click: (task: { id: string }) => {
           const plan = plansByIdRef.current.get(task.id);
           if (plan) onSelectRef.current(plan);
@@ -151,6 +152,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, ra
         verticalScrollPeerRef?.current ?? null,
       );
       cleanupPlanRowHover = synchronizePlanRowHover(containerRef.current, verticalScrollPeerRef?.current ?? null, plans);
+      cleanupPopupFollow = configurePopupFollow(containerRef.current);
       cleanupScheduleInteraction = configureScheduleInteraction(containerRef.current, {
         columnWidth,
         getPlanById: (planId) => plansByIdRef.current.get(planId),
@@ -163,6 +165,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, ra
       cleanupCenteredLabels();
       cleanupVerticalScrollSync();
       cleanupPlanRowHover();
+      cleanupPopupFollow();
       cleanupScheduleInteraction();
     };
   }, [columnWidth, ganttInputSignature, rangeEndTime, rangeStartTime, verticalScrollPeerRef]);
@@ -199,6 +202,40 @@ export function ensureCurrentDateMarker(
   } finally {
     gantt.gantt_end = originalEnd;
   }
+}
+
+function configurePopupFollow(mount: HTMLElement) {
+  const popup = mount.querySelector<HTMLElement>(".popup-wrapper");
+  const cleanups: Array<() => void> = [];
+  if (!popup) return () => {};
+
+  let latestPosition: { clientX: number; clientY: number } | null = null;
+  const positionPopup = () => {
+    if (!latestPosition) return;
+    const positioningParent = popup.offsetParent instanceof HTMLElement ? popup.offsetParent : mount;
+    const parentRect = positioningParent.getBoundingClientRect();
+    popup.style.left = `${latestPosition.clientX - parentRect.left + positioningParent.scrollLeft + 12}px`;
+    popup.style.top = `${latestPosition.clientY - parentRect.top + positioningParent.scrollTop + 12}px`;
+  };
+  const movePopup = (event: MouseEvent) => {
+    latestPosition = { clientX: event.clientX, clientY: event.clientY };
+    positionPopup();
+  };
+
+  for (const wrapper of mount.querySelectorAll<SVGGElement>(".bar-wrapper[data-id]")) {
+    wrapper.addEventListener("mouseenter", movePopup);
+    wrapper.addEventListener("mousemove", movePopup);
+    cleanups.push(() => {
+      wrapper.removeEventListener("mouseenter", movePopup);
+      wrapper.removeEventListener("mousemove", movePopup);
+    });
+  }
+
+  const popupObserver = new MutationObserver(positionPopup);
+  popupObserver.observe(popup, { attributes: true, attributeFilter: ["class"] });
+  cleanups.push(() => popupObserver.disconnect());
+
+  return () => cleanups.forEach((cleanup) => cleanup());
 }
 
 function synchronizePlanRowHover(mount: HTMLElement, planRows: HTMLElement | null, plans: WorkPlan[]) {

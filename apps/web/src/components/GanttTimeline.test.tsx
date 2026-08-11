@@ -89,6 +89,7 @@ describe("GanttTimeline adapter", () => {
       snap_at: "1d",
       infinite_padding: false,
       scroll_to: "2026-08-03",
+      popup_on: "hover",
       readonly_dates: true,
       readonly_progress: true,
       move_dependencies: false,
