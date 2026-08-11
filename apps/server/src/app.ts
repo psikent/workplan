@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
@@ -32,6 +33,36 @@ import { registerWorkPlanRoutes } from "./routes/work-plans.js";
 import "./types.js";
 
 const developmentWebOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"];
+
+function isPrivateNetworkHost(hostname: string) {
+  const host = hostname.replace(/^\[|\]$/g, "");
+  const addressType = net.isIP(host);
+  if (addressType === 4) {
+    const [first, second] = host.split(".").map(Number);
+    return (
+      first === 10 ||
+      first === 127 ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second! >= 16 && second! <= 31) ||
+      (first === 192 && second === 168) ||
+      (first === 100 && second! >= 64 && second! <= 127)
+    );
+  }
+  if (addressType === 6) {
+    const normalized = host.toLowerCase();
+    return normalized === "::1" || normalized.startsWith("fc") || normalized.startsWith("fd") || /^fe[89ab]/.test(normalized);
+  }
+  return false;
+}
+
+function isPrivateNetworkOrigin(origin: string) {
+  try {
+    const url = new URL(origin);
+    return (url.protocol === "http:" || url.protocol === "https:") && isPrivateNetworkHost(url.hostname);
+  } catch {
+    return false;
+  }
+}
 
 export type BuildAppOptions = {
   config?: Partial<AppConfig>;
@@ -105,7 +136,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
         throw new AppError(403, "CSRF_TOKEN_INVALID", "CSRF 令牌无效");
       }
       const origin = request.headers.origin;
-      if (origin && !trustedOrigins.has(origin)) {
+      const trustedPrivateNetworkOrigin = origin ? isPrivateNetworkOrigin(origin) : false;
+      if (origin && !trustedOrigins.has(origin) && !trustedPrivateNetworkOrigin) {
         throw new AppError(403, "ORIGIN_NOT_ALLOWED", "请求来源不受信任");
       }
     }

@@ -682,7 +682,7 @@ describe("work plan API", () => {
     expect(scheduled.json<{ startAt: string; version: number }>()).toMatchObject({ startAt: nextStart, version: 2 });
   });
 
-  it("accepts the Vite development origin without trusting unrelated origins", async () => {
+  it("accepts private-network origins without trusting unrelated origins", async () => {
     const context = await createContext();
     const fromVite = await context.request({
       method: "POST",
@@ -691,6 +691,14 @@ describe("work plan API", () => {
       payload: planInput(),
     });
     expect(fromVite.statusCode).toBe(201);
+
+    const fromLanVite = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plans",
+      headers: { origin: "http://192.168.1.20:5173" },
+      payload: planInput({ title: "局域网开发来源" }),
+    });
+    expect(fromLanVite.statusCode).toBe(201);
 
     const fromUntrustedOrigin = await context.request({
       method: "POST",
@@ -710,6 +718,14 @@ describe("work plan API", () => {
     });
     expect(productionFromVite.statusCode).toBe(403);
     expect(productionFromVite.json<{ code: string }>().code).toBe("ORIGIN_NOT_ALLOWED");
+
+    const productionFromLan = await productionContext.request({
+      method: "POST",
+      url: "/api/v1/work-plans",
+      headers: { origin: "http://192.168.1.20:3000" },
+      payload: planInput({ title: "生产环境局域网来源" }),
+    });
+    expect(productionFromLan.statusCode).toBe(201);
   });
 
   it("validates and searches normalized custom field values", async () => {
