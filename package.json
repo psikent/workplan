@@ -8,9 +8,13 @@
   },
   "scripts": {
     "dev": "corepack pnpm --filter @workplan/contracts build && corepack pnpm --parallel --filter @workplan/server --filter @workplan/web dev",
+    "release": "node scripts/release.mjs",
     "build": "corepack pnpm --filter @workplan/contracts build && corepack pnpm --filter @workplan/server build && corepack pnpm --filter @workplan/web build",
     "typecheck": "corepack pnpm --filter @workplan/contracts build && corepack pnpm -r typecheck",
-    "test": "corepack pnpm --filter @workplan/contracts build && corepack pnpm -r test",
-    "start": "corepack pnpm --filter @workplan/server start"
+    "test": "corepack pnpm --filter @workplan/contracts build && corepack pnpm -r test && node --test scripts/workplan.test.mjs",
+    "start": "node scripts/workplan.mjs start",
+    "stop": "node scripts/workplan.mjs stop",
+    "status": "node scripts/workplan.mjs status",
+    "logs": "node scripts/workplan.mjs logs"
   }
 }

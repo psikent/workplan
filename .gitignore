@@ -8,5 +8,7 @@ coverage/
 .shot-*
 .env
 data/
+.runtime/
+logs/
 playwright-report/
 test-results/

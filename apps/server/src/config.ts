@@ -2,6 +2,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
+export const projectRoot = path.resolve(serverDir, "../../..");
+
+function resolveFromProjectRoot(value: string) {
+  return path.isAbsolute(value) ? path.normalize(value) : path.resolve(projectRoot, value);
+}
 
 export type AppConfig = {
   host: string;
@@ -18,7 +23,7 @@ export type AppConfig = {
 
 export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   const isProduction = process.env.NODE_ENV === "production";
-  const dataDir = overrides.dataDir ?? process.env.DATA_DIR ?? path.resolve(process.cwd(), "data");
+  const dataDir = resolveFromProjectRoot(overrides.dataDir ?? process.env.DATA_DIR ?? "data");
   const appSecret =
     overrides.appSecret ??
     process.env.APP_SECRET ??
@@ -30,14 +35,14 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 
   return {
     host: overrides.host ?? process.env.HOST ?? "0.0.0.0",
-    port: overrides.port ?? Number(process.env.PORT ?? 3000),
+    port: overrides.port ?? Number(process.env.PORT ?? (isProduction ? 3000 : 3002)),
     dataDir,
     databasePath: overrides.databasePath ?? path.join(dataDir, "workplan.db"),
     appSecret,
-    appBaseUrl: overrides.appBaseUrl ?? process.env.APP_BASE_URL ?? "http://localhost:3000",
+    appBaseUrl: overrides.appBaseUrl ?? process.env.APP_BASE_URL ?? `http://localhost:${isProduction ? 3000 : 3002}`,
     timeZone: overrides.timeZone ?? process.env.TZ ?? "Asia/Shanghai",
     sessionDays: overrides.sessionDays ?? Number(process.env.SESSION_DAYS ?? 30),
     isProduction: overrides.isProduction ?? isProduction,
-    webDistPath: overrides.webDistPath ?? process.env.WEB_DIST_PATH ?? path.resolve(serverDir, "../../web/dist"),
+    webDistPath: overrides.webDistPath ?? path.join(projectRoot, "apps/web/dist"),
   };
 }
