@@ -1,0 +1,48 @@
+{"level":30,"time":1786447358875,"pid":11632,"hostname":"Zephyrus","msg":"Server listening at http://127.0.0.1:3000"}
+{"level":30,"time":1786447358875,"pid":11632,"hostname":"Zephyrus","msg":"Server listening at http://198.18.0.1:3000"}
+{"level":30,"time":1786447358875,"pid":11632,"hostname":"Zephyrus","msg":"Server listening at http://100.84.89.89:3000"}
+{"level":30,"time":1786447358875,"pid":11632,"hostname":"Zephyrus","msg":"Server listening at http://192.168.0.15:3000"}
+{"level":30,"time":1786447358875,"pid":11632,"hostname":"Zephyrus","msg":"Server listening at http://169.254.202.214:3000"}
+{"level":30,"time":1786447358875,"pid":11632,"hostname":"Zephyrus","msg":"Server listening at http://169.254.179.180:3000"}
+{"level":30,"time":1786447358917,"pid":11632,"hostname":"Zephyrus","reqId":"req-1","req":{"method":"GET","url":"/health/ready","host":"127.0.0.1:3000","remoteAddress":"127.0.0.1","remotePort":63128},"msg":"incoming request"}
+{"level":30,"time":1786447358919,"pid":11632,"hostname":"Zephyrus","reqId":"req-1","res":{"statusCode":200},"responseTime":2.1739000000000033,"msg":"request completed"}
+{"level":30,"time":1786447390800,"pid":11632,"hostname":"Zephyrus","reqId":"req-2","req":{"method":"GET","url":"/health/ready","host":"127.0.0.1:3000","remoteAddress":"127.0.0.1","remotePort":63236},"msg":"incoming request"}
+{"level":30,"time":1786447390801,"pid":11632,"hostname":"Zephyrus","reqId":"req-2","res":{"statusCode":200},"responseTime":0.7456999999994878,"msg":"request completed"}
+{"level":30,"time":1786447392954,"pid":11632,"hostname":"Zephyrus","reqId":"req-3","req":{"method":"GET","url":"/health/live","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":63237},"msg":"incoming request"}
+{"level":30,"time":1786447392954,"pid":11632,"hostname":"Zephyrus","reqId":"req-3","res":{"statusCode":200},"responseTime":0.3599000000031083,"msg":"request completed"}
+{"level":30,"time":1786447395014,"pid":11632,"hostname":"Zephyrus","reqId":"req-4","req":{"method":"GET","url":"/health/ready","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":63239},"msg":"incoming request"}
+{"level":30,"time":1786447395014,"pid":11632,"hostname":"Zephyrus","reqId":"req-4","res":{"statusCode":200},"responseTime":0.3448999999964144,"msg":"request completed"}
+{"level":30,"time":1786447397050,"pid":11632,"hostname":"Zephyrus","reqId":"req-5","req":{"method":"GET","url":"/api/v1/setup/status","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":63260},"msg":"incoming request"}
+{"level":30,"time":1786447397050,"pid":11632,"hostname":"Zephyrus","reqId":"req-5","res":{"statusCode":200},"responseTime":0.5033000000039465,"msg":"request completed"}
+{"level":30,"time":1786447399097,"pid":11632,"hostname":"Zephyrus","reqId":"req-6","req":{"method":"GET","url":"/","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":63273},"msg":"incoming request"}
+{"level":30,"time":1786447399101,"pid":11632,"hostname":"Zephyrus","reqId":"req-6","res":{"statusCode":200},"responseTime":4.196199999998498,"msg":"request completed"}
+{"level":30,"time":1786447421359,"pid":11632,"hostname":"Zephyrus","reqId":"req-7","req":{"method":"GET","url":"/health/ready","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":63308},"msg":"incoming request"}
+{"level":30,"time":1786447421360,"pid":11632,"hostname":"Zephyrus","reqId":"req-7","res":{"statusCode":200},"responseTime":0.4079000000056112,"msg":"request completed"}
+{"level":30,"time":1786447535260,"pid":11632,"hostname":"Zephyrus","reqId":"req-8","req":{"method":"GET","url":"/health/ready","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":56768},"msg":"incoming request"}
+{"level":30,"time":1786447535261,"pid":11632,"hostname":"Zephyrus","reqId":"req-8","res":{"statusCode":200},"responseTime":0.39629999999306165,"msg":"request completed"}
+{"level":30,"time":1786447588473,"pid":11632,"hostname":"Zephyrus","reqId":"req-9","req":{"method":"GET","url":"/health/ready","host":"127.0.0.1:3000","remoteAddress":"127.0.0.1","remotePort":56843},"msg":"incoming request"}
+{"level":30,"time":1786447588473,"pid":11632,"hostname":"Zephyrus","reqId":"req-9","res":{"statusCode":200},"responseTime":0.44409999999334104,"msg":"request completed"}
+{"level":30,"time":1786447662924,"pid":6460,"hostname":"Zephyrus","msg":"Server listening at http://127.0.0.1:3000"}
+{"level":30,"time":1786447662924,"pid":6460,"hostname":"Zephyrus","msg":"Server listening at http://198.18.0.1:3000"}
+{"level":30,"time":1786447662924,"pid":6460,"hostname":"Zephyrus","msg":"Server listening at http://100.84.89.89:3000"}
+{"level":30,"time":1786447662924,"pid":6460,"hostname":"Zephyrus","msg":"Server listening at http://192.168.0.15:3000"}
+{"level":30,"time":1786447662924,"pid":6460,"hostname":"Zephyrus","msg":"Server listening at http://169.254.202.214:3000"}
+{"level":30,"time":1786447662924,"pid":6460,"hostname":"Zephyrus","msg":"Server listening at http://169.254.179.180:3000"}
+{"level":30,"time":1786447663174,"pid":6460,"hostname":"Zephyrus","reqId":"req-1","req":{"method":"GET","url":"/health/ready","host":"127.0.0.1:3000","remoteAddress":"127.0.0.1","remotePort":57281},"msg":"incoming request"}
+{"level":30,"time":1786447663177,"pid":6460,"hostname":"Zephyrus","reqId":"req-1","res":{"statusCode":200},"responseTime":2.1655000000000655,"msg":"request completed"}
+{"level":30,"time":1786447682952,"pid":6460,"hostname":"Zephyrus","reqId":"req-2","req":{"method":"GET","url":"/health/ready","host":"127.0.0.1:3000","remoteAddress":"127.0.0.1","remotePort":57411},"msg":"incoming request"}
+{"level":30,"time":1786447682952,"pid":6460,"hostname":"Zephyrus","reqId":"req-2","res":{"statusCode":200},"responseTime":0.5005000000019209,"msg":"request completed"}
+{"level":30,"time":1786447685097,"pid":6460,"hostname":"Zephyrus","reqId":"req-3","req":{"method":"GET","url":"/api/v1/setup/status","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":57412},"msg":"incoming request"}
+{"level":30,"time":1786447685097,"pid":6460,"hostname":"Zephyrus","reqId":"req-3","res":{"statusCode":200},"responseTime":0.5757999999987078,"msg":"request completed"}
+{"level":30,"time":1786447687163,"pid":6460,"hostname":"Zephyrus","reqId":"req-4","req":{"method":"GET","url":"/health/ready","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":57414},"msg":"incoming request"}
+{"level":30,"time":1786447687163,"pid":6460,"hostname":"Zephyrus","reqId":"req-4","res":{"statusCode":200},"responseTime":0.31199999999807915,"msg":"request completed"}
+{"level":30,"time":1786447702026,"pid":6460,"hostname":"Zephyrus","reqId":"req-5","req":{"method":"GET","url":"/health/ready","host":"127.0.0.1:3000","remoteAddress":"127.0.0.1","remotePort":57569},"msg":"incoming request"}
+{"level":30,"time":1786447702026,"pid":6460,"hostname":"Zephyrus","reqId":"req-5","res":{"statusCode":200},"responseTime":0.5169999999998254,"msg":"request completed"}
+{"level":30,"time":1786447704180,"pid":6460,"hostname":"Zephyrus","reqId":"req-6","req":{"method":"GET","url":"/api/v1/setup/status","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":57570},"msg":"incoming request"}
+{"level":30,"time":1786447704180,"pid":6460,"hostname":"Zephyrus","reqId":"req-6","res":{"statusCode":200},"responseTime":0.4488000000055763,"msg":"request completed"}
+{"level":30,"time":1786447706232,"pid":6460,"hostname":"Zephyrus","reqId":"req-7","req":{"method":"GET","url":"/health/ready","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":57572},"msg":"incoming request"}
+{"level":30,"time":1786447706232,"pid":6460,"hostname":"Zephyrus","reqId":"req-7","res":{"statusCode":200},"responseTime":0.35020000000076834,"msg":"request completed"}
+{"level":30,"time":1786447769142,"pid":6460,"hostname":"Zephyrus","reqId":"req-8","req":{"method":"GET","url":"/health/ready","host":"127.0.0.1:3000","remoteAddress":"127.0.0.1","remotePort":65100},"msg":"incoming request"}
+{"level":30,"time":1786447769143,"pid":6460,"hostname":"Zephyrus","reqId":"req-8","res":{"statusCode":200},"responseTime":0.3932000000058906,"msg":"request completed"}
+{"level":30,"time":1786447771315,"pid":6460,"hostname":"Zephyrus","reqId":"req-9","req":{"method":"GET","url":"/health/ready","host":"localhost:3000","remoteAddress":"127.0.0.1","remotePort":65101},"msg":"incoming request"}
+{"level":30,"time":1786447771315,"pid":6460,"hostname":"Zephyrus","reqId":"req-9","res":{"statusCode":200},"responseTime":0.39530000000377186,"msg":"request completed"}

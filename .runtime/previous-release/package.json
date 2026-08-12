@@ -1,0 +1,16 @@
+{
+  "name": "workplan",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.16.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node workplan.mjs start",
+    "stop": "node workplan.mjs stop",
+    "restart": "node workplan.mjs restart",
+    "status": "node workplan.mjs status",
+    "logs": "node workplan.mjs logs"
+  }
+}
