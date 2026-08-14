@@ -72,7 +72,7 @@ export async function registerSpreadsheetTransferRoutes(app: FastifyInstance, sp
     async (request, reply) => {
       const body = exportWorkPlansXlsSchema.parse(request.body);
       const result = spreadsheetTransfer.exportXlsCustom(
-        { columns: body.columns, sheetName: body.sheetName },
+        { columns: body.columns, sheetName: body.sheetName, ...(body.name ? { name: body.name } : {}) },
         {
           ...(body.q ? { q: body.q } : {}),
           ...(body.status ? { status: body.status } : {}),

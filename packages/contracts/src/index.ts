@@ -332,6 +332,7 @@ export const updateExportTemplateSchema = createExportTemplateSchema.partial().e
 export const exportWorkPlansXlsSchema = z.object({
   columns: z.array(exportTemplateColumnSchema).min(1).max(100),
   sheetName: z.string().trim().min(1).max(31).regex(/^[^\\/?*\[\]:]+$/).default("工作计划"),
+  name: z.string().trim().min(1).max(80).optional(),
   q: z.string().max(200).optional(),
   status: workPlanStatusSchema.optional(),
   from: isoDateTimeSchema.optional(),

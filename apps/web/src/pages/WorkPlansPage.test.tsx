@@ -411,6 +411,7 @@ describe("XLS transfer", () => {
     await waitFor(() => expect(downloadWorkPlansXlsCustomMock).toHaveBeenCalledWith(
       [...exportTemplate.columns, { source: "ownerAccount", header: "工作负责人账号" }],
       exportTemplate.sheetName,
+      exportTemplate.name,
       expect.any(Object),
     ));
     view.unmount();
@@ -447,6 +448,7 @@ describe("XLS transfer", () => {
     await waitFor(() => expect(downloadWorkPlansXlsCustomMock).toHaveBeenCalledWith(
       customHeaderTemplate.columns,
       customHeaderTemplate.sheetName,
+      customHeaderTemplate.name,
       expect.objectContaining({ from: expect.any(String), to: expect.any(String) }),
     ));
     view.unmount();
@@ -473,6 +475,7 @@ describe("XLS transfer", () => {
         { source: "status", header: "状态" },
       ],
       "工作计划",
+      "标准工作计划",
       expect.objectContaining({ from: expect.any(String), to: expect.any(String) }),
     ));
     expect(await screen.findByText("已导出当前时间范围")).toBeTruthy();
@@ -499,6 +502,7 @@ describe("XLS transfer", () => {
         { source: "endAt", header: "结束时间" },
       ],
       "工作计划",
+      "标准工作计划",
       expect.objectContaining({ from: expect.any(String), to: expect.any(String) }),
     ));
     view.unmount();

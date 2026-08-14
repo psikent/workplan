@@ -50,6 +50,7 @@ export async function downloadExport() {
 export async function downloadWorkPlansXlsCustom(
   columns: ExportTemplateColumn[],
   sheetName: string,
+  name: string,
   filters: { q?: string; status?: string; from?: string; to?: string } = {},
 ) {
   const headers = new Headers({ "Content-Type": "application/json" });
@@ -58,7 +59,7 @@ export async function downloadWorkPlansXlsCustom(
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify({ columns, sheetName, ...filters }),
+    body: JSON.stringify({ columns, sheetName, name, ...filters }),
   });
   if (!response.ok) {
     const problem = await response.json().catch(() => null) as ApiProblem | null;
@@ -70,7 +71,7 @@ export async function downloadWorkPlansXlsCustom(
   const href = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = href;
-  link.download = encodedName ? decodeURIComponent(encodedName) : `workplan-${new Date().toISOString().slice(0, 10)}.xls`;
+  link.download = encodedName ? decodeURIComponent(encodedName) : `${name}-${new Date().toISOString().slice(0, 10)}.xls`;
   link.click();
   URL.revokeObjectURL(href);
 }

@@ -30,6 +30,12 @@ const statusLabels: Record<WorkPlanStatus, string> = {
 };
 const statusesByLabel = new Map<string, WorkPlanStatus>(Object.entries(statusLabels).map(([value, label]) => [label, value as WorkPlanStatus]));
 
+/** 导出文件名时间戳：本地时间的 YYYYMMDD-HHmmss，避免同一天多次导出时文件名冲突。 */
+function formatFileTimestamp(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
 export class SpreadsheetTransferService {
   constructor(
     private readonly database: DatabaseBundle,
@@ -84,11 +90,11 @@ export class SpreadsheetTransferService {
   }
 
   exportXlsCustom(
-    input: { columns: ExportTemplateColumn[]; sheetName: string },
+    input: { columns: ExportTemplateColumn[]; sheetName: string; name?: string },
     query: { q?: string; status?: WorkPlanStatus; from?: string; to?: string },
   ): { fileName: string; data: Buffer } {
     this.validateColumns(input.columns);
-    return this.buildXls({ name: "导出", sheetName: input.sheetName, columns: input.columns }, query);
+    return this.buildXls({ name: input.name ?? "导出", sheetName: input.sheetName, columns: input.columns }, query);
   }
 
   private buildXls(
@@ -115,7 +121,7 @@ export class SpreadsheetTransferService {
     XLSX.utils.book_append_sheet(workbook, sheet, template.sheetName);
     const data = XLSX.write(workbook, { type: "buffer", bookType: "biff8", cellDates: true }) as Buffer;
     const safeName = template.name.replace(/[\\/:*?"<>|]/g, "-");
-    return { fileName: `${safeName}-${new Date().toISOString().slice(0, 10)}.xls`, data };
+    return { fileName: `${safeName}-${formatFileTimestamp(new Date())}.xls`, data };
   }
 
   importXls(templateId: string, fileData: Buffer): { imported: number } {

@@ -52,6 +52,12 @@ afterEach(async () => {
   while (contexts.length) await contexts.pop()!.app.close();
 });
 
+function exportedFileName(header: unknown): string {
+  const value = String(header ?? "");
+  const encoded = value.split("filename*=UTF-8''")[1] ?? "";
+  return decodeURIComponent(encoded.split(";")[0]!);
+}
+
 const planInput = (overrides: Record<string, unknown> = {}) => ({
   title: "官网改版计划",
   description: "完成新版官网的设计与发布",
@@ -896,6 +902,7 @@ describe("work plan API", () => {
     const exported = await context.request({ method: "GET", url: `/api/v1/work-plans/export.xls?templateId=${template.id}` });
     expect(exported.statusCode).toBe(200);
     expect(exported.headers["content-type"]).toContain("application/vnd.ms-excel");
+    expect(exportedFileName(exported.headers["content-disposition"])).toMatch(/^排程导出-\d{8}-\d{6}\.xls$/);
     expect(exported.rawPayload.subarray(0, 4).toString("hex")).toBe("d0cf11e0");
     const workbook = XLSX.read(exported.rawPayload, { type: "buffer", cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]!]!;
@@ -923,6 +930,7 @@ describe("work plan API", () => {
       method: "POST",
       url: "/api/v1/work-plans/export.xls",
       payload: {
+        name: "自定义导出",
         sheetName: "自定义导出",
         columns: [
           { source: "title", header: "计划标题" },
@@ -932,6 +940,7 @@ describe("work plan API", () => {
     });
     expect(exported.statusCode).toBe(200);
     expect(exported.headers["content-type"]).toContain("application/vnd.ms-excel");
+    expect(exportedFileName(exported.headers["content-disposition"])).toMatch(/^自定义导出-\d{8}-\d{6}\.xls$/);
     expect(exported.rawPayload.subarray(0, 4).toString("hex")).toBe("d0cf11e0");
     const workbook = XLSX.read(exported.rawPayload, { type: "buffer", cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]!]!;

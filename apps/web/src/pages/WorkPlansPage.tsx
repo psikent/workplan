@@ -439,7 +439,7 @@ export default function WorkPlansPage() {
     setSpreadsheetMessage("正在生成 XLS…");
     try {
       const columns = buildSelectedExportColumns();
-      await downloadWorkPlansXlsCustom(columns, selectedTemplate?.sheetName ?? "工作计划", {
+      await downloadWorkPlansXlsCustom(columns, selectedTemplate?.sheetName ?? "工作计划", selectedTemplate?.name ?? "导出", {
         ...(deferredSearch ? { q: deferredSearch } : {}),
         ...(status !== "all" ? { status } : {}),
         from: range[0]!.toISOString(),

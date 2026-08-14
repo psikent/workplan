@@ -16,11 +16,12 @@ describe("downloadWorkPlansXlsCustom", () => {
   });
 
   it("sends the CSRF token on the export POST", async () => {
-    await expect(downloadWorkPlansXlsCustom([], "工作计划")).rejects.toThrow("导出失败");
+    await expect(downloadWorkPlansXlsCustom([], "工作计划", "周报导出")).rejects.toThrow("导出失败");
     const [url, init] = vi.mocked(fetch).mock.calls[0] ?? [];
     expect(url).toBe("/api/v1/work-plans/export.xls");
     expect(init?.method).toBe("POST");
     expect(init?.credentials).toBe("include");
     expect((init?.headers as Headers).get("X-CSRF-Token")).toBe("token-123");
+    expect(JSON.parse(String(init?.body))).toMatchObject({ name: "周报导出", sheetName: "工作计划", columns: [] });
   });
 });
