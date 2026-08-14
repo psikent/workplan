@@ -4,7 +4,7 @@
 
 ## 正式环境
 
-正式环境使用 Node.js 22 或更高版本，固定发布到源码同级目录 `C:\Users\lxjsi\Documents\dev\workplan-release`。服务在端口 `3000` 同时提供 Web UI、API 和健康检查。
+正式环境使用 Node.js 22 或更高版本，固定发布到源码目录同级的 `workplan-release` 目录。服务在端口 `3000` 同时提供 Web UI、API 和健康检查。
 
 从源码目录执行一键构建和发布：
 
