@@ -1,18 +1,21 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { CustomFieldDefinition, ExportTemplate, OwnerAccountMapping } from "@workplan/contracts";
+import type { CustomFieldDefinition, EnvConfigImportResult, EnvConfigPackage, EnvConfigPlan, ExportTemplate, OwnerAccountMapping } from "@workplan/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../components/ToastProvider";
 import AccountManagementPage from "./AccountManagementPage";
 import SettingsPage from "./SettingsPage";
 
 const apiMock = vi.hoisted(() => vi.fn());
+const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
+const downloadEnvConfigMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../App", () => ({ useSession: () => ({ user: { username: "lxj", role: "admin", loginMode: "password" } }) }));
 vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),
   api: apiMock,
+  downloadEnvConfig: downloadEnvConfigMock,
 }));
 
 const ownerField: CustomFieldDefinition = {
@@ -34,6 +37,61 @@ const ownerField: CustomFieldDefinition = {
   updatedAt: "2026-08-01T00:00:00.000Z",
 };
 
+const envConfigPackage: EnvConfigPackage = {
+  schemaVersion: 2,
+  exportedAt: "2026-08-16T00:00:00.000Z",
+  customFields: [],
+  ownerAccountMappings: [],
+  exportTemplates: [],
+};
+
+const envConfigPlan: EnvConfigPlan = {
+  mode: "sync",
+  hasDestructiveChanges: true,
+  sections: {
+    customFields: [{
+      action: "create",
+      grade: "safe",
+      reason: null,
+      key: "priority",
+      label: "优先级",
+      options: [
+        { action: "add_option", grade: "safe", reason: null, value: "high", label: "高" },
+        { action: "retire_option", grade: "destructive", reason: null, value: "legacy", label: "旧选项" },
+      ],
+    }],
+    ownerAccountMappings: [{
+      action: "skip",
+      grade: "safe",
+      reason: "owner_exists",
+      ownerName: "冯铭倩",
+      account: "fengmingqian@zh.gd.csg.cn",
+    }],
+    exportTemplates: [{
+      action: "update",
+      grade: "safe",
+      reason: null,
+      name: "标准工作计划",
+      sheetName: "工作计划",
+    }],
+  },
+};
+
+const envConfigImportResult: EnvConfigImportResult = {
+  sections: {
+    customFields: [{
+      ...envConfigPlan.sections.customFields[0]!,
+      outcome: "created",
+      options: [
+        { ...envConfigPlan.sections.customFields[0]!.options![0]!, outcome: "created" },
+        { ...envConfigPlan.sections.customFields[0]!.options![1]!, outcome: "retired" },
+      ],
+    }],
+    ownerAccountMappings: [{ ...envConfigPlan.sections.ownerAccountMappings[0]!, outcome: "not_selected" }],
+    exportTemplates: [{ ...envConfigPlan.sections.exportTemplates[0]!, outcome: "updated" }],
+  },
+};
+
 let template: ExportTemplate;
 let ownerMappings: OwnerAccountMapping[];
 let users: Array<{
@@ -48,6 +106,14 @@ let users: Array<{
 }>;
 
 beforeEach(() => {
+  clipboardWriteTextMock.mockReset();
+  clipboardWriteTextMock.mockResolvedValue(undefined);
+  downloadEnvConfigMock.mockReset();
+  downloadEnvConfigMock.mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: clipboardWriteTextMock },
+  });
   template = {
     id: "8b8f906c-b4e9-4b10-890e-6582e0c48ec2",
     name: "标准工作计划",
@@ -156,6 +222,12 @@ beforeEach(() => {
       return undefined;
     }
     if (path === "/owner-account-mappings") return ownerMappings;
+    if (path === "/env-config") return envConfigPackage;
+    if (path === "/env-config/validate" && init?.method === "POST") {
+      const input = JSON.parse(String(init.body)) as { mode: "additive" | "sync" };
+      return { ...envConfigPlan, mode: input.mode };
+    }
+    if (path === "/env-config/import" && init?.method === "POST") return envConfigImportResult;
     if (path === "/export-templates") return [template];
     if (path === `/export-templates/${template.id}` && init?.method === "PATCH") {
       const input = JSON.parse(String(init.body)) as Pick<ExportTemplate, "name" | "sheetName" | "columns">;
@@ -175,6 +247,277 @@ function renderAccountManagementPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}><ToastProvider><AccountManagementPage /></ToastProvider></QueryClientProvider>);
 }
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
+
+describe("environment configuration settings", () => {
+  it("copies a pretty-printed Environment Configuration Package and shows success", async () => {
+    const view = renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "复制配置" }));
+
+    await waitFor(() => expect(clipboardWriteTextMock).toHaveBeenCalledWith(`{
+  "schemaVersion": 2,
+  "exportedAt": "2026-08-16T00:00:00.000Z",
+  "customFields": [],
+  "ownerAccountMappings": [],
+  "exportTemplates": []
+}`));
+    expect(await screen.findByText("环境配置已复制")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("downloads the Environment Configuration Package file and shows success", async () => {
+    const view = renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "下载配置文件" }));
+
+    await waitFor(() => expect(downloadEnvConfigMock).toHaveBeenCalledOnce());
+    expect(await screen.findByText("环境配置文件已下载")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("loads an uploaded Environment Configuration Package into the shared validation flow", async () => {
+    const view = renderPage();
+    const file = new File([JSON.stringify(envConfigPackage)], "env-config.json", { type: "application/json" });
+
+    fireEvent.change(screen.getByLabelText("上传环境配置文件"), { target: { files: [file] } });
+
+    await waitFor(() => expect((screen.getByLabelText("粘贴环境配置 JSON") as HTMLTextAreaElement).value).toBe(JSON.stringify(envConfigPackage)));
+    fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      "/env-config/validate",
+      expect.objectContaining({ method: "POST" }),
+    ));
+    const validateCall = apiMock.mock.calls.find(([path, init]) => path === "/env-config/validate" && init?.method === "POST");
+    expect(JSON.parse(String(validateCall?.[1]?.body))).toEqual({ package: envConfigPackage, mode: "additive" });
+    view.unmount();
+  });
+
+  it("does not let an earlier file read overwrite newer pasted text", async () => {
+    const readers: Array<{ resolve: (value: string) => void }> = [];
+    class DeferredFileReader {
+      result: string | null = null;
+      error: Error | null = null;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      readAsText() {
+        readers.push({
+          resolve: (value) => {
+            this.result = value;
+            this.onload?.();
+          },
+        });
+      }
+    }
+    vi.stubGlobal("FileReader", DeferredFileReader);
+    const view = renderPage();
+    try {
+      const input = screen.getByLabelText("粘贴环境配置 JSON") as HTMLTextAreaElement;
+      const file = new File([JSON.stringify(envConfigPackage)], "env-config.json", { type: "application/json" });
+
+      fireEvent.change(screen.getByLabelText("上传环境配置文件"), { target: { files: [file] } });
+      expect(readers).toHaveLength(1);
+      fireEvent.change(input, { target: { value: "{}" } });
+      await act(async () => {
+        readers[0]!.resolve(JSON.stringify(envConfigPackage));
+        await Promise.resolve();
+      });
+
+      expect(input.value).toBe("{}");
+    } finally {
+      view.unmount();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("validates pasted JSON and renders a graded preview with every section selected", async () => {
+    const defaultApi = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === "/env-config/validate" && init?.method === "POST") {
+        return {
+          ...envConfigPlan,
+          sections: {
+            ...envConfigPlan.sections,
+            customFields: [
+              ...envConfigPlan.sections.customFields,
+              { action: "skip", grade: "destructive", reason: "type_conflict", key: "legacy-priority", label: "旧优先级", options: [] },
+            ],
+          },
+        };
+      }
+      return defaultApi(path, init);
+    });
+    const view = renderPage();
+    const mode = screen.getByLabelText("导入模式") as HTMLSelectElement;
+    expect(mode.value).toBe("additive");
+
+    fireEvent.change(screen.getByLabelText("粘贴环境配置 JSON"), { target: { value: JSON.stringify(envConfigPackage) } });
+    fireEvent.change(mode, { target: { value: "sync" } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      "/env-config/validate",
+      expect.objectContaining({ method: "POST" }),
+    ));
+    const validateCall = apiMock.mock.calls.find(([path, init]) => path === "/env-config/validate" && init?.method === "POST");
+    expect(JSON.parse(String(validateCall?.[1]?.body))).toEqual({ package: envConfigPackage, mode: "sync" });
+    expect(await screen.findByText("校验预览")).toBeTruthy();
+    expect(screen.getByText("优先级")).toBeTruthy();
+    expect(screen.getByText("旧选项")).toBeTruthy();
+    expect(screen.getAllByText("破坏性").length).toBeGreaterThan(0);
+    expect(screen.getByText("负责人已存在")).toBeTruthy();
+    const conflictRow = screen.getByText("字段类型冲突").closest(".env-config-plan-row");
+    expect(conflictRow?.classList.contains("destructive")).toBe(true);
+    expect(conflictRow?.textContent).toContain("跳过");
+    expect(conflictRow?.textContent).toContain("破坏性");
+    expect((screen.getByRole("checkbox", { name: "导入自定义字段" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "导入负责人账号映射" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "导入 XLS 导出模板" }) as HTMLInputElement).checked).toBe(true);
+    view.unmount();
+  });
+
+  it("ignores a validation response after the package text changes", async () => {
+    const validation = createDeferred<EnvConfigPlan>();
+    const defaultApi = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((path: string, init?: RequestInit) => (
+      path === "/env-config/validate" && init?.method === "POST"
+        ? validation.promise
+        : defaultApi(path, init)
+    ));
+    const view = renderPage();
+    const input = screen.getByLabelText("粘贴环境配置 JSON") as HTMLTextAreaElement;
+
+    fireEvent.change(input, { target: { value: JSON.stringify(envConfigPackage) } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      "/env-config/validate",
+      expect.objectContaining({ method: "POST" }),
+    ));
+    fireEvent.change(input, { target: { value: "{}" } });
+    await act(async () => {
+      validation.resolve({ ...envConfigPlan, mode: "additive" });
+      await validation.promise;
+    });
+
+    expect(input.value).toBe("{}");
+    expect(screen.queryByText("校验预览")).toBeNull();
+    view.unmount();
+  });
+
+  it("requires confirmation before a Sync Import with a destructive nested option", async () => {
+    const view = renderPage();
+    fireEvent.change(screen.getByLabelText("粘贴环境配置 JSON"), { target: { value: JSON.stringify(envConfigPackage) } });
+    fireEvent.change(screen.getByLabelText("导入模式"), { target: { value: "sync" } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
+    await screen.findByText("校验预览");
+
+    const execute = screen.getByRole("button", { name: "执行导入" }) as HTMLButtonElement;
+    const confirmation = screen.getByRole("checkbox", { name: "我已确认破坏性变更" }) as HTMLInputElement;
+    expect(execute.disabled).toBe(true);
+    expect(confirmation.checked).toBe(false);
+
+    fireEvent.click(confirmation);
+    expect(execute.disabled).toBe(false);
+    view.unmount();
+  });
+
+  it("does not require destructive confirmation when the destructive section is not selected", async () => {
+    const view = renderPage();
+    fireEvent.change(screen.getByLabelText("粘贴环境配置 JSON"), { target: { value: JSON.stringify(envConfigPackage) } });
+    fireEvent.change(screen.getByLabelText("导入模式"), { target: { value: "sync" } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
+    await screen.findByText("校验预览");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "导入自定义字段" }));
+    expect(screen.queryByRole("checkbox", { name: "我已确认破坏性变更" })).toBeNull();
+    const execute = screen.getByRole("button", { name: "执行导入" }) as HTMLButtonElement;
+    expect(execute.disabled).toBe(false);
+    fireEvent.click(execute);
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      "/env-config/import",
+      expect.objectContaining({ method: "POST" }),
+    ));
+    const importCall = apiMock.mock.calls.find(([path, init]) => path === "/env-config/import" && init?.method === "POST");
+    expect(JSON.parse(String(importCall?.[1]?.body))).toEqual({
+      package: envConfigPackage,
+      mode: "sync",
+      sections: ["ownerAccountMappings", "exportTemplates"],
+      confirmDestructive: false,
+    });
+    view.unmount();
+  });
+
+  it("imports only selected sections and shows the result", async () => {
+    const view = renderPage();
+    fireEvent.change(screen.getByLabelText("粘贴环境配置 JSON"), { target: { value: JSON.stringify(envConfigPackage) } });
+    fireEvent.change(screen.getByLabelText("导入模式"), { target: { value: "sync" } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
+    await screen.findByText("校验预览");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "导入负责人账号映射" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "我已确认破坏性变更" }));
+    fireEvent.click(screen.getByRole("button", { name: "执行导入" }));
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      "/env-config/import",
+      expect.objectContaining({ method: "POST" }),
+    ));
+    const importCall = apiMock.mock.calls.find(([path, init]) => path === "/env-config/import" && init?.method === "POST");
+    expect(JSON.parse(String(importCall?.[1]?.body))).toEqual({
+      package: envConfigPackage,
+      mode: "sync",
+      sections: ["customFields", "exportTemplates"],
+      confirmDestructive: true,
+    });
+    expect(await screen.findByText("导入结果")).toBeTruthy();
+    expect(screen.getByText(/自定义字段：.*已创建 2 项.*已停用 1 项/)).toBeTruthy();
+    expect(screen.getByText(/XLS 导出模板：.*已更新 1 项/)).toBeTruthy();
+    expect(await screen.findByText("环境配置导入完成")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("freezes the import controls while an import is running", async () => {
+    const importRequest = createDeferred<EnvConfigImportResult>();
+    const defaultApi = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((path: string, init?: RequestInit) => (
+      path === "/env-config/import" && init?.method === "POST"
+        ? importRequest.promise
+        : defaultApi(path, init)
+    ));
+    const view = renderPage();
+
+    fireEvent.change(screen.getByLabelText("粘贴环境配置 JSON"), { target: { value: JSON.stringify(envConfigPackage) } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
+    await screen.findByText("校验预览");
+    fireEvent.click(screen.getByRole("button", { name: "执行导入" }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      "/env-config/import",
+      expect.objectContaining({ method: "POST" }),
+    ));
+
+    expect((screen.getByLabelText("粘贴环境配置 JSON") as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByLabelText("导入模式") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText("上传环境配置文件") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "导入自定义字段" }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "正在导入…" }) as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => {
+      importRequest.resolve(envConfigImportResult);
+      await importRequest.promise;
+    });
+    expect(await screen.findByText("环境配置导入完成")).toBeTruthy();
+    view.unmount();
+  });
+});
 
 describe("Excel template settings", () => {
   it("edits template metadata, custom-field columns, headers and order", async () => {

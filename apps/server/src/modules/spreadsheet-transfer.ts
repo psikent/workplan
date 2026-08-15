@@ -43,8 +43,8 @@ export class SpreadsheetTransferService {
     private readonly workPlans: WorkPlanService,
   ) {}
 
-  listTemplates(): ExportTemplate[] {
-    this.ensureDefaultTemplate();
+  listTemplates(ensureDefault = true): ExportTemplate[] {
+    if (ensureDefault) this.ensureDefaultTemplate();
     return (this.database.sqlite.prepare("SELECT * FROM export_templates ORDER BY created_at").all() as TemplateRow[]).map((row) => this.serializeTemplate(row));
   }
 

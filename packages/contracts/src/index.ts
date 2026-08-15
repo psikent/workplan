@@ -398,6 +398,91 @@ export function parseEnvConfigPackage(payload: unknown): EnvConfigPackage {
   throw new Error("环境配置包版本不受支持");
 }
 
+export const envConfigActions = ["create", "update", "retire", "delete", "skip", "set_required"] as const;
+export const envConfigOptionActions = ["add_option", "retire_option", "update_option"] as const;
+export const envConfigGrades = ["safe", "destructive"] as const;
+export const envConfigSkipReasons = [
+  "key_exists",
+  "owner_exists",
+  "template_name_exists",
+  "select_without_options",
+  "required_without_default",
+  "missing_field_ref",
+  "type_conflict",
+] as const;
+export const envConfigActionSchema = z.enum(envConfigActions);
+export const envConfigOptionActionSchema = z.enum(envConfigOptionActions);
+export const envConfigGradeSchema = z.enum(envConfigGrades);
+export const envConfigSkipReasonSchema = z.enum(envConfigSkipReasons);
+
+const envConfigPlanItemSchema = z.object({
+  action: envConfigActionSchema,
+  grade: envConfigGradeSchema,
+  reason: envConfigSkipReasonSchema.nullable(),
+});
+
+export const envConfigOptionPlanItemSchema = z.object({
+  action: envConfigOptionActionSchema,
+  grade: envConfigGradeSchema,
+  reason: envConfigSkipReasonSchema.nullable(),
+  value: z.string(),
+  label: z.string(),
+});
+
+export const envConfigFieldPlanItemSchema = envConfigPlanItemSchema.extend({
+  key: z.string(),
+  label: z.string(),
+  options: z.array(envConfigOptionPlanItemSchema).optional(),
+});
+
+export const envConfigMappingPlanItemSchema = envConfigPlanItemSchema.extend({
+  ownerName: z.string(),
+  account: z.string(),
+});
+
+export const envConfigTemplatePlanItemSchema = envConfigPlanItemSchema.extend({
+  name: z.string(),
+  sheetName: z.string(),
+});
+
+export const envConfigPlanSchema = z.object({
+  mode: envConfigImportModeSchema,
+  hasDestructiveChanges: z.boolean(),
+  sections: z.object({
+    customFields: z.array(envConfigFieldPlanItemSchema),
+    ownerAccountMappings: z.array(envConfigMappingPlanItemSchema),
+    exportTemplates: z.array(envConfigTemplatePlanItemSchema),
+  }),
+});
+
+export const envConfigImportOutcomes = ["created", "updated", "retired", "deleted", "skipped", "not_selected"] as const;
+export const envConfigImportOutcomeSchema = z.enum(envConfigImportOutcomes);
+
+export const envConfigOptionResultItemSchema = envConfigOptionPlanItemSchema.extend({
+  outcome: envConfigImportOutcomeSchema,
+});
+
+export const envConfigFieldResultItemSchema = envConfigFieldPlanItemSchema.extend({
+  outcome: envConfigImportOutcomeSchema,
+  options: z.array(envConfigOptionResultItemSchema).optional(),
+});
+
+export const envConfigMappingResultItemSchema = envConfigMappingPlanItemSchema.extend({
+  outcome: envConfigImportOutcomeSchema,
+});
+
+export const envConfigTemplateResultItemSchema = envConfigTemplatePlanItemSchema.extend({
+  outcome: envConfigImportOutcomeSchema,
+});
+
+export const envConfigImportResultSchema = z.object({
+  sections: z.object({
+    customFields: z.array(envConfigFieldResultItemSchema),
+    ownerAccountMappings: z.array(envConfigMappingResultItemSchema),
+    exportTemplates: z.array(envConfigTemplateResultItemSchema),
+  }),
+});
+
 export const exportWorkPlansXlsSchema = z.object({
   columns: z.array(exportTemplateColumnSchema).min(1).max(100),
   sheetName: z.string().trim().min(1).max(31).regex(/^[^\\/?*\[\]:]+$/).default("工作计划"),
@@ -444,6 +529,18 @@ export type EnvConfigPackage = z.infer<typeof envConfigPackageSchema>;
 export type EnvConfigPackageField = z.infer<typeof envConfigPackageFieldSchema>;
 export type EnvConfigImportMode = z.infer<typeof envConfigImportModeSchema>;
 export type EnvConfigSection = z.infer<typeof envConfigSectionSchema>;
+export type EnvConfigAction = z.infer<typeof envConfigActionSchema>;
+export type EnvConfigOptionAction = z.infer<typeof envConfigOptionActionSchema>;
+export type EnvConfigOptionPlanItem = z.infer<typeof envConfigOptionPlanItemSchema>;
+export type EnvConfigOptionResultItem = z.infer<typeof envConfigOptionResultItemSchema>;
+export type EnvConfigGrade = z.infer<typeof envConfigGradeSchema>;
+export type EnvConfigSkipReason = z.infer<typeof envConfigSkipReasonSchema>;
+export type EnvConfigPlan = z.infer<typeof envConfigPlanSchema>;
+export type EnvConfigFieldPlanItem = z.infer<typeof envConfigFieldPlanItemSchema>;
+export type EnvConfigMappingPlanItem = z.infer<typeof envConfigMappingPlanItemSchema>;
+export type EnvConfigTemplatePlanItem = z.infer<typeof envConfigTemplatePlanItemSchema>;
+export type EnvConfigImportOutcome = z.infer<typeof envConfigImportOutcomeSchema>;
+export type EnvConfigImportResult = z.infer<typeof envConfigImportResultSchema>;
 
 export function deriveWorkPlanStatus(startAt: string, endAt: string, now = Date.now()): WorkPlanStatus {
   if (now < Date.parse(startAt)) return "pending";

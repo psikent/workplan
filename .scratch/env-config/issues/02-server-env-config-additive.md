@@ -1,6 +1,6 @@
 # 02 — Server: EnvConfigService — export, validate, Additive Import
 
-Status: open
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/server/src/modules/env-config.ts (new), apps/server/test/env-config.test.ts (new)
@@ -27,3 +27,13 @@ Reuse existing service methods (`CustomFieldService.create`, `OwnerAccountServic
 - A template referencing `custom:<missing>` skips with `missing_field_ref` when the field section is not imported.
 - Invalid JSON/schema → problem details with a stable code (existing AppError conventions).
 - A package field without `sortOrder` imports at its array position (spec R1).
+
+## Comments
+
+- Implemented: `apps/server/src/modules/env-config.ts` (new) + `apps/server/test/env-config.test.ts` (new, 8 tests).
+- Contracts: added the shared import-plan vocabulary — actions `create/update/retire/delete/skip`, grades `safe/destructive`, skip-reason codes, `envConfigPlanSchema` (with `hasDestructiveChanges`) and `envConfigImportResultSchema` (per-item `outcome: created | skipped | not_selected`).
+- `SpreadsheetTransferService.listTemplates(ensureDefault = true)` gained an opt-out parameter so export never fabricates the default template in an empty environment.
+- `validate(payload, mode)` parses via `parseEnvConfigPackage` and reports invalid payloads as 422 `VALIDATION_ERROR` problem details; template `custom:<key>` refs resolve against active local keys ∪ package fields planned for create; sync mode throws 同步导入模式尚未实现 until ticket 03.
+- `importAdditive(payload, sections)` executes creates in one transaction in order fields → mappings → templates; created fields land at their package `sortOrder` (defaults to array position per R1); unselected sections report `not_selected`; a template whose field section is not imported skips with `missing_field_ref`.
+- Tests cover all six acceptance bullets plus `select_without_options` / `required_without_default` skips and active-only export. Note: `buildApp` services do not expose `ownerAccounts` yet, so the test helper constructs `OwnerAccountService` directly (app wiring belongs to ticket 04).
+- Verification: env-config suite 8/8 green; server + web typecheck green; full server suite green except `config.test.ts`, which fails only under `vitest --pool=threads` (sandbox cannot spawn fork workers; `process.chdir` is unsupported in worker threads) — unrelated to this ticket and green under the normal forks pool.

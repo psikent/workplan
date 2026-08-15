@@ -47,6 +47,23 @@ export async function downloadExport() {
   URL.revokeObjectURL(href);
 }
 
+export async function downloadEnvConfig() {
+  const response = await fetch("/api/v1/env-config/file", { credentials: "include" });
+  if (!response.ok) throw new Error("环境配置下载失败");
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const quotedName = disposition.match(/filename="([^"]+)"/i)?.[1];
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = encodedName
+    ? decodeURIComponent(encodedName)
+    : quotedName ?? `env-config-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(href);
+}
+
 export async function downloadWorkPlansXlsCustom(
   columns: ExportTemplateColumn[],
   sheetName: string,

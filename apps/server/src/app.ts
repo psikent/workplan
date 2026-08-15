@@ -18,6 +18,7 @@ import { openDatabase } from "./db/index.js";
 import { AppError } from "./errors.js";
 import { AuthService } from "./modules/auth.js";
 import { CustomFieldService } from "./modules/custom-fields.js";
+import { EnvConfigService } from "./modules/env-config.js";
 import { OwnerAccountService } from "./modules/owner-accounts.js";
 import { RecurrenceService } from "./modules/recurrence.js";
 import { TransferService } from "./modules/transfer.js";
@@ -25,6 +26,7 @@ import { SpreadsheetTransferService } from "./modules/spreadsheet-transfer.js";
 import { WorkPlanService } from "./modules/work-plans.js";
 import { registerAuthRoutes, cookieName } from "./routes/auth.js";
 import { registerCustomFieldRoutes } from "./routes/custom-fields.js";
+import { registerEnvConfigRoutes } from "./routes/env-config.js";
 import { registerOwnerAccountRoutes } from "./routes/owner-accounts.js";
 import { registerRecurrenceRoutes } from "./routes/recurrence.js";
 import { registerTransferRoutes } from "./routes/transfer.js";
@@ -106,6 +108,36 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const recurrence = new RecurrenceService(database, workPlans);
   const transfer = new TransferService(database);
   const spreadsheetTransfer = new SpreadsheetTransferService(database, customFields, workPlans);
+  const envConfig = new EnvConfigService(database, customFields, ownerAccounts, spreadsheetTransfer);
+
+  const envConfigSeedPath = path.join(config.dataDir, "env-config.seed.json");
+  if (!config.isProduction) {
+    try {
+      if (fs.existsSync(envConfigSeedPath)) {
+        const emptySections = [
+          {
+            section: "customFields" as const,
+            isEmpty: !database.sqlite.prepare("SELECT 1 FROM custom_field_definitions LIMIT 1").get(),
+          },
+          {
+            section: "ownerAccountMappings" as const,
+            isEmpty: !database.sqlite.prepare("SELECT 1 FROM owner_account_mappings LIMIT 1").get(),
+          },
+          {
+            section: "exportTemplates" as const,
+            isEmpty: !database.sqlite.prepare("SELECT 1 FROM export_templates LIMIT 1").get(),
+          },
+        ].filter(({ isEmpty }) => isEmpty).map(({ section }) => section);
+
+        if (emptySections.length > 0) {
+          const seedPackage = JSON.parse(fs.readFileSync(envConfigSeedPath, "utf8")) as unknown;
+          envConfig.importAdditive(seedPackage, emptySections);
+        }
+      }
+    } catch (error) {
+      app.log.warn({ err: error, seedPath: envConfigSeedPath }, "development environment configuration auto-restore failed");
+    }
+  }
 
   const publicApiPaths = new Set([
     "/api/v1/setup/status",
@@ -156,6 +188,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await registerRecurrenceRoutes(app, recurrence);
   await registerTransferRoutes(app, transfer);
   await registerSpreadsheetTransferRoutes(app, spreadsheetTransfer);
+  await registerEnvConfigRoutes(app, envConfig);
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof AppError) {
@@ -231,5 +264,10 @@ export async function buildApp(options: BuildAppOptions = {}) {
     database.sqlite.close();
   });
 
-  return { app, config, services: { auth, customFields, workPlans, recurrence, transfer, spreadsheetTransfer }, database };
+  return {
+    app,
+    config,
+    services: { auth, customFields, ownerAccounts, workPlans, recurrence, transfer, spreadsheetTransfer, envConfig },
+    database,
+  };
 }
