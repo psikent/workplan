@@ -329,6 +329,75 @@ export const updateExportTemplateSchema = createExportTemplateSchema.partial().e
   version: z.number().int().positive(),
 });
 
+export const envConfigImportModes = ["additive", "sync"] as const;
+export const envConfigSections = ["customFields", "ownerAccountMappings", "exportTemplates"] as const;
+export const envConfigImportModeSchema = z.enum(envConfigImportModes);
+export const envConfigSectionSchema = z.enum(envConfigSections);
+
+export const envConfigPackageFieldSchema = createCustomFieldSchema.extend({
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+export const envConfigPackageSchema = z
+  .object({
+    schemaVersion: z.literal(2),
+    exportedAt: isoDateTimeSchema,
+    customFields: z.array(envConfigPackageFieldSchema).max(200),
+    ownerAccountMappings: z.array(ownerAccountMappingSchema).max(1000),
+    exportTemplates: z.array(createExportTemplateSchema).max(100),
+  })
+  .superRefine((value, context) => {
+    const seenKeys = new Set<string>();
+    for (const [index, field] of value.customFields.entries()) {
+      if (seenKeys.has(field.key)) {
+        context.addIssue({ code: "custom", path: ["customFields", index, "key"], message: "稳定键重复：" + field.key });
+      }
+      seenKeys.add(field.key);
+    }
+    const seenNames = new Set<string>();
+    for (const [index, template] of value.exportTemplates.entries()) {
+      if (seenNames.has(template.name)) {
+        context.addIssue({ code: "custom", path: ["exportTemplates", index, "name"], message: "模板名称重复：" + template.name });
+      }
+      seenNames.add(template.name);
+    }
+  });
+
+const legacyEnvConfigPackageSchema = z.object({
+  schemaVersion: z.literal(1),
+  exportedAt: isoDateTimeSchema,
+  fields: z.array(createCustomFieldSchema).max(200),
+});
+
+function formatPackageIssues(issues: ReadonlyArray<{ path: PropertyKey[]; message: string }>, fallbackLabel: string): string {
+  return issues
+    .slice(0, 3)
+    .map((issue) => (issue.path.length > 0 ? issue.path.join(".") : fallbackLabel) + "：" + issue.message)
+    .join("；");
+}
+
+export function parseEnvConfigPackage(payload: unknown): EnvConfigPackage {
+  if (!payload || typeof payload !== "object") throw new Error("环境配置包格式无效");
+  const version = (payload as Record<string, unknown>).schemaVersion;
+  if (version === 2) {
+    const parsed = envConfigPackageSchema.safeParse(payload);
+    if (!parsed.success) throw new Error("配置包校验失败：" + formatPackageIssues(parsed.error.issues, "配置包"));
+    return parsed.data;
+  }
+  if (version === 1) {
+    const parsed = legacyEnvConfigPackageSchema.safeParse(payload);
+    if (!parsed.success) throw new Error("配置包（v1）校验失败：" + formatPackageIssues(parsed.error.issues, "配置包"));
+    return {
+      schemaVersion: 2,
+      exportedAt: parsed.data.exportedAt,
+      customFields: parsed.data.fields,
+      ownerAccountMappings: [],
+      exportTemplates: [],
+    };
+  }
+  throw new Error("环境配置包版本不受支持");
+}
+
 export const exportWorkPlansXlsSchema = z.object({
   columns: z.array(exportTemplateColumnSchema).min(1).max(100),
   sheetName: z.string().trim().min(1).max(31).regex(/^[^\\/?*\[\]:]+$/).default("工作计划"),
@@ -371,6 +440,10 @@ export type RecurrenceRule = z.infer<typeof recurrenceRuleSchema>;
 export type WorkPlanSeries = z.infer<typeof workPlanSeriesSchema>;
 export type ExportTemplate = z.infer<typeof exportTemplateSchema>;
 export type ExportTemplateColumn = z.infer<typeof exportTemplateColumnSchema>;
+export type EnvConfigPackage = z.infer<typeof envConfigPackageSchema>;
+export type EnvConfigPackageField = z.infer<typeof envConfigPackageFieldSchema>;
+export type EnvConfigImportMode = z.infer<typeof envConfigImportModeSchema>;
+export type EnvConfigSection = z.infer<typeof envConfigSectionSchema>;
 
 export function deriveWorkPlanStatus(startAt: string, endAt: string, now = Date.now()): WorkPlanStatus {
   if (now < Date.parse(startAt)) return "pending";
