@@ -1,6 +1,6 @@
 # 01 — Contracts: Environment Configuration Package schema
 
-Status: claimed
+Status: resolved
 Blocked by: none
 Spec: ../spec.md
 Scope: packages/contracts
@@ -20,3 +20,7 @@ Add the package schema and types to `packages/contracts/src/index.ts`:
 - `corepack pnpm --filter @workplan/contracts build` passes; server and web typecheck keep passing.
 - No ids, no versions inside package entries — identity is the stable key/name only.
 - Duplicate keys/names rejected; v1 legacy documents parse as fields-only packages; unknown schemaVersion throws.
+
+## Comments
+
+- Implemented in commit 2b113a0. Code review (Standards + Spec): 4 of 6 findings fixed — legacy schema renamed away from Template vocabulary, enum type exports use z.infer style, field shape deduplicated onto createCustomFieldSchema, error formatting extracted; mode/sections enums kept (declared in ticket scope, consumed by ticket 02/04). Spec axis: import-plan vocabulary (actions/grades/skip reasons) is out of this ticket's scope — added to ticket 02's task; inherited constraints from createCustomFieldSchema / ownerAccountMappingSchema / createExportTemplateSchema and import-time rules (required_without_default, sortOrder default) accepted as designed. Build + server/web typecheck green.
