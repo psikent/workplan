@@ -1,0 +1,24 @@
+# 05 — Server: development auto-restore from seed file
+
+Status: open
+Blocked by: 02
+Spec: ../spec.md
+Scope: apps/server/src/app.ts (or server entry), apps/server/test/env-config.test.ts
+
+## Task
+
+In `buildApp`, after services are constructed and before listen: when NOT production AND `data/env-config.seed.json` exists, read it and additive-import each section whose table is empty:
+
+- `custom_field_definitions` empty → import `customFields`
+- `owner_account_mappings` empty → import `ownerAccountMappings`
+- `export_templates` empty → import `exportTemplates`
+
+Rules: additive only (never sync), never overwrite non-empty tables, idempotent, failures logged via `app.log.warn` and never fatal.
+
+## Acceptance (tests first)
+
+- buildApp with temp DB + seed fixture: all three tables populated after startup.
+- Non-empty section untouched while empty sections are imported.
+- Missing seed file → no-op.
+- Production config → never imports, even with seed present.
+- Malformed seed → server still starts; nothing imported.

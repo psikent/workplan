@@ -44,3 +44,19 @@ _Avoid_: Collaborator, limited administrator
 **Token-only Account**:
 A kind of Editor that authenticates external API requests with an issued access Token and has no password login or Web workbench access.
 _Avoid_: API user, service account
+
+**Environment Configuration Package**:
+A versioned JSON document that bundles the global, environment-specific definitions — Custom Field definitions, Work Owner Account mappings, and XLS export templates — so they can be moved between environments or restored into a fresh one.
+_Avoid_: 配置快照, 迁移包, 模板包
+
+**Additive Import**:
+The default import mode for an Environment Configuration Package: adds definitions whose stable key is absent locally, skips those that already exist, and reports every skip.
+_Avoid_: Merge import, incremental import
+
+**Sync Import**:
+An optional import mode that converges the target environment to match the package: safe changes apply, destructive changes are confirmed from a graded preview, and a local definition absent from the package is archived rather than physically deleted.
+_Avoid_: Replace import, destructive import
+
+**Destructive Change**:
+A Sync Import change that would invalidate existing values or retire a definition — archiving a Custom Field or option, making a field required, or a field type conflict. Type conflicts are reported, never migrated.
+_Avoid_: Breaking change, lossy change
