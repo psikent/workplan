@@ -67,6 +67,12 @@ function shiftIsoByLocalDays(value: string, days: number) {
   return date.toISOString();
 }
 
+// Builds an ISO instant that maps back to the given local calendar date in
+// every timezone, so hover tooltip date assertions stay deterministic.
+function localIso(year: number, month: number, day: number) {
+  return new Date(year, month - 1, day, 10, 0, 0, 0).toISOString();
+}
+
 describe("GanttTimeline rendered grid", () => {
   it("renders today's marker when today is the final day of the weekly range", () => {
     const mount = document.createElement("div");
@@ -671,6 +677,78 @@ describe("GanttTimeline rendered grid", () => {
     fireEvent.mouseMove(barWrapper, { clientX: 180, clientY: 120 });
     expect(popup.style.left).toBe("192px");
     expect(popup.style.top).toBe("132px");
+  });
+
+  it("shows the Chinese tooltip content on hover and keeps following the pointer", async () => {
+    const hoverPlan = {
+      ...plan,
+      status: "in_progress" as const,
+      startAt: localIso(2026, 8, 5),
+      endAt: localIso(2026, 8, 5),
+      customFields: { owner: "冯铭倩" },
+    };
+    const { container } = render(
+      <GanttTimeline
+        plans={[hoverPlan]}
+        tooltipProperties={[
+          { id: "status", label: "状态" },
+          {
+            id: "custom:owner",
+            label: "负责人",
+            field: {
+              id: "f9a9dc48-e819-4b1b-89a3-ee680649e842",
+              key: "owner",
+              label: "负责人",
+              description: "",
+              type: "short_text",
+              required: false,
+              defaultValue: null,
+              sortOrder: 0,
+              archivedAt: null,
+              version: 1,
+              options: [],
+              createdAt: "2026-08-01T00:00:00.000Z",
+              updatedAt: "2026-08-01T00:00:00.000Z",
+            },
+          },
+        ]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const barWrapper = await waitFor(() => {
+      const element = container.querySelector<SVGGElement>(".bar-wrapper");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+
+    // Frappe Gantt reveals the hover popup after a 200ms mouseenter delay.
+    fireEvent.mouseEnter(barWrapper);
+
+    // Frappe Gantt lazily builds the Popup on the first hover, so wait for the
+    // custom content to appear inside the wrapper instead of tracking its class.
+    const popup = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>(".popup-wrapper");
+      expect(element).not.toBeNull();
+      expect(element!.innerHTML).toContain("设计评审");
+      return element!;
+    });
+
+    expect(popup.innerHTML).toContain("设计评审");
+    expect(popup.innerHTML).toContain("8月5日 - 8月5日");
+    expect(popup.innerHTML).toContain("状态：进行中");
+    expect(popup.innerHTML).toContain("负责人：冯铭倩");
+    expect(popup.innerHTML).toContain("持续 1 天");
+    expect(popup.textContent).not.toMatch(/[A-Za-z]/);
+
+    // Replacing the popup content must not break configurePopupFollow.
+    fireEvent.mouseMove(barWrapper, { clientX: 140, clientY: 90 });
+    expect(popup.style.left).toBe("152px");
+    expect(popup.style.top).toBe("102px");
   });
 
   it("centers the today line and ball under the current date block", () => {

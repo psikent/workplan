@@ -10,6 +10,7 @@ export type GanttDisplayProperty =
 type Props = {
   plans: WorkPlan[];
   displayProperties?: GanttDisplayProperty[];
+  tooltipProperties?: GanttDisplayProperty[];
   view: "week" | "month";
   rangeStart: Date;
   rangeEnd: Date;
@@ -29,11 +30,12 @@ type RangedGantt = {
 const MIN_DAY_COLUMN_WIDTH = 32;
 const EMPTY_DISPLAY_PROPERTIES: GanttDisplayProperty[] = [];
 
-function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect }: Props) {
+function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
   const plansByIdRef = useRef(plansById);
+  const tooltipPropertiesRef = useRef(tooltipProperties);
   const onScheduleChangeRef = useRef(onScheduleChange);
   const onSelectRef = useRef(onSelect);
   const rangeStartTime = rangeStart.getTime();
@@ -49,6 +51,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, ra
   ])), [displayProperties, plans]);
 
   plansByIdRef.current = plansById;
+  tooltipPropertiesRef.current = tooltipProperties;
   onScheduleChangeRef.current = onScheduleChange;
   onSelectRef.current = onSelect;
 
@@ -125,6 +128,11 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, ra
         move_dependencies: false,
         today_button: false,
         popup_on: "hover",
+        popup: (context: { task: { id: string } }) => {
+          const plan = plansByIdRef.current.get(context.task.id);
+          if (!plan) return false;
+          return formatGanttTooltip(plan, tooltipPropertiesRef.current);
+        },
         on_click: (task: { id: string }) => {
           const plan = plansByIdRef.current.get(task.id);
           if (plan) onSelectRef.current(plan);
@@ -328,6 +336,53 @@ function formatGanttLabel(plan: WorkPlan, properties: GanttDisplayProperty[]) {
     return value === "—" ? [] : [value];
   });
   return details.join(" · ");
+}
+
+// Renders the whole hover tooltip as HTML: a title line plus a details block
+// (Chinese date range, selected properties in order as "属性名：值", and the
+// duration for plans that are in progress or completed). Frappe Gantt's popup callback
+// replaces the .popup-wrapper innerHTML, so the class names below reuse the
+// library's existing tooltip styles while keeping the positioning handled by
+// configurePopupFollow untouched.
+export function formatGanttTooltip(plan: WorkPlan, properties: GanttDisplayProperty[]) {
+  const start = startOfLocalDay(new Date(plan.startAt));
+  const end = startOfLocalDay(new Date(plan.endAt));
+  const crossMonthOrYear = start.getFullYear() !== end.getFullYear() || start.getMonth() !== end.getMonth();
+  const lines = [
+    `${chineseDayLabel(start, crossMonthOrYear)} - ${chineseDayLabel(end, crossMonthOrYear)}`,
+  ];
+  for (const property of properties) {
+    const value = property.id === "status"
+      ? statusLabels[plan.status]
+      : formatCustomFieldValue(plan.customFields[property.field.key], property.field);
+    if (value === "—" || value === "") continue;
+    lines.push(`${escapeHtml(property.label)}：${escapeHtml(value)}`);
+  }
+  if (plan.status === "in_progress" || plan.status === "completed") {
+    lines.push(`持续 ${calendarDayCount(start, end)} 天`);
+  }
+  return `<div class="title">${escapeHtml(plan.title)}</div><div class="details">${lines.join("<br/>")}</div>`;
+}
+
+function chineseDayLabel(date: Date, withYear: boolean) {
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return withYear ? `${date.getFullYear()}年${month}月${day}日` : `${month}月${day}日`;
+}
+
+function calendarDayCount(start: Date, end: Date) {
+  const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.max(1, Math.round((endUtc - startUtc) / 86_400_000) + 1);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function keepGanttLabelsCentered(mount: HTMLElement) {

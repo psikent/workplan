@@ -2,7 +2,7 @@
 import { render, waitFor } from "@testing-library/react";
 import type { CustomFieldDefinition, WorkPlan } from "@workplan/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import GanttTimeline from "./GanttTimeline";
+import GanttTimeline, { formatGanttTooltip, type GanttDisplayProperty } from "./GanttTimeline";
 
 const ganttMock = vi.hoisted(() => ({
   options: null as Record<string, unknown> | null,
@@ -65,6 +65,12 @@ const ownerField: CustomFieldDefinition = {
   createdAt: "2026-08-01T00:00:00.000Z",
   updatedAt: "2026-08-01T00:00:00.000Z",
 };
+
+// Builds an ISO instant that maps back to the given local calendar date in
+// every timezone, so tooltip date assertions stay deterministic.
+function localIso(year: number, month: number, day: number) {
+  return new Date(year, month - 1, day, 10, 0, 0, 0).toISOString();
+}
 
 beforeEach(() => {
   ganttMock.options = null;
@@ -178,5 +184,170 @@ describe("GanttTimeline adapter", () => {
 
     await waitFor(() => expect(ganttMock.renderCount).toBeGreaterThan(renderCount));
     expect(ganttMock.tasks[0]?.name).toBe("进行中");
+  });
+
+  it("feeds the custom tooltip callback while staying in hover mode", async () => {
+    const tooltipPlan = {
+      ...plan,
+      status: "in_progress" as const,
+      startAt: localIso(2026, 8, 5),
+      endAt: localIso(2026, 8, 5),
+    };
+    render(
+      <GanttTimeline
+        plans={[tooltipPlan]}
+        tooltipProperties={[{ id: "status", label: "状态" }]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(ganttMock.options).toMatchObject({ popup_on: "hover" }));
+    const popup = ganttMock.options?.popup as ((context: { task: { id: string } }) => string | false) | undefined;
+    expect(typeof popup).toBe("function");
+    const html = popup!({ task: { id: tooltipPlan.id } });
+    expect(html).toContain("设计评审");
+    expect(html).toContain("8月5日 - 8月5日");
+    expect(html).toContain("进行中");
+    expect(html).toContain("持续 1 天");
+    expect(popup!({ task: { id: "missing-plan" } })).toBe(false);
+  });
+
+  it("uses the latest tooltip selection on re-render without rebuilding the Gantt", async () => {
+    const view = render(
+      <GanttTimeline
+        plans={[plan]}
+        tooltipProperties={[]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(ganttMock.options).not.toBeNull());
+    const renderCount = ganttMock.renderCount;
+    const popup = ganttMock.options?.popup as ((context: { task: { id: string } }) => string | false) | undefined;
+    expect(typeof popup).toBe("function");
+
+    view.rerender(
+      <GanttTimeline
+        plans={[plan]}
+        tooltipProperties={[{ id: "status", label: "状态" }]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(ganttMock.renderCount).toBe(renderCount);
+    const html = popup!({ task: { id: plan.id } });
+    expect(html).toContain("设计评审");
+    expect(html).toContain("待开始");
+  });
+});
+
+describe("formatGanttTooltip", () => {
+  const statusProperty: GanttDisplayProperty[] = [{ id: "status", label: "状态" }];
+  const ownerProperty: GanttDisplayProperty[] = [{ id: "custom:owner", label: "工作负责人", field: ownerField }];
+
+  it("shows only the title and a Chinese date range by default", () => {
+    const html = formatGanttTooltip({ ...plan, startAt: localIso(2026, 8, 1), endAt: localIso(2026, 8, 3) }, []);
+    expect(html).toContain("设计评审");
+    expect(html).toContain("8月1日 - 8月3日");
+    expect(html).not.toContain("持续");
+    expect(html.replace(/<[^>]+>/g, "")).not.toMatch(/[A-Za-z]/);
+  });
+
+  it("renders the selected status as label-prefixed Chinese text", () => {
+    expect(formatGanttTooltip(plan, statusProperty)).toContain("状态：待开始");
+  });
+
+  it("renders a selected custom field with its label prefix and formatCustomFieldValue semantics", () => {
+    expect(formatGanttTooltip(plan, ownerProperty)).toContain("工作负责人：lxj");
+  });
+
+  it("omits the whole line when a selected value is the placeholder", () => {
+    const html = formatGanttTooltip({ ...plan, customFields: {} }, ownerProperty);
+    expect(html).not.toContain("—");
+    expect(html).not.toContain("lxj");
+  });
+
+  it("shows the Chinese duration for in-progress plans including both end days", () => {
+    const html = formatGanttTooltip({
+      ...plan,
+      status: "in_progress",
+      startAt: localIso(2026, 8, 1),
+      endAt: localIso(2026, 8, 3),
+    }, []);
+    expect(html).toContain("8月1日 - 8月3日");
+    expect(html).toContain("持续 3 天");
+  });
+
+  it("shows the Chinese duration for completed plans", () => {
+    const html = formatGanttTooltip({
+      ...plan,
+      status: "completed" as const,
+      startAt: localIso(2026, 8, 1),
+      endAt: localIso(2026, 8, 1),
+    }, []);
+    expect(html).toContain("持续 1 天");
+  });
+
+  it("omits the duration for pending and cancelled plans", () => {
+    expect(formatGanttTooltip(plan, [])).not.toContain("持续");
+    expect(formatGanttTooltip({ ...plan, status: "cancelled" as const }, [])).not.toContain("持续");
+  });
+
+  it("does not include the year for a range within the same month", () => {
+    const html = formatGanttTooltip({ ...plan, startAt: localIso(2026, 8, 1), endAt: localIso(2026, 8, 5) }, []);
+    expect(html).toContain("8月1日 - 8月5日");
+    expect(html).not.toContain("2026年");
+  });
+
+  it("includes the year when the range crosses months", () => {
+    const html = formatGanttTooltip({ ...plan, startAt: localIso(2026, 8, 31), endAt: localIso(2026, 9, 2) }, []);
+    expect(html).toContain("2026年8月31日 - 2026年9月2日");
+  });
+
+  it("includes each side's own year when the range crosses years", () => {
+    const html = formatGanttTooltip({ ...plan, startAt: localIso(2026, 12, 31), endAt: localIso(2027, 1, 2) }, []);
+    expect(html).toContain("2026年12月31日 - 2027年1月2日");
+  });
+
+  it("escapes HTML in the title and property values", () => {
+    const html = formatGanttTooltip({ ...plan, title: "<b>设计&评审</b>" }, []);
+    expect(html).toContain("&lt;b&gt;设计&amp;评审&lt;/b&gt;");
+    expect(html).not.toContain("<b>");
+  });
+
+  it("renders selected properties in selection order", () => {
+    const html = formatGanttTooltip(
+      {
+        ...plan,
+        status: "in_progress",
+        startAt: localIso(2026, 8, 1),
+        endAt: localIso(2026, 8, 3),
+        customFields: { owner: "冯铭倩" },
+      },
+      [...statusProperty, ...ownerProperty],
+    );
+    const text = html.replace(/<[^>]+>/g, "");
+    expect(text).toContain("状态：进行中");
+    expect(text).toContain("工作负责人：冯铭倩");
+    expect(text.indexOf("状态：进行中")).toBeLessThan(text.indexOf("工作负责人：冯铭倩"));
+    expect(text.indexOf("冯铭倩")).toBeLessThan(text.indexOf("持续 3 天"));
+  });
+
+  it("escapes property labels and values in the tooltip", () => {
+    const html = formatGanttTooltip(plan, [{ id: "custom:owner", label: "<b>负责人</b>", field: ownerField }]);
+    expect(html).toContain("&lt;b&gt;负责人&lt;/b&gt;：lxj");
+    expect(html).not.toContain("<b>");
   });
 });

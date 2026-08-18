@@ -31,9 +31,11 @@ function isTextPlanColumn(column: PlanColumn) {
 
 const columnPreferencesKey = "workplan:list-columns:v1";
 const ganttPreferencesKey = "workplan:gantt-properties:v1";
+const tooltipPreferencesKey = "workplan:gantt-tooltip:v1";
 const splitPreferencesKey = "workplan:planner-split:v1";
 const defaultColumnIds: ColumnId[] = ["status", "startAt", "endAt"];
 const defaultGanttDisplayIds: GanttDisplayId[] = [];
+const defaultTooltipDisplayIds: GanttDisplayId[] = [];
 const defaultListPercent = 44;
 const minimumPaneWidth = 360;
 const dividerWidth = 8;
@@ -70,6 +72,21 @@ function loadGanttPreferences(): GanttDisplayId[] {
     )));
   } catch {
     return defaultGanttDisplayIds;
+  }
+}
+
+function loadTooltipPreferences(): GanttDisplayId[] {
+  if (typeof window === "undefined") return defaultTooltipDisplayIds;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(tooltipPreferencesKey) ?? "null") as unknown;
+    if (!saved || typeof saved !== "object") return defaultTooltipDisplayIds;
+    const value = saved as { version?: unknown; visibleIds?: unknown };
+    if (value.version !== 1 || !Array.isArray(value.visibleIds)) return defaultTooltipDisplayIds;
+    return Array.from(new Set(value.visibleIds.filter((id): id is GanttDisplayId =>
+      id === "status" || (typeof id === "string" && id.startsWith("custom:")),
+    )));
+  } catch {
+    return defaultTooltipDisplayIds;
   }
 }
 
@@ -144,6 +161,7 @@ export default function WorkPlansPage() {
   const [showGanttSettings, setShowGanttSettings] = useState(false);
   const [visibleColumnIds, setVisibleColumnIds] = useState<ColumnId[]>(loadColumnPreferences);
   const [ganttDisplayIds, setGanttDisplayIds] = useState<GanttDisplayId[]>(loadGanttPreferences);
+  const [tooltipDisplayIds, setTooltipDisplayIds] = useState<GanttDisplayId[]>(loadTooltipPreferences);
   const [listPercent, setListPercent] = useState(loadListPercent);
   const [resizing, setResizing] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -194,6 +212,13 @@ export default function WorkPlansPage() {
       return property ? [property] : [];
     });
   }, [availableGanttProperties, ganttDisplayIds]);
+  const visibleTooltipProperties = useMemo(() => {
+    const propertiesById = new Map(availableGanttProperties.map((property) => [property.id, property]));
+    return tooltipDisplayIds.flatMap((id) => {
+      const property = propertiesById.get(id);
+      return property ? [property] : [];
+    });
+  }, [availableGanttProperties, tooltipDisplayIds]);
   const planGridStyle = useMemo(() => ({
     "--plan-grid-template": ["minmax(180px, 1.5fr)", ...visibleColumns.map((column) => `${column.width}px`)].join(" "),
     "--plan-grid-min-width": `${180 + visibleColumns.reduce((total, column) => total + column.width, 0)}px`,
@@ -292,6 +317,14 @@ export default function WorkPlansPage() {
       // The adjusted layout remains usable for this session when storage is unavailable.
     }
   }, [listPercent]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(tooltipPreferencesKey, JSON.stringify({ version: 1, visibleIds: tooltipDisplayIds }));
+    } catch {
+      // Tooltip preferences remain usable for this session when storage is unavailable.
+    }
+  }, [tooltipDisplayIds]);
 
   useEffect(() => {
     const panel = plannerPanelRef.current;
@@ -528,6 +561,19 @@ export default function WorkPlansPage() {
     });
   }
 
+  function toggleTooltipProperty(id: GanttDisplayId) {
+    setTooltipDisplayIds((current) => current.includes(id) ? current.filter((propertyId) => propertyId !== id) : [...current, id]);
+  }
+
+  function moveTooltipProperty(id: GanttDisplayId, direction: -1 | 1) {
+    setTooltipDisplayIds((current) => {
+      const index = current.indexOf(id);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current;
+      return arrayMove(current, index, nextIndex);
+    });
+  }
+
   const updateListWidth = useCallback((clientX: number) => {
     const rect = plannerPanelRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0) return;
@@ -689,9 +735,9 @@ export default function WorkPlansPage() {
           </div>
           <div className="column-settings-wrap timeline-gantt-settings">
             <button className={`icon-button column-settings-button ${showGanttSettings ? "selected" : ""}`} type="button" aria-label="甘特条属性" aria-expanded={showGanttSettings} title="甘特图显示设置" onClick={() => setShowGanttSettings((value) => !value)}><ListFilter /></button>
-            {showGanttSettings ? <GanttPropertySettings properties={availableGanttProperties} visibleIds={ganttDisplayIds} onToggle={toggleGanttProperty} onMove={moveGanttProperty} onReset={() => setGanttDisplayIds(defaultGanttDisplayIds)} /> : null}
+            {showGanttSettings ? <GanttPropertySettings properties={availableGanttProperties} visibleIds={ganttDisplayIds} onToggle={toggleGanttProperty} onMove={moveGanttProperty} onReset={() => setGanttDisplayIds(defaultGanttDisplayIds)} tooltipVisibleIds={tooltipDisplayIds} onToggleTooltip={toggleTooltipProperty} onMoveTooltip={moveTooltipProperty} onResetTooltip={() => setTooltipDisplayIds(defaultTooltipDisplayIds)} /> : null}
           </div>
-          <GanttTimeline plans={visiblePlans} displayProperties={visibleGanttProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} onScheduleChange={handleScheduleChange} onSelect={handleSelect} />
+          <GanttTimeline plans={visiblePlans} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} onScheduleChange={handleScheduleChange} onSelect={handleSelect} />
         </div>
       </div>
 
@@ -767,12 +813,16 @@ function ColumnSettings({ columns, visibleIds, onToggle, onMove, onReset }: {
   );
 }
 
-function GanttPropertySettings({ properties, visibleIds, onToggle, onMove, onReset }: {
+function GanttPropertySettings({ properties, visibleIds, onToggle, onMove, onReset, tooltipVisibleIds, onToggleTooltip, onMoveTooltip, onResetTooltip }: {
   properties: GanttDisplayProperty[];
   visibleIds: GanttDisplayId[];
   onToggle: (id: GanttDisplayId) => void;
   onMove: (id: GanttDisplayId, direction: -1 | 1) => void;
   onReset: () => void;
+  tooltipVisibleIds: GanttDisplayId[];
+  onToggleTooltip: (id: GanttDisplayId) => void;
+  onMoveTooltip: (id: GanttDisplayId, direction: -1 | 1) => void;
+  onResetTooltip: () => void;
 }) {
   const propertiesById = new Map(properties.map((property) => [property.id, property]));
   const orderedProperties = [
@@ -781,6 +831,13 @@ function GanttPropertySettings({ properties, visibleIds, onToggle, onMove, onRes
       return property ? [property] : [];
     }),
     ...properties.filter((property) => !visibleIds.includes(property.id)),
+  ];
+  const orderedTooltipProperties = [
+    ...tooltipVisibleIds.flatMap((id) => {
+      const property = propertiesById.get(id);
+      return property ? [property] : [];
+    }),
+    ...properties.filter((property) => !tooltipVisibleIds.includes(property.id)),
   ];
   return (
     <div className="column-settings-popover gantt-property-popover" role="dialog" aria-label="甘特条属性">
@@ -800,6 +857,28 @@ function GanttPropertySettings({ properties, visibleIds, onToggle, onMove, onRes
             </div>
           );
         })}
+      </div>
+      <div className="gantt-popover-section">
+        <div className="gantt-popover-section-head">
+          <div><strong>甘特条浮动提示</strong><small>选择并排序悬停提示内显示的内容</small></div>
+          <button className="text-button" type="button" onClick={onResetTooltip}><RotateCcw />清空</button>
+        </div>
+        <div className="column-settings-list">
+          {orderedTooltipProperties.map((property) => {
+            const checked = tooltipVisibleIds.includes(property.id);
+            const visibleIndex = tooltipVisibleIds.indexOf(property.id);
+            return (
+              <div className="column-setting-row" key={property.id}>
+                <label><input type="checkbox" aria-label={`浮动提示 ${property.label}`} checked={checked} onChange={() => onToggleTooltip(property.id)} /><span>{property.label}</span></label>
+                {property.field ? <small>自定义字段</small> : <small>内置属性</small>}
+                <div className="column-order-actions">
+                  <button type="button" aria-label={`上移浮动提示 ${property.label}`} disabled={!checked || visibleIndex <= 0} onClick={() => onMoveTooltip(property.id, -1)}><ArrowUp /></button>
+                  <button type="button" aria-label={`下移浮动提示 ${property.label}`} disabled={!checked || visibleIndex < 0 || visibleIndex === tooltipVisibleIds.length - 1} onClick={() => onMoveTooltip(property.id, 1)}><ArrowDown /></button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

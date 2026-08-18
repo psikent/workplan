@@ -385,6 +385,105 @@ describe("work plan range and Gantt display", () => {
   });
 });
 
+describe("work plan tooltip settings", () => {
+  it("keeps the tooltip selection independent and persists it across renders", async () => {
+    const firstRender = renderPage();
+    await screen.findByText("示例计划");
+
+    expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ tooltipProperties: [], displayProperties: [] });
+
+    fireEvent.click(screen.getByRole("button", { name: "甘特条属性" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "浮动提示 负责人" }));
+
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      tooltipProperties: [expect.objectContaining({ id: "custom:owner", label: "负责人" })],
+    }));
+    expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ displayProperties: [] });
+    expect(JSON.parse(localStorage.getItem("workplan:gantt-tooltip:v1") ?? "null"))
+      .toEqual({ version: 1, visibleIds: ["custom:owner"] });
+
+    firstRender.unmount();
+    const secondRender = renderPage();
+    await screen.findByText("示例计划");
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      tooltipProperties: [expect.objectContaining({ id: "custom:owner" })],
+      displayProperties: [],
+    }));
+    secondRender.unmount();
+  });
+
+  it("stops the bar property selection from changing the tooltip selection", async () => {
+    localStorage.setItem("workplan:gantt-tooltip:v1", JSON.stringify({ version: 1, visibleIds: ["custom:owner"] }));
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      tooltipProperties: [expect.objectContaining({ id: "custom:owner" })],
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "甘特条属性" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "状态" }));
+
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      displayProperties: [expect.objectContaining({ id: "status" })],
+    }));
+    expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      tooltipProperties: [expect.objectContaining({ id: "custom:owner" })],
+    });
+    view.unmount();
+  });
+
+  it("reorders the tooltip properties and persists the new order", async () => {
+    localStorage.setItem("workplan:gantt-tooltip:v1", JSON.stringify({ version: 1, visibleIds: ["status", "custom:owner"] }));
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      tooltipProperties: [expect.objectContaining({ id: "status" }), expect.objectContaining({ id: "custom:owner" })],
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "甘特条属性" }));
+    fireEvent.click(screen.getByRole("button", { name: "下移浮动提示 状态" }));
+
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      tooltipProperties: [expect.objectContaining({ id: "custom:owner" }), expect.objectContaining({ id: "status" })],
+    }));
+    expect(JSON.parse(localStorage.getItem("workplan:gantt-tooltip:v1") ?? "null"))
+      .toEqual({ version: 1, visibleIds: ["custom:owner", "status"] });
+    view.unmount();
+  });
+
+  it("clears the tooltip selection with the section button while keeping bar properties", async () => {
+    localStorage.setItem("workplan:gantt-tooltip:v1", JSON.stringify({ version: 1, visibleIds: ["status"] }));
+    localStorage.setItem("workplan:gantt-properties:v1", JSON.stringify({ version: 1, visibleIds: ["custom:owner"] }));
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      tooltipProperties: [expect.objectContaining({ id: "status" })],
+      displayProperties: [expect.objectContaining({ id: "custom:owner" })],
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "甘特条属性" }));
+    const tooltipSection = view.container.querySelector<HTMLElement>(".gantt-popover-section");
+    expect(tooltipSection).not.toBeNull();
+    fireEvent.click(within(tooltipSection!).getByRole("button", { name: "清空" }));
+
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ tooltipProperties: [] }));
+    expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      displayProperties: [expect.objectContaining({ id: "custom:owner" })],
+    });
+    expect(JSON.parse(localStorage.getItem("workplan:gantt-tooltip:v1") ?? "null")).toEqual({ version: 1, visibleIds: [] });
+    view.unmount();
+  });
+
+  it("falls back to an empty tooltip selection for malformed persisted data", async () => {
+    localStorage.setItem("workplan:gantt-tooltip:v1", JSON.stringify({ version: 2, visibleIds: ["custom:owner"] }));
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ tooltipProperties: [] }));
+    expect(screen.getByRole("button", { name: "甘特条属性" })).toBeTruthy();
+    view.unmount();
+  });
+});
+
 describe("XLS transfer", () => {
   it("offers the hidden owner account only in the drawer and export flow", async () => {
     const view = renderPage();
