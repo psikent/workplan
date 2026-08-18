@@ -1,5 +1,9 @@
 # Spec: Browser Notifications
 
+> Status: **待开发** — 规格已定稿，票据已就绪（`issues/01`-`03`，`Status: ready-for-agent`），按依赖顺序实现。
+>
+> 票据索引：01 通知调度器 | 02 AppShell 铃铛控制与持久化 | 03 测试与回归。依赖：01 → 02 → 03。
+
 ## Goal
 
 When a Work Plan's start time arrives, the browser shows a system-level notification even when the tab is in the background, so the user does not miss a scheduled work item. The feature is entirely browser-side (Web Notifications API + client-side scheduling): no server storage, no push infrastructure, no service worker.
@@ -49,3 +53,20 @@ See `CONTEXT.md`: **Work Plan**, **Automatic Status**, **Manual Status Override*
 
 ## Out of scope
 - Web Push / service workers / background sync; server-side reminders or a notification center; per-account (server-stored) preferences; email or other channels; completion/overdue notifications.
+
+## 票据索引
+
+- 01-notification-scheduler.md — 通知调度器（lib/notifications.ts：计算下次触发、setTimeout、重排、去重、可见性降级）
+- 02-bell-control-and-persistence.md — AppShell 铃铛控制与本地持久化（权限流程 + workplan:notifications:v1）
+- 03-tests-and-regression.md — 调度器/控制组件测试与既有「tag/reminder/notification 已移除」回归
+
+依赖：01 → 02 → 03。
+
+## 验收标准（Acceptance criteria）
+
+1. 工作计划进入 in_progress（到达开始时间且无手动状态覆盖抑制）时，后台标签页弹出系统通知；同一计划的开始通知由 tag 去重，仅触发一次。
+2. 权限流程：铃铛开关在用户手势中调用 Notification.requestPermission()；granted/denied 状态持久化；denied 或浏览器不支持（"Notification" in window 为假）时禁用开关并给出中文说明，降级为应用内 toast。
+3. 可选提前通知（默认 5 分钟）作用于同一条件；完成/逾期转换不在范围。
+4. 调度器仅在 7 天水平线内布防，数据刷新 / focus / visibilitychange / 浏览器唤醒后重排；文档可见时优先应用内 toast 而不是系统通知，避免重复打扰。
+5. localStorage workplan:notifications:v1 采用与 theme/sidebar 相同的防御式读写；存储失败回退默认且不影响工作台。
+6. 全部既有测试通过；服务端继续拒绝 /api/v1/tags、/api/v1/notifications 与 tags/reminders 属性（不恢复任何服务端提醒/通知存储）。

@@ -28,6 +28,18 @@ _Avoid_: Child task, recurrence copy
 A globally defined, typed property that can be attached to every Work Plan without changing the Work Plan's built-in attributes.
 _Avoid_: Metadata blob, task field
 
+**Monthly Goal**:
+A per-month work objective, defined by an Administrator or an Editor, with its own title, description, and month. It links to at most one Work Plan and derives its completion from that Work Plan's effective status.
+_Avoid_: Goal tag, milestone, target
+
+**Task-Goal Tag**:
+The link marker on a Work Plan that references a Monthly Goal. A Work Plan may carry several Task-Goal Tags for several Monthly Goals; a Monthly Goal accepts at most one Task-Goal Tag.
+_Avoid_: Free-form tag, label, remark tag
+
+**Derived Goal Status**:
+The Monthly Goal status computed from its linked Work Plan's effective status, respecting any Manual Status Override. A Monthly Goal without a linked Work Plan is unlinked rather than having a status.
+_Avoid_: Manual goal status, goal progress percentage
+
 **Work Owner Account**:
 A read-only Work Plan property derived at read and export time by mapping the `owner` Custom Field's displayed person name to an internally maintained account. It is not editable or stored on an individual Work Plan.
 Its global name-to-account mappings are maintained by an Administrator in Settings; a mapping change applies immediately to every matching Work Plan.
