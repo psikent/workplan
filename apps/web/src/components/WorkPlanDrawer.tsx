@@ -10,6 +10,7 @@ type Props = {
   plan: WorkPlan | null;
   series?: WorkPlanSeries | null | undefined;
   fields: CustomFieldDefinition[];
+  initialDate?: Date | null;
   ownerAccountMappings?: OwnerAccountMapping[];
   ownerAccountMappingsLoading?: boolean;
   ownerAccountMappingsError?: boolean;
@@ -21,8 +22,8 @@ type Props = {
   onDelete?: (plan: WorkPlan) => Promise<void>;
 };
 
-function defaultTimes() {
-  const start = new Date();
+function defaultTimes(date = new Date()) {
+  const start = new Date(date);
   start.setHours(8, 30, 0, 0);
   const end = new Date(start);
   end.setHours(18, 0, 0, 0);
@@ -37,8 +38,8 @@ function defaultCustomValues(fields: CustomFieldDefinition[]) {
   }));
 }
 
-export default function WorkPlanDrawer({ plan, series, fields, ownerAccountMappings = [], ownerAccountMappingsLoading = false, ownerAccountMappingsError = false, open, saving, onClose, onSave, onDuplicate, onDelete }: Props) {
-  const defaults = useMemo(defaultTimes, [open]);
+export default function WorkPlanDrawer({ plan, series, fields, initialDate = null, ownerAccountMappings = [], ownerAccountMappingsLoading = false, ownerAccountMappingsError = false, open, saving, onClose, onSave, onDuplicate, onDelete }: Props) {
+  const defaults = useMemo(() => defaultTimes(initialDate ?? undefined), [initialDate, open]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<WorkPlanStatus>("pending");
@@ -51,7 +52,7 @@ export default function WorkPlanDrawer({ plan, series, fields, ownerAccountMappi
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const nextDefaults = defaultTimes();
+    const nextDefaults = defaultTimes(initialDate ?? undefined);
     setTitle(plan?.title ?? "");
     setDescription(plan?.description ?? "");
     setStatus(plan?.status ?? "pending");
@@ -62,7 +63,7 @@ export default function WorkPlanDrawer({ plan, series, fields, ownerAccountMappi
     setRecurrence(series?.active ? series.recurrence.frequency : "none");
     setIntervalValue(series?.active ? series.recurrence.interval : 1);
     setError("");
-  }, [open, plan, series]);
+  }, [initialDate, open, plan, series]);
 
   useEffect(() => {
     if (!open || plan) return;

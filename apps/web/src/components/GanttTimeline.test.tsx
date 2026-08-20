@@ -111,6 +111,18 @@ describe("GanttTimeline adapter", () => {
     expect(onScheduleChange).not.toHaveBeenCalled();
   });
 
+  it("supplies a virtual whole-day task for an empty month grid", async () => {
+    const rangeStart = new Date(2026, 7, 1);
+    const rangeEnd = new Date(2026, 8, 1);
+    render(<GanttTimeline plans={[]} displayProperties={[]} view="month" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />);
+
+    await waitFor(() => expect(ganttMock.tasks).toHaveLength(1));
+    expect(ganttMock.tasks[0]?.id).toBe("__empty-timeline__");
+    expect(ganttMock.tasks[0]?.start).toEqual(new Date(2026, 7, 1));
+    expect(ganttMock.tasks[0]?.end).toEqual(new Date(2026, 7, 31, 23, 59, 59, 999));
+    expect(ganttMock.options).toMatchObject({ column_width: 32, scroll_to: "2026-08-01" });
+  });
+
   it("uses whole-day snapping for the natural month view", async () => {
     const rangeStart = new Date(2026, 7, 1);
     const rangeEnd = new Date(2026, 8, 1);

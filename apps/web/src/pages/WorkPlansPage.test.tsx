@@ -291,6 +291,28 @@ describe("work plan ordering and copying", () => {
 });
 
 describe("work plan range and Gantt display", () => {
+  it("keeps the date timeline mounted when search, status or custom filters have no results", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    const searchInput = screen.getByPlaceholderText("搜索工作计划");
+    fireEvent.change(searchInput, { target: { value: "不存在" } });
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plans: [] }));
+
+    fireEvent.change(view.container.querySelector(".filter-toolbar select")!, { target: { value: "completed" } });
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plans: [] }));
+
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+    const advancedSelects = view.container.querySelectorAll(".advanced-filter-panel select");
+    fireEvent.change(advancedSelects[0]!, { target: { value: "owner" } });
+    await waitFor(() => expect(screen.getByPlaceholderText("输入筛选值")).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText("输入筛选值"), { target: { value: "nobody" } });
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plans: [] }));
+
+    expect(screen.getByText("这个时间范围还没有工作计划")).toBeTruthy();
+    view.unmount();
+  });
+
   it("opens a linked plan in the week containing its schedule", async () => {
     const linkedPlan = {
       ...plan,
@@ -313,6 +335,104 @@ describe("work plan range and Gantt display", () => {
       plan: { id: linkedPlan.id },
       open: true,
     }));
+    view.unmount();
+  });
+
+  it("opens a date-seeded new drawer without creating a plan before save", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    const ganttProps = ganttPropsMock.mock.calls.at(-1)?.[0] as {
+      onCreateAt: (date: Date) => void;
+    };
+    act(() => ganttProps.onCreateAt(new Date(2026, 7, 12)));
+
+    await waitFor(() => expect(drawerPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      plan: null,
+      open: true,
+      initialDate: new Date(2026, 7, 12),
+    }));
+    expect(apiMock.mock.calls.some(([path, init]) => path === "/work-plans" && init?.method === "POST")).toBe(false);
+    view.unmount();
+  });
+
+  it("shows normal creation feedback and preserves the active range and filters", async () => {
+    mockMutableWorkPlans();
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    const initialGantt = ganttPropsMock.mock.calls.at(-1)?.[0] as { rangeStart: Date; rangeEnd: Date; view: string };
+
+    fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "新计划" } });
+    fireEvent.change(view.container.querySelector(".filter-toolbar select")!, { target: { value: "pending" } });
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+    fireEvent.change(view.container.querySelector(".advanced-filter-panel select")!, { target: { value: "owner" } });
+    await waitFor(() => expect(screen.getByPlaceholderText("输入筛选值")).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText("输入筛选值"), { target: { value: "lxj" } });
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plans: [] }));
+
+    fireEvent.click(screen.getByRole("button", { name: "新建工作计划" }));
+    const drawer = drawerPropsMock.mock.calls.at(-1)?.[0] as {
+      onSave: (input: object, recurrence: null) => Promise<void>;
+    };
+    await act(async () => {
+      await drawer.onSave({
+        title: "新计划",
+        description: "",
+        status: "pending",
+        statusMode: "manual",
+        startAt: new Date(2026, 7, 8, 10).toISOString(),
+        endAt: new Date(2026, 7, 8, 12).toISOString(),
+        customFields: { owner: "lxj" },
+      }, null);
+    });
+
+    expect(await screen.findByText("工作计划已保存")).toBeTruthy();
+    expect((screen.getByPlaceholderText("搜索工作计划") as HTMLInputElement).value).toBe("新计划");
+    expect((view.container.querySelector(".filter-toolbar select") as HTMLSelectElement).value).toBe("pending");
+    expect((view.container.querySelector(".advanced-filter-panel select") as HTMLSelectElement).value).toBe("owner");
+    expect((screen.getByPlaceholderText("输入筛选值") as HTMLInputElement).value).toBe("lxj");
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      rangeStart: initialGantt.rangeStart,
+      rangeEnd: initialGantt.rangeEnd,
+      view: initialGantt.view,
+      plans: [expect.objectContaining({ title: "新计划" })],
+    }));
+    view.unmount();
+  });
+
+  it.each([
+    ["date range", { title: "范围外计划", startAt: new Date(2026, 7, 20, 10).toISOString(), endAt: new Date(2026, 7, 20, 12).toISOString(), customFields: {} }],
+    ["search", { title: "其他计划", startAt: new Date(2026, 7, 8, 10).toISOString(), endAt: new Date(2026, 7, 8, 12).toISOString(), customFields: {} }],
+    ["status", { title: "状态隐藏计划", status: "pending", statusMode: "manual", startAt: new Date(2026, 7, 8, 10).toISOString(), endAt: new Date(2026, 7, 8, 12).toISOString(), customFields: {} }],
+    ["Custom Field", { title: "字段隐藏计划", startAt: new Date(2026, 7, 8, 10).toISOString(), endAt: new Date(2026, 7, 8, 12).toISOString(), customFields: { owner: "lxj" } }],
+  ])("explains when a newly created plan is hidden by the %s", async (reason, input) => {
+    mockMutableWorkPlans();
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    if (reason === "search") fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "只看这个标题" } });
+    if (reason === "status") fireEvent.change(view.container.querySelector(".filter-toolbar select")!, { target: { value: "completed" } });
+    if (reason === "Custom Field") {
+      fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+      fireEvent.change(view.container.querySelector(".advanced-filter-panel select")!, { target: { value: "owner" } });
+      await waitFor(() => expect(screen.getByPlaceholderText("输入筛选值")).toBeTruthy());
+      fireEvent.change(screen.getByPlaceholderText("输入筛选值"), { target: { value: "nobody" } });
+    }
+    if (reason !== "date range") {
+      await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plans: [] }));
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "新建工作计划" }));
+    const drawer = drawerPropsMock.mock.calls.at(-1)?.[0] as {
+      onSave: (input: object, recurrence: null) => Promise<void>;
+    };
+    await act(async () => {
+      await drawer.onSave({
+        description: "",
+        ...input,
+      }, null);
+    });
+
+    expect(await screen.findByText("工作计划已创建，但在当前时间范围或筛选条件下不可见")).toBeTruthy();
     view.unmount();
   });
 

@@ -17,6 +17,7 @@ type Props = {
   verticalScrollPeerRef?: RefObject<HTMLElement | null>;
   onScheduleChange: (plan: WorkPlan, startAt: string, endAt: string) => void;
   onSelect: (plan: WorkPlan) => void;
+  onCreateAt?: (date: Date) => void;
 };
 
 type RangedGantt = {
@@ -29,8 +30,10 @@ type RangedGantt = {
 
 const MIN_DAY_COLUMN_WIDTH = 32;
 const EMPTY_DISPLAY_PROPERTIES: GanttDisplayProperty[] = [];
+const EMPTY_TIMELINE_TASK_ID = "__empty-timeline__";
+const BAR_DOUBLE_CLICK_WINDOW_MS = 500;
 
-function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect }: Props) {
+function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect, onCreateAt }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
@@ -38,6 +41,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
   const tooltipPropertiesRef = useRef(tooltipProperties);
   const onScheduleChangeRef = useRef(onScheduleChange);
   const onSelectRef = useRef(onSelect);
+  const onCreateAtRef = useRef(onCreateAt);
   const rangeStartTime = rangeStart.getTime();
   const rangeEndTime = rangeEnd.getTime();
   const dayCount = calendarDaySpan(rangeStart, rangeEnd);
@@ -54,6 +58,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
   tooltipPropertiesRef.current = tooltipProperties;
   onScheduleChangeRef.current = onScheduleChange;
   onSelectRef.current = onSelect;
+  onCreateAtRef.current = onCreateAt;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -80,29 +85,38 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
     let cleanupVerticalScrollSync = () => {};
     let cleanupPlanRowHover = () => {};
     let cleanupPopupFollow = () => {};
+    let cleanupDateCellCreation = () => {};
+    let cleanupDateCellAffordance = () => {};
     const container = containerRef.current;
     if (!container) return;
-    if (plans.length === 0) {
-      container.replaceChildren();
-      return;
-    }
     if (columnWidth <= 0) return;
 
     void loadGantt().then((Gantt) => {
       if (disposed || !containerRef.current) return;
       containerRef.current.replaceChildren();
-      const tasks = plans.map((plan) => ({
-        id: plan.id,
-        name: formatGanttLabel(plan, displayProperties),
-        start: startOfLocalDay(new Date(plan.startAt)),
-        end: endOfLocalDay(new Date(plan.endAt)),
-        progress: plan.status === "completed" ? 100 : plan.status === "in_progress" ? 50 : 0,
-        dependencies: "",
-        custom_class: `gantt-${plan.status}`,
-      }));
+      const tasks = plans.length > 0
+        ? plans.map((plan) => ({
+          id: plan.id,
+          name: formatGanttLabel(plan, displayProperties),
+          start: startOfLocalDay(new Date(plan.startAt)),
+          end: endOfLocalDay(new Date(plan.endAt)),
+          progress: plan.status === "completed" ? 100 : plan.status === "in_progress" ? 50 : 0,
+          dependencies: "",
+          custom_class: `gantt-${plan.status}`,
+        }))
+        : [{
+          id: EMPTY_TIMELINE_TASK_ID,
+          name: "",
+          start: startOfLocalDay(new Date(rangeStartTime)),
+          end: endOfLocalDay(new Date(rangeEndTime - 1)),
+          progress: 0,
+          dependencies: "",
+          custom_class: "gantt-empty",
+        }];
       const exactRangeStart = new Date(rangeStartTime);
       const exactRangeEnd = new Date(rangeEndTime);
       exactRangeEnd.setDate(exactRangeEnd.getDate() - 1);
+      let lastBarClick: { planId: string; at: number } | null = null;
       const gantt = new Gantt(containerRef.current, tasks, {
         view_modes: [{
           name: "Day",
@@ -135,7 +149,18 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
         },
         on_click: (task: { id: string }) => {
           const plan = plansByIdRef.current.get(task.id);
-          if (plan) onSelectRef.current(plan);
+          if (!plan) return;
+
+           // Frappe emits two click callbacks before its dblclick callback. Keep the
+           // first click responsive for ordinary editing, but do not reopen the same
+           // drawer when the user double-clicks an existing bar.
+           const now = Date.now();
+           if (lastBarClick?.planId === plan.id && now - lastBarClick.at < BAR_DOUBLE_CLICK_WINDOW_MS) {
+             lastBarClick = null;
+             return;
+           }
+           lastBarClick = { planId: plan.id, at: now };
+           onSelectRef.current(plan);
         },
       }) as unknown as RangedGantt;
 
@@ -145,6 +170,9 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
       gantt.gantt_end = exactRangeEnd;
       gantt.setup_date_values();
       gantt.render();
+       if (plans.length === 0) {
+         containerRef.current.querySelector<SVGGElement>(`.bar-wrapper[data-id="${EMPTY_TIMELINE_TASK_ID}"]`)?.remove();
+       }
       ensureCurrentDateMarker(gantt, containerRef.current, exactRangeStart, exactRangeEnd);
       centerDateMarkersWithinDayColumns(containerRef.current, columnWidth);
       applyWholeDayBarGeometry(containerRef.current, plansById, exactRangeStart, columnWidth);
@@ -154,7 +182,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
         if (!disposed && containerRef.current) alignCurrentDateMarker(containerRef.current);
       });
       cleanupCenteredLabels = keepGanttLabelsCentered(containerRef.current);
-      trimGanttToPlanRows(containerRef.current, plans.length);
+      trimGanttToPlanRows(containerRef.current, Math.max(plans.length, 1));
       cleanupVerticalScrollSync = synchronizeVerticalScroll(
         containerRef.current.querySelector<HTMLElement>(".gantt-container"),
         verticalScrollPeerRef?.current ?? null,
@@ -166,6 +194,17 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
         getPlanById: (planId) => plansByIdRef.current.get(planId),
         onScheduleChange: (plan, startAt, endAt) => onScheduleChangeRef.current(plan, startAt, endAt),
       });
+      cleanupDateCellAffordance = configureDateCellAffordance(containerRef.current, {
+         rangeStart: exactRangeStart,
+         dayCount,
+         columnWidth,
+       });
+       cleanupDateCellCreation = configureDateCellCreation(containerRef.current, {
+        rangeStart: exactRangeStart,
+        dayCount,
+        columnWidth,
+        onCreateAt: (date) => onCreateAtRef.current?.(date),
+      });
     });
     return () => {
       disposed = true;
@@ -175,6 +214,8 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
       cleanupPlanRowHover();
       cleanupPopupFollow();
       cleanupScheduleInteraction();
+       cleanupDateCellCreation();
+       cleanupDateCellAffordance();
     };
   }, [columnWidth, ganttInputSignature, rangeEndTime, rangeStartTime, verticalScrollPeerRef]);
 
@@ -465,6 +506,13 @@ function trimGanttToPlanRows(mount: HTMLElement, planCount: number) {
   svg.setAttribute("height", String(contentHeight));
 }
 
+export function timelineDateAtPosition(position: number, rangeStart: Date, columnWidth: number, dayCount: number) {
+  if (!Number.isFinite(position) || !Number.isFinite(columnWidth) || columnWidth <= 0 || dayCount <= 0) return null;
+  const dayIndex = Math.floor(position / columnWidth);
+  if (dayIndex < 0 || dayIndex >= dayCount) return null;
+  return new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate() + dayIndex);
+}
+
 function timelineDayPosition(date: Date, rangeStart: Date, columnWidth: number) {
   const dayOffset = Math.round((
     Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
@@ -511,6 +559,105 @@ function applyWholeDayBarGeometry(mount: HTMLElement, plansById: Map<string, Wor
       highlight.style.width = `${width}px`;
     }
   }
+}
+
+function configureDateCellAffordance(mount: HTMLElement, options: {
+  rangeStart: Date;
+  dayCount: number;
+  columnWidth: number;
+}) {
+  const scrollContainer = mount.querySelector<HTMLElement>(".gantt-container");
+  const svg = mount.querySelector<SVGSVGElement>("svg.gantt");
+  const shell = mount.parentElement;
+  if (!scrollContainer || !svg || !shell) return () => {};
+
+  const cell = document.createElement("div");
+  cell.className = "timeline-create-hover-cell";
+  cell.setAttribute("aria-hidden", "true");
+  const hint = document.createElement("div");
+  hint.className = "timeline-create-hover-hint";
+  hint.textContent = "双击新建工作计划";
+  hint.setAttribute("aria-hidden", "true");
+  cell.append(hint);
+  shell.append(cell);
+
+  const hide = () => {
+    cell.classList.remove("visible");
+  };
+  const showAt = (row: SVGRectElement, event: PointerEvent) => {
+    const svgRect = svg.getBoundingClientRect();
+    const shellRect = shell.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    const position = event.clientX - svgRect.left + scrollContainer.scrollLeft;
+    const date = timelineDateAtPosition(position, options.rangeStart, options.columnWidth, options.dayCount);
+    if (!date) {
+      hide();
+      return;
+    }
+
+    const dayIndex = Math.floor(position / options.columnWidth);
+    const left = svgRect.left - shellRect.left + dayIndex * options.columnWidth - scrollContainer.scrollLeft;
+    const top = rowRect.top - shellRect.top;
+    cell.style.left = `${left}px`;
+    cell.style.top = `${top}px`;
+    cell.style.width = `${options.columnWidth}px`;
+    cell.style.height = `${Math.max(1, rowRect.height)}px`;
+    hint.style.left = `${Math.max(4, Math.min(left + 8, shell.clientWidth - 160)) - left}px`;
+    hint.style.top = "6px";
+    cell.classList.add("visible");
+  };
+
+  const cleanups: Array<() => void> = [];
+  for (const row of mount.querySelectorAll<SVGRectElement>(".grid-row")) {
+    const enter = (event: PointerEvent) => showAt(row, event);
+    const move = (event: PointerEvent) => showAt(row, event);
+    row.addEventListener("pointerenter", enter);
+    row.addEventListener("pointermove", move);
+    row.addEventListener("pointerleave", hide);
+    cleanups.push(() => {
+      row.removeEventListener("pointerenter", enter);
+      row.removeEventListener("pointermove", move);
+      row.removeEventListener("pointerleave", hide);
+    });
+  }
+
+  const hideOnScroll = () => hide();
+  scrollContainer.addEventListener("scroll", hideOnScroll, { passive: true });
+  return () => {
+    cleanups.forEach((cleanup) => cleanup());
+    scrollContainer.removeEventListener("scroll", hideOnScroll);
+    cell.remove();
+  };
+}
+
+function configureDateCellCreation(mount: HTMLElement, options: {
+  rangeStart: Date;
+  dayCount: number;
+  columnWidth: number;
+  onCreateAt: (date: Date) => void;
+}) {
+  const scrollContainer = mount.querySelector<HTMLElement>(".gantt-container");
+  const svg = mount.querySelector<SVGSVGElement>("svg.gantt");
+  if (!scrollContainer || !svg) return () => {};
+
+  const handleDoubleClick = (event: MouseEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(".bar-wrapper, .handle, .grid-header, .popup-wrapper")) return;
+    if (!target.closest(".grid-row")) return;
+
+    const svgRect = svg.getBoundingClientRect();
+    const position = event.clientX - svgRect.left + scrollContainer.scrollLeft;
+    const date = timelineDateAtPosition(position, options.rangeStart, options.columnWidth, options.dayCount);
+    if (!date) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    options.onCreateAt(date);
+  };
+
+  mount.addEventListener("dblclick", handleDoubleClick);
+  return () => mount.removeEventListener("dblclick", handleDoubleClick);
 }
 
 export function alignCurrentDateMarker(mount: HTMLElement) {

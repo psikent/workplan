@@ -65,6 +65,24 @@ describe("WorkPlanDrawer", () => {
     }
   });
 
+  it("prefills a supplied local date while retaining the standard work hours", () => {
+    const view = render(
+      <WorkPlanDrawer
+        plan={null}
+        fields={[]}
+        initialDate={new Date(2026, 7, 15)}
+        open
+        saving={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    expect((screen.getByLabelText(/开始时间/) as HTMLInputElement).value).toBe("2026-08-15T08:30");
+    expect((screen.getByLabelText(/结束时间/) as HTMLInputElement).value).toBe("2026-08-15T18:00");
+    view.unmount();
+  });
+
   it("prefills active custom-field defaults for a new work plan", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const fields = [

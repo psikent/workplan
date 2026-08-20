@@ -3,7 +3,7 @@ import { fireEvent, render, waitFor } from "@testing-library/react";
 import type { WorkPlan } from "@workplan/contracts";
 import type { ComponentProps, ComponentType, RefObject } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import GanttTimeline, { alignCurrentDateMarker, ensureCurrentDateMarker } from "./GanttTimeline";
+import GanttTimeline, { alignCurrentDateMarker, ensureCurrentDateMarker, timelineDateAtPosition } from "./GanttTimeline";
 
 const originalScrollTo = HTMLElement.prototype.scrollTo;
 const svgElementPrototype = SVGElement.prototype as SVGElement & { getBBox?: () => DOMRect };
@@ -74,6 +74,22 @@ function localIso(year: number, month: number, day: number) {
 }
 
 describe("GanttTimeline rendered grid", () => {
+  it("maps adaptive week positions to the first, middle and final local dates", () => {
+    const rangeStart = new Date(2026, 7, 3);
+
+    expect(timelineDateAtPosition(0, rangeStart, 100, 7)).toEqual(new Date(2026, 7, 3));
+    expect(timelineDateAtPosition(250, rangeStart, 100, 7)).toEqual(new Date(2026, 7, 5));
+    expect(timelineDateAtPosition(699.99, rangeStart, 100, 7)).toEqual(new Date(2026, 7, 9));
+  });
+
+  it("maps the minimum-width month columns without using the viewport width", () => {
+    const rangeStart = new Date(2026, 1, 1);
+
+    expect(timelineDateAtPosition(0, rangeStart, 32, 28)).toEqual(new Date(2026, 1, 1));
+    expect(timelineDateAtPosition(32 * 14 + 1, rangeStart, 32, 28)).toEqual(new Date(2026, 1, 15));
+    expect(timelineDateAtPosition(32 * 28 - 0.01, rangeStart, 32, 28)).toEqual(new Date(2026, 1, 28));
+  });
+
   it("renders today's marker when today is the final day of the weekly range", () => {
     const mount = document.createElement("div");
     const originalEnd = new Date(2026, 7, 9);
@@ -95,6 +111,259 @@ describe("GanttTimeline rendered grid", () => {
 
     expect(endSeenByGantt).toEqual(new Date(2026, 7, 9, 23, 59, 59, 999));
     expect(gantt.gantt_end).toBe(originalEnd);
+  });
+
+  it("opens the new-plan callback once for a date-grid double click and ignores a single click", async () => {
+    const onCreateAt = vi.fn();
+    const rangeStart = new Date(2026, 7, 3);
+    const { container } = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={rangeStart}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+        onCreateAt={onCreateAt}
+      />,
+    );
+
+    const row = await waitFor(() => {
+      const element = container.querySelector<SVGRectElement>(".grid-row");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    const svg = container.querySelector<SVGSVGElement>("svg.gantt")!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+      x: 100, y: 0, left: 100, right: 800, top: 0, bottom: 300, width: 700, height: 300, toJSON: () => ({}),
+    });
+
+    fireEvent.click(row, { clientX: 501 });
+    expect(onCreateAt).not.toHaveBeenCalled();
+    fireEvent.doubleClick(row, { clientX: 501 });
+
+    expect(onCreateAt).toHaveBeenCalledOnce();
+    expect(onCreateAt).toHaveBeenCalledWith(new Date(2026, 7, 7));
+  });
+
+  it("opens an existing bar once on double click without creating a plan", async () => {
+    const onCreateAt = vi.fn();
+    const onSelect = vi.fn();
+    const { container } = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={onSelect}
+        onCreateAt={onCreateAt}
+      />,
+    );
+
+    const bar = await waitFor(() => {
+      const element = container.querySelector<SVGRectElement>(".bar-wrapper .bar");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+
+    fireEvent.click(bar);
+    fireEvent.click(bar);
+    fireEvent.doubleClick(bar);
+
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(onSelect).toHaveBeenCalledWith(plan);
+    expect(onCreateAt).not.toHaveBeenCalled();
+  });
+
+  it("does not create from date headers, bar handles, or the popup", async () => {
+    const onCreateAt = vi.fn();
+    const { container } = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+        onCreateAt={onCreateAt}
+      />,
+    );
+
+    const { header, lowerText, upperText, handles, popup } = await waitFor(() => {
+      const header = container.querySelector<SVGGElement>(".grid-header");
+      const lowerText = container.querySelector<SVGTextElement>(".lower-text");
+      const upperText = container.querySelector<SVGTextElement>(".upper-text");
+      const handles = [...container.querySelectorAll<SVGRectElement>(".handle")];
+      const popup = container.querySelector<HTMLElement>(".popup-wrapper");
+      expect(header).not.toBeNull();
+      expect(lowerText).not.toBeNull();
+      expect(upperText).not.toBeNull();
+      expect(handles).toHaveLength(2);
+      expect(popup).not.toBeNull();
+      return { header: header!, lowerText: lowerText!, upperText: upperText!, handles, popup: popup! };
+    });
+
+    for (const target of [header, lowerText, upperText, ...handles, popup]) {
+      fireEvent.doubleClick(target);
+    }
+
+    expect(onCreateAt).not.toHaveBeenCalled();
+  });
+
+  it("does not create while moving or resizing a bar", async () => {
+    const onCreateAt = vi.fn();
+    const onScheduleChange = vi.fn();
+    const { container } = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={onScheduleChange}
+        onSelect={vi.fn()}
+        onCreateAt={onCreateAt}
+      />,
+    );
+
+    const bar = await waitFor(() => {
+      const element = container.querySelector<SVGRectElement>(".bar-wrapper .bar");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    const wrapper = bar.closest<SVGGElement>(".bar-wrapper")!;
+    const centerX = Number(bar.getAttribute("x")) + Number(bar.getAttribute("width")) / 2;
+
+    fireEvent(wrapper, mouseEventWithOffset("mousedown", centerX, 1_000));
+    fireEvent(document, mouseEventWithOffset("mousemove", centerX + 100, 1_100));
+    fireEvent(document, mouseEventWithOffset("mouseup", centerX + 100, 1_100));
+    fireEvent.doubleClick(bar);
+
+    const rightHandle = container.querySelector<SVGRectElement>(".handle.right")!;
+    const handleX = Number(rightHandle.getAttribute("x"));
+    fireEvent(rightHandle, mouseEventWithOffset("mousedown", handleX, 1_000));
+    fireEvent(document, mouseEventWithOffset("mousemove", handleX + 100, 1_100));
+    fireEvent(document, mouseEventWithOffset("mouseup", handleX + 100, 1_100));
+    fireEvent.doubleClick(rightHandle);
+
+    await waitFor(() => expect(onScheduleChange).toHaveBeenCalledTimes(2));
+    expect(onCreateAt).not.toHaveBeenCalled();
+  });
+
+  it("keeps an interactive virtual date grid in an empty weekly range", async () => {
+    const onCreateAt = vi.fn();
+    const rangeStart = new Date(2026, 7, 3);
+    const { container } = render(
+      <GanttTimeline
+        plans={[]}
+        view="week"
+        rangeStart={rangeStart}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+        onCreateAt={onCreateAt}
+      />,
+    );
+
+    const row = await waitFor(() => {
+      const element = container.querySelector<SVGRectElement>(".grid-row");
+      expect(element).not.toBeNull();
+      expect(container.querySelector(".timeline-empty")).not.toBeNull();
+      expect(container.querySelectorAll(".bar-wrapper")).toHaveLength(0);
+      return element!;
+    });
+    const svg = container.querySelector<SVGSVGElement>("svg.gantt")!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+      x: 100, y: 0, left: 100, right: 800, top: 0, bottom: 300, width: 700, height: 300, toJSON: () => ({}),
+    });
+
+    fireEvent.doubleClick(row, { clientX: 501 });
+    expect(onCreateAt).toHaveBeenCalledWith(new Date(2026, 7, 7));
+  });
+
+  it("shows the new-plan affordance only for the hovered grid cell", async () => {
+    const { container } = render(
+      <GanttTimeline
+        plans={[]}
+        view="month"
+        rangeStart={new Date(2026, 1, 1)}
+        rangeEnd={new Date(2026, 2, 1)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const { row, bar } = await waitFor(() => {
+      const row = container.querySelector<SVGRectElement>(".grid-row");
+      const bar = container.querySelector<SVGGElement>(".bar-wrapper");
+      expect(row).not.toBeNull();
+      expect(bar).toBeNull();
+      return { row: row!, bar };
+    });
+    const svg = container.querySelector<SVGSVGElement>("svg.gantt")!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, right: 896, top: 0, bottom: 300, width: 896, height: 300, toJSON: () => ({}),
+    });
+    vi.spyOn(row, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 89, left: 0, right: 896, top: 89, bottom: 147, width: 896, height: 58, toJSON: () => ({}),
+    });
+
+    const cell = container.querySelector<HTMLElement>(".timeline-create-hover-cell")!;
+    expect(cell.classList.contains("visible")).toBe(false);
+    fireEvent.pointerEnter(row, { clientX: 33 });
+    expect(cell.classList.contains("visible")).toBe(true);
+    expect(container.querySelector(".timeline-create-hover-hint")?.textContent).toBe("双击新建工作计划");
+    fireEvent.pointerLeave(row);
+    expect(cell.classList.contains("visible")).toBe(false);
+  });
+
+  it("does not show the new-plan affordance over the date header", async () => {
+    const { container } = render(
+      <GanttTimeline
+        plans={[]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const header = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>(".grid-header");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    const cell = container.querySelector<HTMLElement>(".timeline-create-hover-cell")!;
+    fireEvent.pointerEnter(header, { clientX: 100 });
+    expect(cell.classList.contains("visible")).toBe(false);
+  });
+
+  it("clears the new-plan affordance before entering an existing Gantt bar", async () => {
+    const { container } = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const row = await waitFor(() => {
+      const element = container.querySelector<SVGRectElement>(".grid-row");
+      expect(element).not.toBeNull();
+      expect(container.querySelector(".bar-wrapper")).not.toBeNull();
+      return element!;
+    });
+    const bar = container.querySelector<SVGGElement>(".bar-wrapper")!;
+    const cell = container.querySelector<HTMLElement>(".timeline-create-hover-cell")!;
+    fireEvent.pointerEnter(row, { clientX: 501 });
+    expect(cell.classList.contains("visible")).toBe(true);
+    fireEvent.pointerLeave(row);
+    fireEvent.pointerEnter(bar, { clientX: 501 });
+    expect(cell.classList.contains("visible")).toBe(false);
   });
 
   it("does not render today's marker outside the visible weekly range", () => {

@@ -24,6 +24,7 @@ type PlanColumn = {
 };
 type ExportAttribute = { source: string; label: string };
 type CreatedWorkPlanSeries = { series: WorkPlanSeries; generated: WorkPlan[] };
+type SaveMutationResult = { created: boolean; createdPlans: WorkPlan[] };
 
 function isTextPlanColumn(column: PlanColumn) {
   return column.field?.type === "short_text" || column.field?.type === "long_text";
@@ -131,6 +132,31 @@ function duplicateWorkPlanInput(plan: WorkPlan): CreateWorkPlan {
   };
 }
 
+function matchesVisibleWorkPlan(
+  plan: WorkPlan,
+  search: string,
+  status: WorkPlanStatus | "all",
+  customFilterKey: string,
+  customFilterValue: string,
+  fields: CustomFieldDefinition[],
+  range: [Date, Date],
+) {
+  if (search && !`${plan.title} ${plan.description}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())) return false;
+  if (status !== "all" && plan.status !== status) return false;
+  if (customFilterKey && customFilterValue) {
+    const definition = fields.find((field) => field.key === customFilterKey);
+    const actual = plan.customFields[customFilterKey];
+    if (definition?.type === "multi_select") {
+      if (!Array.isArray(actual) || !actual.includes(customFilterValue)) return false;
+    } else if (definition?.type === "boolean") {
+      if (String(actual) !== customFilterValue) return false;
+    } else if (definition?.type === "number") {
+      if (Number(actual) !== Number(customFilterValue)) return false;
+    } else if (!String(actual ?? "").toLocaleLowerCase().includes(customFilterValue.toLocaleLowerCase())) return false;
+  }
+  return Date.parse(plan.endAt) >= range[0].getTime() && Date.parse(plan.startAt) <= range[1].getTime();
+}
+
 function initialTimelineView(value: string | null): "week" | "month" {
   return value === "month" ? "month" : "week";
 }
@@ -157,6 +183,7 @@ export default function WorkPlansPage() {
   const [anchor, setAnchor] = useState(() => initialTimelineAnchor(searchParams.get("date")));
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selected, setSelected] = useState<WorkPlan | null>(null);
+  const [newPlanDate, setNewPlanDate] = useState<Date | null>(null);
   const [showColumnSettings, setShowColumnSettings] = useState(false);
   const [showGanttSettings, setShowGanttSettings] = useState(false);
   const [visibleColumnIds, setVisibleColumnIds] = useState<ColumnId[]>(loadColumnPreferences);
@@ -254,22 +281,10 @@ export default function WorkPlansPage() {
       ...exportAttributes.filter((attribute) => !selectedExportSources.includes(attribute.source)),
     ];
   }, [exportAttributes, selectedExportSources]);
-  const visiblePlans = useMemo(() => plans.filter((plan) => {
-    if (deferredSearch && !`${plan.title} ${plan.description}`.toLocaleLowerCase().includes(deferredSearch.toLocaleLowerCase())) return false;
-    if (status !== "all" && plan.status !== status) return false;
-    if (customFilterKey && customFilterValue) {
-      const definition = fieldsQuery.data?.find((field) => field.key === customFilterKey);
-      const actual = plan.customFields[customFilterKey];
-      if (definition?.type === "multi_select") {
-        if (!Array.isArray(actual) || !actual.includes(customFilterValue)) return false;
-      } else if (definition?.type === "boolean") {
-        if (String(actual) !== customFilterValue) return false;
-      } else if (definition?.type === "number") {
-        if (Number(actual) !== Number(customFilterValue)) return false;
-      } else if (!String(actual ?? "").toLocaleLowerCase().includes(customFilterValue.toLocaleLowerCase())) return false;
-    }
-    return Date.parse(plan.endAt) >= range[0]!.getTime() && Date.parse(plan.startAt) <= range[1]!.getTime();
-  }), [customFilterKey, customFilterValue, deferredSearch, fieldsQuery.data, plans, range, status]);
+  const visiblePlans = useMemo(
+    () => plans.filter((plan) => matchesVisibleWorkPlan(plan, deferredSearch, status, customFilterKey, customFilterValue, fieldsQuery.data ?? [], [range[0]!, range[1]!])),
+    [customFilterKey, customFilterValue, deferredSearch, fieldsQuery.data, plans, range, status],
+  );
 
   useEffect(() => {
     if (!requestedPlanId || openedRequestedPlanIdRef.current === requestedPlanId) return;
@@ -342,21 +357,24 @@ export default function WorkPlansPage() {
     return () => observer.disconnect();
   }, []);
 
-  const saveMutation = useMutation({
-    mutationFn: async ({ input, recurrence }: { input: CreateWorkPlan & { version?: number }; recurrence: { frequency: "daily" | "weekly" | "monthly"; interval: number; timeZone: string } | null }) => {
+  const saveMutation = useMutation<SaveMutationResult, Error, { input: CreateWorkPlan & { version?: number }; recurrence: { frequency: "daily" | "weekly" | "monthly"; interval: number; timeZone: string } | null }>({
+    mutationFn: async ({ input, recurrence }) => {
       const { version: _version, ...workPlan } = input;
       if (!selected) {
-        if (recurrence) await api<CreatedWorkPlanSeries>("/work-plan-series", { method: "POST", ...jsonBody({ workPlan, recurrence }) });
-        else await api<WorkPlan>("/work-plans", { method: "POST", ...jsonBody(workPlan) });
-        return;
+        if (recurrence) {
+          const result = await api<CreatedWorkPlanSeries>("/work-plan-series", { method: "POST", ...jsonBody({ workPlan, recurrence }) });
+          return { created: true, createdPlans: result.generated };
+        }
+        const created = await api<WorkPlan>("/work-plans", { method: "POST", ...jsonBody(workPlan) });
+        return { created: true, createdPlans: [created] };
       }
       if (!selected.seriesId) {
         if (recurrence) {
           await api(`/work-plans/${selected.id}/series`, { method: "POST", ...jsonBody({ workPlan, recurrence, version: selected.version }) });
-          return;
+          return { created: false, createdPlans: [] };
         }
         await api<WorkPlan>(`/work-plans/${selected.id}`, { method: "PATCH", ...jsonBody(input) });
-        return;
+        return { created: false, createdPlans: [] };
       }
       if (!selectedSeries) throw new Error("计划周期信息尚未加载，请稍后重试");
       await api<WorkPlan>(`/work-plans/${selected.id}`, { method: "PATCH", ...jsonBody(input) });
@@ -365,13 +383,26 @@ export default function WorkPlansPage() {
       } else if (selectedSeries.active) {
         await api(`/work-plan-series/${selectedSeries.id}?version=${selectedSeries.version}`, { method: "DELETE" });
       }
+      return { created: false, createdPlans: [] };
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["work-plans"] });
       await queryClient.invalidateQueries({ queryKey: ["work-plan-series"] });
       setDrawerOpen(false);
       setSelected(null);
-      showSuccess("工作计划已保存");
+      setNewPlanDate(null);
+      const createdPlanIsVisible = result.createdPlans.some((plan) => matchesVisibleWorkPlan(
+        plan,
+        deferredSearch,
+        status,
+        customFilterKey,
+        customFilterValue,
+        fieldsQuery.data ?? [],
+        [range[0]!, range[1]!],
+      ));
+      showSuccess(result.created && !createdPlanIsVisible
+        ? "工作计划已创建，但在当前时间范围或筛选条件下不可见"
+        : "工作计划已保存");
     },
   });
 
@@ -414,7 +445,13 @@ export default function WorkPlansPage() {
     scheduleMutation.mutate({ plan, startAt, endAt });
   }, [scheduleMutation.mutate]);
   const handleSelect = useCallback((plan: WorkPlan) => {
+    setNewPlanDate(null);
     setSelected(plan);
+    setDrawerOpen(true);
+  }, []);
+  const handleCreateAt = useCallback((date: Date) => {
+    setSelected(null);
+    setNewPlanDate(date);
     setDrawerOpen(true);
   }, []);
 
@@ -667,7 +704,7 @@ export default function WorkPlansPage() {
             ) : null}
           </div>
           {user.role === "admin" ? <label className={`secondary-button file-button ${!selectedTemplateCanImport ? "disabled" : ""}`} title={selectedTemplateCanImport ? "按所选模板新增工作计划" : "导入模板必须包含工作内容、开始时间和结束时间"}><Upload />导入 XLS<input type="file" accept="application/vnd.ms-excel,.xls" disabled={!selectedTemplateCanImport} onChange={(event) => void importXls(event)} /></label> : null}
-          <button className="primary-button" type="button" onClick={() => { setSelected(null); setDrawerOpen(true); }}><Plus />新建工作计划</button>
+          <button className="primary-button" type="button" onClick={() => { setSelected(null); setNewPlanDate(null); setDrawerOpen(true); }}><Plus />新建工作计划</button>
         </div>
       </header>
       {spreadsheetMessage ? <div className="spreadsheet-transfer-message" role="status">{spreadsheetMessage}</div> : null}
@@ -737,7 +774,7 @@ export default function WorkPlansPage() {
             <button className={`icon-button column-settings-button ${showGanttSettings ? "selected" : ""}`} type="button" aria-label="甘特条属性" aria-expanded={showGanttSettings} title="甘特图显示设置" onClick={() => setShowGanttSettings((value) => !value)}><ListFilter /></button>
             {showGanttSettings ? <GanttPropertySettings properties={availableGanttProperties} visibleIds={ganttDisplayIds} onToggle={toggleGanttProperty} onMove={moveGanttProperty} onReset={() => setGanttDisplayIds(defaultGanttDisplayIds)} tooltipVisibleIds={tooltipDisplayIds} onToggleTooltip={toggleTooltipProperty} onMoveTooltip={moveTooltipProperty} onResetTooltip={() => setTooltipDisplayIds(defaultTooltipDisplayIds)} /> : null}
           </div>
-          <GanttTimeline plans={visiblePlans} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} onScheduleChange={handleScheduleChange} onSelect={handleSelect} />
+          <GanttTimeline plans={visiblePlans} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onCreateAt={handleCreateAt} />
         </div>
       </div>
 
@@ -745,12 +782,13 @@ export default function WorkPlansPage() {
         plan={selected}
         series={selected?.seriesId ? (seriesQuery.isLoading ? undefined : selectedSeries ?? null) : null}
         fields={fieldsQuery.data ?? []}
+        initialDate={newPlanDate}
         ownerAccountMappings={ownerAccountMappingsQuery.data ?? []}
         ownerAccountMappingsLoading={ownerAccountMappingsQuery.isLoading}
         ownerAccountMappingsError={ownerAccountMappingsQuery.isError}
         open={drawerOpen}
         saving={saveMutation.isPending || duplicateMutation.isPending}
-        onClose={() => { setDrawerOpen(false); setSelected(null); }}
+        onClose={() => { setDrawerOpen(false); setSelected(null); setNewPlanDate(null); }}
         onSave={async (input, recurrence) => {
           await saveMutation.mutateAsync({ input, recurrence });
         }}
