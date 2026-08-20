@@ -1,6 +1,6 @@
 # Spec: Browser Notifications
 
-> Status: **待开发** — 规格已定稿，票据已就绪（`issues/01`-`03`，`Status: ready-for-agent`），按依赖顺序实现。
+> Status: **已取代（superseded，2026-08-20）** — 本规格由 `.scratch/work-plan-reminders/spec.md` 取代，不再按此实现。原「不新增任何服务端提醒/通知存储与端点」约束修订为：legacy 提醒/通知 API 的 404/422 回归保持不动，但允许新增**只读**提醒推导端点（`/api/v1/reminders`，零提醒存储）。票据 `issues/01`–`03` 原样存档。
 >
 > 票据索引：01 通知调度器 | 02 AppShell 铃铛控制与持久化 | 03 测试与回归。依赖：01 → 02 → 03。
 

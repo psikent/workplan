@@ -72,3 +72,38 @@ _Avoid_: Replace import, destructive import
 **Destructive Change**:
 A Sync Import change that would invalidate existing values or retire a definition — archiving a Custom Field or option, making a field required, or a field type conflict. Type conflicts are reported, never migrated.
 _Avoid_: Breaking change, lossy change
+**Reminder (提醒)**:
+A date-bound prompt derived from Work Plan data by a Reminder Rule, surfaced to users on its Reminder Date. A Reminder carries no per-user state.
+_Avoid_: Notification, alert
+
+**Reminder Rule (提醒规则)**:
+An entry in the code-level reminder rule table: a trigger condition over a Work Plan's Custom Field values and effective status, the Reminder Date computation, and the prompt text.
+_Avoid_: Hardcoded notification, cron job
+
+**Reminder Date (提醒日)**:
+The calendar date a Reminder is attached to.
+_Avoid_: Due date, 截止日
+
+**Working Day (工作日)**:
+A calendar day that is neither Saturday nor Sunday; reminder date arithmetic counts only Working Days.
+_Avoid_: Business day, 营业日
+
+**Work Order Reminder (检修单提醒)**:
+A Reminder to raise a Maintenance Work Order, attached seven Working Days before the start of a pending Work Plan marked Work Order Required.
+_Avoid_: 工单提醒
+
+**Plan Submission Reminder (作业计划提交提醒)**:
+A Reminder on Wednesday of the current week to submit next week's work plans, produced when any Work Plan whose Risk Level is 中 or 高 overlaps the next calendar week (Monday to Sunday).
+_Avoid_: Weekly report reminder
+
+**Maintenance Work Order (检修单)**:
+The work-order document that must be raised before work on a Work Plan marked Work Order Required begins.
+_Avoid_: 工单, repair ticket
+
+**Work Order Required (需检修单)**:
+The boolean Custom Field (key `ticket`) marking a Work Plan as requiring a Maintenance Work Order; defaults to unchecked.
+_Avoid_: Needs-ticket flag
+
+**Risk Level (风险等级)**:
+The single_select Custom Field (key `risk`) on a Work Plan rating the riskiness of the work; values 可接受, 低, 中, 高; defaults to 低.
+_Avoid_: Priority, severity
