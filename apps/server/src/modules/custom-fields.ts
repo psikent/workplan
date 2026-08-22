@@ -246,7 +246,10 @@ export class CustomFieldService {
       const field = fieldById.get(row.field_id);
       if (!field) continue;
       const column = scalarColumnByType[field.type];
-      if (column && row[column] !== null && row[column] !== undefined) output[field.key] = row[column];
+      const rawValue = column ? row[column] : undefined;
+      if (rawValue !== null && rawValue !== undefined) {
+        output[field.key] = field.type === "boolean" ? Boolean(rawValue) : rawValue;
+      }
     }
     for (const row of multiRows) {
       const field = fieldById.get(row.field_id);

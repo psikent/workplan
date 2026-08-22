@@ -12,7 +12,7 @@
     "env-config:export": "corepack pnpm --filter @workplan/contracts build && corepack pnpm --filter @workplan/server exec tsx ../../scripts/env-config-export.ts",
     "build": "corepack pnpm --filter @workplan/contracts build && corepack pnpm --filter @workplan/server build && corepack pnpm --filter @workplan/web build",
     "typecheck": "corepack pnpm --filter @workplan/contracts build && corepack pnpm -r typecheck",
-    "test": "corepack pnpm --filter @workplan/contracts build && corepack pnpm -r test && node --test scripts/workplan.test.mjs && corepack pnpm --filter @workplan/server exec node --import tsx --test ../../scripts/env-config-export.test.mjs",
+    "test": "corepack pnpm --filter @workplan/contracts build && corepack pnpm -r test && node --test scripts/workplan.test.mjs scripts/release.test.mjs && corepack pnpm --filter @workplan/server exec node --import tsx --test ../../scripts/env-config-export.test.mjs",
     "start": "node scripts/workplan.mjs start",
     "stop": "node scripts/workplan.mjs stop",
     "status": "node scripts/workplan.mjs status",
