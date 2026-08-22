@@ -33,7 +33,7 @@ const EMPTY_DISPLAY_PROPERTIES: GanttDisplayProperty[] = [];
 const EMPTY_TIMELINE_TASK_ID = "__empty-timeline__";
 const BAR_DOUBLE_CLICK_WINDOW_MS = 500;
 
-function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect, onCreateAt }: Props) {
+function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, view, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect, onCreateAt }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
@@ -175,6 +175,12 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
        }
       ensureCurrentDateMarker(gantt, containerRef.current, exactRangeStart, exactRangeEnd);
       centerDateMarkersWithinDayColumns(containerRef.current, columnWidth);
+      if (view === "week" && rangeSpansCalendarMonth(exactRangeStart, new Date(rangeEndTime))) {
+        alignCrossMonthUpperLabel(
+          containerRef.current,
+          containerRef.current.closest<HTMLElement>(".planner-timeline")?.querySelector<HTMLElement>(".timeline-range-controls") ?? null,
+        );
+      }
       applyWholeDayBarGeometry(containerRef.current, plansById, exactRangeStart, columnWidth);
       alignCurrentDateMarker(containerRef.current);
       currentMarkerFrame = window.requestAnimationFrame(() => {
@@ -483,6 +489,26 @@ function centerDateMarkersWithinDayColumns(mount: HTMLElement, columnWidth: numb
     marker.style.marginRight = "0px";
     marker.style.textAlign = "center";
   }
+}
+
+export function alignCrossMonthUpperLabel(mount: HTMLElement, controls: HTMLElement | null) {
+  const labels = [...mount.querySelectorAll<HTMLElement>(".upper-header > .upper-text")];
+  if (labels.length < 2 || !controls) return;
+
+  const firstLabelRect = labels[0]!.getBoundingClientRect();
+  const controlsRect = controls.getBoundingClientRect();
+  const nextLabel = labels[1]!;
+  const nextLabelRect = nextLabel.getBoundingClientRect();
+  const leadingGap = controlsRect.left - firstLabelRect.right;
+  const targetLeft = controlsRect.right + leadingGap;
+  const shift = Math.round(targetLeft - nextLabelRect.left);
+  if (shift > 0) nextLabel.style.marginLeft = `${shift}px`;
+}
+
+function rangeSpansCalendarMonth(start: Date, exclusiveEnd: Date) {
+  const lastVisibleDay = new Date(exclusiveEnd);
+  lastVisibleDay.setDate(lastVisibleDay.getDate() - 1);
+  return start.getFullYear() !== lastVisibleDay.getFullYear() || start.getMonth() !== lastVisibleDay.getMonth();
 }
 
 function shiftIsoByLocalDays(value: string, days: number) {
