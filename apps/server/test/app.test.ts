@@ -763,6 +763,33 @@ describe("work plan API", () => {
     expect(search.json<Array<{ title: string }>>()).toHaveLength(1);
   });
 
+  it("round-trips false boolean custom field values when editing a work plan", async () => {
+    const context = await createContext();
+    const field = await context.request({
+      method: "POST",
+      url: "/api/v1/custom-fields",
+      payload: { key: "ticket", label: "是否需起检修单", description: "", type: "boolean", required: false, defaultValue: false, options: [] },
+    });
+    expect(field.statusCode).toBe(201);
+
+    const created = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plans",
+      payload: planInput({ title: "布尔值往返", customFields: { ticket: false } }),
+    });
+    expect(created.statusCode).toBe(201);
+    const createdPlan = created.json<{ id: string; version: number; customFields: Record<string, unknown> }>();
+    expect(createdPlan.customFields.ticket).toBe(false);
+
+    const updated = await context.request({
+      method: "PATCH",
+      url: `/api/v1/work-plans/${createdPlan.id}`,
+      payload: { title: "布尔值往返-已编辑", version: createdPlan.version, customFields: createdPlan.customFields },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json<{ customFields: Record<string, unknown> }>().customFields.ticket).toBe(false);
+  });
+
   it("creates recurring occurrences and detaches a dragged instance", async () => {
     const context = await createContext();
     const create = await context.request({
