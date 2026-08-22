@@ -40,6 +40,7 @@ function run(command, args, options = {}) {
     cwd: options.cwd ?? sourceRoot,
     stdio: "inherit",
     windowsHide: true,
+    shell: options.shell ?? false,
     env: process.env,
   });
   if (result.error) throw result.error;
@@ -49,10 +50,15 @@ function run(command, args, options = {}) {
   return result.status ?? 1;
 }
 
+export function corepackCommand(platform = process.platform) {
+  return platform === "win32" ? "corepack.cmd" : "corepack";
+}
+
 function runCorepack(args, options = {}) {
-  const corepackEntry = path.join(path.dirname(process.execPath), "node_modules/corepack/dist/corepack.js");
-  if (!fs.existsSync(corepackEntry)) throw new Error(`找不到 Corepack：${corepackEntry}`);
-  return run(process.execPath, [corepackEntry, ...args], options);
+  return run(corepackCommand(), args, {
+    ...options,
+    shell: process.platform === "win32",
+  });
 }
 
 function copy(source, destination) {
@@ -146,10 +152,12 @@ function main() {
   console.log(`发布完成：${targetRoot}`);
 }
 
-try {
-  main();
-} catch (error) {
-  fs.rmSync(stagingRoot, { recursive: true, force: true });
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    main();
+  } catch (error) {
+    fs.rmSync(stagingRoot, { recursive: true, force: true });
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
 }
