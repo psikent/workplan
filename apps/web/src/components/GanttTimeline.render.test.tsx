@@ -3,7 +3,7 @@ import { fireEvent, render, waitFor } from "@testing-library/react";
 import type { WorkPlan } from "@workplan/contracts";
 import type { ComponentProps, ComponentType, RefObject } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import GanttTimeline, { alignCurrentDateMarker, ensureCurrentDateMarker, timelineDateAtPosition } from "./GanttTimeline";
+import GanttTimeline, { alignCrossMonthUpperLabel, alignCurrentDateMarker, ensureCurrentDateMarker, timelineDateAtPosition } from "./GanttTimeline";
 
 const originalScrollTo = HTMLElement.prototype.scrollTo;
 const svgElementPrototype = SVGElement.prototype as SVGElement & { getBBox?: () => DOMRect };
@@ -74,6 +74,27 @@ function localIso(year: number, month: number, day: number) {
 }
 
 describe("GanttTimeline rendered grid", () => {
+  it("keeps the next month label as far from the controls as the previous month", () => {
+    const mount = document.createElement("div");
+    const upperHeader = document.createElement("div");
+    upperHeader.className = "upper-header";
+    const previousMonth = document.createElement("div");
+    previousMonth.className = "upper-text";
+    const nextMonth = document.createElement("div");
+    nextMonth.className = "upper-text";
+    upperHeader.append(previousMonth, nextMonth);
+    mount.append(upperHeader);
+    const controls = document.createElement("div");
+
+    vi.spyOn(previousMonth, "getBoundingClientRect").mockReturnValue({ left: 40, right: 60, top: 0, bottom: 20, width: 20, height: 20, x: 40, y: 0, toJSON: () => ({}) });
+    vi.spyOn(controls, "getBoundingClientRect").mockReturnValue({ left: 80, right: 210, top: 0, bottom: 32, width: 130, height: 32, x: 80, y: 0, toJSON: () => ({}) });
+    vi.spyOn(nextMonth, "getBoundingClientRect").mockReturnValue({ left: 210, right: 230, top: 0, bottom: 20, width: 20, height: 20, x: 210, y: 0, toJSON: () => ({}) });
+
+    alignCrossMonthUpperLabel(mount, controls);
+
+    expect(nextMonth.style.marginLeft).toBe("20px");
+  });
+
   it("maps adaptive week positions to the first, middle and final local dates", () => {
     const rangeStart = new Date(2026, 7, 3);
 
