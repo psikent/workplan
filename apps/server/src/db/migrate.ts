@@ -100,6 +100,50 @@ const migrations: Migration[] = [
         ('吴亦鸣', 'wuyiming@zh.gd.csg.cn');
     `,
   },
+  {
+    version: 7,
+    name: "monthly_goals",
+    sql: `
+      CREATE TABLE monthly_goals (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        year INTEGER NOT NULL,
+        month INTEGER NOT NULL,
+        work_plan_id TEXT REFERENCES work_plans(id) ON DELETE SET NULL,
+        archived_at TEXT,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX monthly_goals_period_idx ON monthly_goals(year, month);
+      CREATE INDEX monthly_goals_work_plan_idx ON monthly_goals(work_plan_id);
+    `,
+  },
+  {
+    version: 8,
+    name: "monthly_goal_series",
+    sql: `
+      CREATE TABLE monthly_goal_series (
+        id TEXT PRIMARY KEY,
+        template_json TEXT NOT NULL,
+        frequency TEXT NOT NULL,
+        interval INTEGER NOT NULL DEFAULT 1,
+        start_year INTEGER NOT NULL,
+        start_month INTEGER NOT NULL,
+        occurrence_count INTEGER,
+        until_year INTEGER,
+        until_month INTEGER,
+        active INTEGER NOT NULL DEFAULT 1,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      ALTER TABLE monthly_goals ADD COLUMN series_id TEXT REFERENCES monthly_goal_series(id) ON DELETE SET NULL;
+      ALTER TABLE monthly_goals ADD COLUMN occurrence_key TEXT;
+      CREATE UNIQUE INDEX monthly_goal_series_occurrence_idx ON monthly_goals(series_id, occurrence_key);
+    `,
+  },
 ];
 
 export function migrate(database: Database.Database): void {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { CustomFieldDefinition, WorkPlan, WorkPlanSeries } from "@workplan/contracts";
+import type { CustomFieldDefinition, MonthlyGoal, WorkPlan, WorkPlanSeries } from "@workplan/contracts";
 import { describe, expect, it, vi } from "vitest";
 import WorkPlanDrawer from "./WorkPlanDrawer";
 
@@ -18,6 +18,7 @@ const plan: WorkPlan = {
   occurrenceKey: null,
   isException: false,
   customFields: {},
+  monthlyGoalIds: [],
   ownerAccount: null,
   createdAt: "2026-08-01T00:00:00.000Z",
   updatedAt: "2026-08-01T00:00:00.000Z",
@@ -349,6 +350,114 @@ describe("WorkPlanDrawer", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.any(Object), null));
     view.unmount();
   });
+
+  describe("monthly goal section", () => {
+    const freeGoals: MonthlyGoal[] = [
+      monthlyGoal({ id: "11111111-1111-4111-8111-111111111111", title: "官网改版", year: 2026, month: 8, createdAt: "2026-08-01T00:00:00.000Z" }),
+      monthlyGoal({ id: "22222222-2222-4222-8222-222222222222", title: "客服培训", year: 2026, month: 7, createdAt: "2026-07-01T00:00:00.000Z" }),
+    ];
+    const occupiedGoal = monthlyGoal({
+      id: "33333333-3333-4333-8333-333333333333",
+      title: "季度评审",
+      year: 2026,
+      month: 8,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      linkedWorkPlan: { id: "44444444-4444-4444-8444-444444444444", title: "其他任务" },
+    });
+
+    it("renders period labels, disables goals occupied by another plan and sorts newest first", () => {
+      const view = render(
+        <WorkPlanDrawer
+          plan={null}
+          fields={[]}
+          monthlyGoals={[occupiedGoal, ...freeGoals]}
+          open
+          saving={false}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByRole("group", { name: "月目标" })).toBeTruthy();
+      const checkboxes = screen.getAllByRole("checkbox");
+      expect(checkboxes).toHaveLength(3);
+      expect(checkboxes.map((checkbox) => checkbox.closest("label")?.textContent)).toEqual([
+        "2026 年 8 月 · 官网改版",
+        "2026 年 8 月 · 季度评审",
+        "2026 年 7 月 · 客服培训",
+      ]);
+
+      const occupied = screen.getByRole("checkbox", { name: /季度评审/ }) as HTMLInputElement;
+      expect(occupied.disabled).toBe(true);
+      expect(occupied.closest("label")?.getAttribute("title")).toBe("该目标已关联其他工作任务");
+      expect((screen.getByRole("checkbox", { name: /官网改版/ }) as HTMLInputElement).disabled).toBe(false);
+      view.unmount();
+    });
+
+    it("submits checked goal ids and clears them when unchecked", async () => {
+      const onSave = vi.fn().mockResolvedValue(undefined);
+      const view = render(
+        <WorkPlanDrawer
+          plan={null}
+          fields={[]}
+          monthlyGoals={freeGoals}
+          open
+          saving={false}
+          onClose={vi.fn()}
+          onSave={onSave}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("checkbox", { name: /官网改版/ }));
+      fireEvent.change(screen.getByLabelText(/工作内容/), { target: { value: "挂目标计划" } });
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+      expect(onSave.mock.calls[0]?.[0]).toMatchObject({ monthlyGoalIds: ["11111111-1111-4111-8111-111111111111"] });
+
+      fireEvent.click(screen.getByRole("checkbox", { name: /官网改版/ }));
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+      expect(onSave.mock.calls[1]?.[0]).toMatchObject({ monthlyGoalIds: [] });
+      view.unmount();
+    });
+
+    it("prefills checks from the edited plan's monthly goal ids", () => {
+      const view = render(
+        <WorkPlanDrawer
+          plan={{ ...plan, monthlyGoalIds: ["22222222-2222-4222-8222-222222222222"] }}
+          fields={[]}
+          monthlyGoals={freeGoals}
+          open
+          saving={false}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+        />,
+      );
+
+      expect((screen.getByRole("checkbox", { name: /客服培训/ }) as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByRole("checkbox", { name: /官网改版/ }) as HTMLInputElement).checked).toBe(false);
+      view.unmount();
+    });
+
+    it("shows the loading copy while goals are still being fetched", () => {
+      const view = render(
+        <WorkPlanDrawer
+          plan={null}
+          fields={[]}
+          monthlyGoals={freeGoals}
+          monthlyGoalsLoading
+          open
+          saving={false}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("正在载入月目标…")).toBeTruthy();
+      expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+      view.unmount();
+    });
+  });
 });
 
 function customField(overrides: Partial<CustomFieldDefinition>): CustomFieldDefinition {
@@ -364,6 +473,25 @@ function customField(overrides: Partial<CustomFieldDefinition>): CustomFieldDefi
     archivedAt: null,
     version: 1,
     options: [],
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function monthlyGoal(overrides: Partial<MonthlyGoal>): MonthlyGoal {
+  return {
+    id: "55555555-5555-4555-8555-555555555555",
+    title: "默认目标",
+    description: "",
+    year: 2026,
+    month: 8,
+    archivedAt: null,
+    version: 1,
+    status: null,
+    linkedWorkPlan: null,
+    seriesId: null,
+    occurrenceKey: null,
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-01T00:00:00.000Z",
     ...overrides,

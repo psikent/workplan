@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CalendarRange, ChevronLeft, ChevronRight, LayoutDashboard, LogOut, MonitorCog, Moon, Settings, SlidersHorizontal, Sun, UsersRound } from "lucide-react";
+import { CalendarRange, ChevronLeft, ChevronRight, LayoutDashboard, LogOut, MonitorCog, Moon, Settings, SlidersHorizontal, Sun, Target, UsersRound } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useSession } from "../App";
 import { applyTheme, useSystemTheme, type Theme } from "../lib/theme";
@@ -8,6 +8,7 @@ import BrandMark from "./BrandMark";
 const navItems = [
   { to: "/overview", label: "工作台", icon: LayoutDashboard, end: true, adminOnly: false },
   { to: "/work-plans", label: "工作计划", icon: CalendarRange, end: true, adminOnly: false },
+  { to: "/monthly-goals", label: "月目标", icon: Target, end: true, adminOnly: false },
   { to: "/custom-fields", label: "自定义字段", icon: SlidersHorizontal, end: false, adminOnly: true },
   { to: "/accounts", label: "账户管理", icon: UsersRound, end: true, adminOnly: true },
   { to: "/settings", label: "设置", icon: Settings, end: false, adminOnly: true },

@@ -10,6 +10,7 @@ import type { DatabaseBundle } from "../db/index.js";
 import { invalidInput, notFound, versionConflict } from "../errors.js";
 import { newId, nowIso } from "../utils.js";
 import type { CustomFieldService } from "./custom-fields.js";
+import type { MonthlyGoalService } from "./monthly-goals.js";
 import type { OwnerAccountService } from "./owner-accounts.js";
 
 type WorkPlanRow = {
@@ -36,6 +37,7 @@ export class WorkPlanService {
     readonly database: DatabaseBundle,
     readonly customFields: CustomFieldService,
     readonly ownerAccounts: OwnerAccountService,
+    readonly monthlyGoals: MonthlyGoalService,
   ) {}
 
   list(query: {
@@ -71,7 +73,8 @@ export class WorkPlanService {
     const rows = this.database.sqlite.prepare(sql).all(...values) as WorkPlanRow[];
     const now = Date.parse(timestamp);
     const ownerAccountByValue = this.ownerAccounts.indexByOwnerValue();
-    return rows.map((row) => this.serialize(row, now, ownerAccountByValue));
+    const goalIdsByWorkPlan = this.monthlyGoals.indexGoalIdsByWorkPlan(rows.map((row) => row.id));
+    return rows.map((row) => this.serialize(row, now, ownerAccountByValue, goalIdsByWorkPlan.get(row.id) ?? []));
   }
 
   search(input: WorkPlanSearch): WorkPlan[] {
@@ -138,7 +141,7 @@ export class WorkPlanService {
   get(id: string): WorkPlan {
     const row = this.database.sqlite.prepare("SELECT * FROM work_plans WHERE id = ?").get(id) as WorkPlanRow | undefined;
     if (!row) throw notFound("工作计划不存在");
-    return this.serialize(row, Date.now(), this.ownerAccounts.indexByOwnerValue());
+    return this.serialize(row, Date.now(), this.ownerAccounts.indexByOwnerValue(), this.monthlyGoals.getGoalIdsByWorkPlan(id));
   }
 
   create(input: CreateWorkPlan): WorkPlan {
@@ -184,6 +187,7 @@ export class WorkPlanService {
           timestamp,
         );
       this.customFields.setValues(id, input.customFields, true);
+      this.monthlyGoals.setTaskLinks(id, input.monthlyGoalIds ?? []);
     });
     execute();
     return this.get(id);
@@ -217,6 +221,7 @@ export class WorkPlanService {
         );
       if (result.changes === 0) throw versionConflict();
       if (input.customFields) this.customFields.setValues(id, input.customFields, false);
+      if (input.monthlyGoalIds !== undefined) this.monthlyGoals.setTaskLinks(id, input.monthlyGoalIds);
     });
     execute();
     return this.get(id);
@@ -260,7 +265,7 @@ export class WorkPlanService {
     return this.list({ limit: 500 });
   }
 
-  private serialize(row: WorkPlanRow, now: number, ownerAccountByValue: ReadonlyMap<string, string>): WorkPlan {
+  private serialize(row: WorkPlanRow, now: number, ownerAccountByValue: ReadonlyMap<string, string>, monthlyGoalIds: string[]): WorkPlan {
     const customFields = this.customFields.getValues(row.id);
     const ownerValue = typeof customFields.owner === "string" ? customFields.owner : null;
     return {
@@ -277,6 +282,7 @@ export class WorkPlanService {
       occurrenceKey: row.occurrence_key,
       isException: Boolean(row.is_exception),
       customFields,
+      monthlyGoalIds,
       ownerAccount: ownerValue ? ownerAccountByValue.get(ownerValue) ?? null : null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,

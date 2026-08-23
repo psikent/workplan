@@ -1,5 +1,5 @@
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import type { CustomFieldType, LoginMode, UserRole, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
+import type { CustomFieldType, LoginMode, MonthlyGoalSeriesFrequency, UserRole, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -166,3 +166,45 @@ export const ownerAccountMappings = sqliteTable("owner_account_mappings", {
   ownerName: text("owner_name").primaryKey(),
   account: text("account").notNull().unique(),
 });
+
+export const monthlyGoals = sqliteTable(
+  "monthly_goals",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    year: integer("year").notNull(),
+    month: integer("month").notNull(),
+    workPlanId: text("work_plan_id").references(() => workPlans.id, { onDelete: "set null" }),
+    archivedAt: text("archived_at"),
+    version: integer("version").notNull().default(1),
+    seriesId: text("series_id").references(() => monthlyGoalSeries.id, { onDelete: "set null" }),
+    occurrenceKey: text("occurrence_key"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("monthly_goals_period_idx").on(table.year, table.month),
+    index("monthly_goals_work_plan_idx").on(table.workPlanId),
+    uniqueIndex("monthly_goal_series_occurrence_idx").on(table.seriesId, table.occurrenceKey),
+  ],
+);
+
+export const monthlyGoalSeries = sqliteTable(
+  "monthly_goal_series",
+  {
+    id: text("id").primaryKey(),
+    templateJson: text("template_json").notNull(),
+    frequency: text("frequency").$type<MonthlyGoalSeriesFrequency>().notNull(),
+    interval: integer("interval").notNull().default(1),
+    startYear: integer("start_year").notNull(),
+    startMonth: integer("start_month").notNull(),
+    occurrenceCount: integer("occurrence_count"),
+    untilYear: integer("until_year"),
+    untilMonth: integer("until_month"),
+    active: integer("active").notNull().default(1),
+    version: integer("version").notNull().default(1),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+);

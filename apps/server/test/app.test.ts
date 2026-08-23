@@ -870,21 +870,23 @@ describe("work plan API", () => {
     expect(validation.json<{ valid: boolean }>().valid).toBe(true);
   });
 
-  it("round-trips owner mappings in JSON version 2 and preserves them when importing version 1", async () => {
+  it("round-trips owner mappings in JSON version 4 and preserves them when importing version 1", async () => {
     const context = await createContext();
     const exported = await context.request({ method: "GET", url: "/api/v1/export" });
     expect(exported.statusCode).toBe(200);
-    const version2 = exported.json<{
+    const version4 = exported.json<{
       schemaVersion: number;
       exportedAt: string;
       data: Record<string, Array<Record<string, unknown>>>;
     }>();
-    expect(version2.schemaVersion).toBe(2);
-    expect(version2.data.owner_account_mappings).toHaveLength(9);
+    expect(version4.schemaVersion).toBe(4);
+    expect(version4.data.owner_account_mappings).toHaveLength(9);
+    expect(version4.data.monthly_goals).toEqual([]);
+    expect(version4.data.monthly_goal_series).toEqual([]);
 
     context.database.sqlite.prepare("UPDATE owner_account_mappings SET account = ? WHERE owner_name = ?").run("changed@example.com", "冯铭倩");
-    const { owner_account_mappings: _mappings, ...version1Data } = version2.data;
-    const version1 = { schemaVersion: 1, exportedAt: version2.exportedAt, data: version1Data };
+    const { owner_account_mappings: _mappings, monthly_goals: _monthlyGoals, monthly_goal_series: _series, ...version1Data } = version4.data;
+    const version1 = { schemaVersion: 1, exportedAt: version4.exportedAt, data: version1Data };
     const oldValidation = await context.request({ method: "POST", url: "/api/v1/import/validate", payload: version1 });
     expect(oldValidation.statusCode).toBe(200);
     const oldImport = await context.request({ method: "POST", url: "/api/v1/import", payload: version1 });
@@ -892,9 +894,9 @@ describe("work plan API", () => {
     expect(context.database.sqlite.prepare("SELECT account FROM owner_account_mappings WHERE owner_name = ?").get("冯铭倩")).toEqual({ account: "changed@example.com" });
 
     const replacement = {
-      ...version2,
+      ...version4,
       data: {
-        ...version2.data,
+        ...version4.data,
         owner_account_mappings: [{ owner_name: "测试负责人", account: "test.owner@example.com" }],
       },
     };

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
-import type { CreateWorkPlan, CustomFieldDefinition, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
-import { Archive, CalendarClock, Copy, Repeat2, X } from "lucide-react";
+import type { CreateWorkPlan, CustomFieldDefinition, MonthlyGoal, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
+import { Archive, CalendarClock, Copy, Repeat2, Target, X } from "lucide-react";
 import { fromDateTimeLocal, statusLabels, toDateTimeLocal } from "../lib/format";
 
 type RecurrenceInput = { frequency: "daily" | "weekly" | "monthly"; interval: number; timeZone: string } | null;
@@ -10,6 +10,8 @@ type Props = {
   plan: WorkPlan | null;
   series?: WorkPlanSeries | null | undefined;
   fields: CustomFieldDefinition[];
+  monthlyGoals?: MonthlyGoal[];
+  monthlyGoalsLoading?: boolean;
   initialDate?: Date | null;
   ownerAccountMappings?: OwnerAccountMapping[];
   ownerAccountMappingsLoading?: boolean;
@@ -38,8 +40,12 @@ function defaultCustomValues(fields: CustomFieldDefinition[]) {
   }));
 }
 
-export default function WorkPlanDrawer({ plan, series, fields, initialDate = null, ownerAccountMappings = [], ownerAccountMappingsLoading = false, ownerAccountMappingsError = false, open, saving, onClose, onSave, onDuplicate, onDelete }: Props) {
+export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = [], monthlyGoalsLoading = false, initialDate = null, ownerAccountMappings = [], ownerAccountMappingsLoading = false, ownerAccountMappingsError = false, open, saving, onClose, onSave, onDuplicate, onDelete }: Props) {
   const defaults = useMemo(() => defaultTimes(initialDate ?? undefined), [initialDate, open]);
+  const sortedMonthlyGoals = useMemo(
+    () => [...monthlyGoals].sort((left, right) => right.year - left.year || right.month - left.month || left.createdAt.localeCompare(right.createdAt)),
+    [monthlyGoals],
+  );
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<WorkPlanStatus>("pending");
@@ -47,6 +53,7 @@ export default function WorkPlanDrawer({ plan, series, fields, initialDate = nul
   const [startAt, setStartAt] = useState(defaults.startAt);
   const [endAt, setEndAt] = useState(defaults.endAt);
   const [customValues, setCustomValues] = useState<Record<string, unknown>>({});
+  const [monthlyGoalIds, setMonthlyGoalIds] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [interval, setIntervalValue] = useState(1);
   const [error, setError] = useState("");
@@ -60,6 +67,7 @@ export default function WorkPlanDrawer({ plan, series, fields, initialDate = nul
     setStartAt(plan ? toDateTimeLocal(plan.startAt) : nextDefaults.startAt);
     setEndAt(plan ? toDateTimeLocal(plan.endAt) : nextDefaults.endAt);
     setCustomValues(plan?.customFields ?? {});
+    setMonthlyGoalIds(plan?.monthlyGoalIds ?? []);
     setRecurrence(series?.active ? series.recurrence.frequency : "none");
     setIntervalValue(series?.active ? series.recurrence.interval : 1);
     setError("");
@@ -105,6 +113,7 @@ export default function WorkPlanDrawer({ plan, series, fields, initialDate = nul
           startAt: startIso,
           endAt: endIso,
           customFields: customValues,
+          monthlyGoalIds,
           ...(plan ? { version: plan.version } : {}),
         },
         recurrence === "none" ? null : { frequency: recurrence, interval, timeZone: "Asia/Shanghai" },
@@ -171,6 +180,32 @@ export default function WorkPlanDrawer({ plan, series, fields, initialDate = nul
             </div>
             <p className="recurrence-summary">{cycleSummary}</p>
           </fieldset>
+
+          {monthlyGoals.length > 0 ? (
+            <fieldset className="form-section full">
+              <legend><Target />月目标</legend>
+              {monthlyGoalsLoading ? <p className="recurrence-summary">正在载入月目标…</p> : (
+                <div className="goal-multi-select">
+                  {sortedMonthlyGoals.map((goal) => {
+                    const occupied = Boolean(goal.linkedWorkPlan) && goal.linkedWorkPlan!.id !== plan?.id;
+                    const checked = monthlyGoalIds.includes(goal.id);
+                    const label = `${goal.year} 年 ${goal.month} 月 · ${goal.title}`;
+                    return (
+                      <label key={goal.id} className={`goal-option ${occupied ? "disabled" : ""}`} title={occupied ? "该目标已关联其他工作任务" : label}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={occupied}
+                          onChange={(event) => setMonthlyGoalIds((current) => event.target.checked ? [...current, goal.id] : current.filter((id) => id !== goal.id))}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </fieldset>
+          ) : null}
 
           {activeFields.length > 0 ? (
             <fieldset className="form-section full">

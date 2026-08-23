@@ -2,9 +2,9 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, ty
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { arrayMove } from "@dnd-kit/sortable";
 import { compareWorkPlansBySchedule, deriveWorkPlanStatus } from "@workplan/contracts";
-import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus } from "@workplan/contracts";
+import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, MonthlyGoal, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus } from "@workplan/contracts";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, Plus, RotateCcw, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import GanttTimeline, { type GanttDisplayProperty } from "../components/GanttTimeline";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
@@ -129,6 +129,7 @@ function duplicateWorkPlanInput(plan: WorkPlan): CreateWorkPlan {
     startAt: plan.startAt,
     endAt: plan.endAt,
     customFields: { ...plan.customFields },
+    monthlyGoalIds: [...plan.monthlyGoalIds],
   };
 }
 
@@ -202,6 +203,7 @@ export default function WorkPlansPage() {
   const openedRequestedPlanIdRef = useRef<string | null>(null);
 
   const plansQuery = useQuery({ queryKey: ["work-plans"], queryFn: () => api<WorkPlan[]>("/work-plans?limit=500"), refetchInterval: 30_000 });
+  const monthlyGoalsQuery = useQuery({ queryKey: ["monthly-goals"], queryFn: () => api<MonthlyGoal[]>("/monthly-goals") });
   const fieldsQuery = useQuery({ queryKey: ["custom-fields"], queryFn: () => api<CustomFieldDefinition[]>("/custom-fields") });
   const ownerAccountMappingsQuery = useQuery({ queryKey: ["owner-account-mappings"], queryFn: () => api<OwnerAccountMapping[]>("/owner-account-mappings") });
   const seriesQuery = useQuery({ queryKey: ["work-plan-series"], queryFn: () => api<WorkPlanSeries[]>("/work-plan-series") });
@@ -210,6 +212,7 @@ export default function WorkPlansPage() {
     () => [...(plansQuery.data ?? [])].sort(compareWorkPlansBySchedule),
     [plansQuery.data],
   );
+  const goalsById = useMemo(() => new Map((monthlyGoalsQuery.data ?? []).map((goal) => [goal.id, goal])), [monthlyGoalsQuery.data]);
   const selectedSeries = selected?.seriesId ? seriesQuery.data?.find((series) => series.id === selected.seriesId) : null;
   const availableColumns = useMemo<PlanColumn[]>(() => [
     ...builtInColumns,
@@ -388,6 +391,7 @@ export default function WorkPlansPage() {
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["work-plans"] });
       await queryClient.invalidateQueries({ queryKey: ["work-plan-series"] });
+      await queryClient.invalidateQueries({ queryKey: ["monthly-goals"] });
       setDrawerOpen(false);
       setSelected(null);
       setNewPlanDate(null);
@@ -740,7 +744,7 @@ export default function WorkPlansPage() {
           <div className="plan-grid-scroll" style={planGridStyle}>
             <div className="planner-columns"><span>工作内容</span>{visibleColumns.map((column) => <span className={isTextPlanColumn(column) ? undefined : "plan-column-centered"} key={column.id}>{column.label}</span>)}</div>
             <div ref={planRowsRef} className="plan-rows">
-              {visiblePlans.map((plan) => <PlanRow key={plan.id} plan={plan} columns={visibleColumns} onSelect={handleSelect} />)}
+              {visiblePlans.map((plan) => <PlanRow key={plan.id} plan={plan} columns={visibleColumns} goalsById={goalsById} onSelect={handleSelect} />)}
               {!plansQuery.isLoading && visiblePlans.length === 0 ? <div className="plan-list-empty">这个时间范围还没有工作计划</div> : null}
             </div>
           </div>
@@ -782,6 +786,8 @@ export default function WorkPlansPage() {
         plan={selected}
         series={selected?.seriesId ? (seriesQuery.isLoading ? undefined : selectedSeries ?? null) : null}
         fields={fieldsQuery.data ?? []}
+        monthlyGoals={monthlyGoalsQuery.data ?? []}
+        monthlyGoalsLoading={monthlyGoalsQuery.isLoading}
         initialDate={newPlanDate}
         ownerAccountMappings={ownerAccountMappingsQuery.data ?? []}
         ownerAccountMappingsLoading={ownerAccountMappingsQuery.isLoading}
@@ -803,10 +809,21 @@ export default function WorkPlansPage() {
   );
 }
 
-function PlanRow({ plan, columns, onSelect }: { plan: WorkPlan; columns: PlanColumn[]; onSelect: (plan: WorkPlan) => void }) {
+function PlanRow({ plan, columns, goalsById, onSelect }: { plan: WorkPlan; columns: PlanColumn[]; goalsById: Map<string, MonthlyGoal>; onSelect: (plan: WorkPlan) => void }) {
+  const chips = plan.monthlyGoalIds.flatMap((id) => {
+    const goal = goalsById.get(id);
+    return goal ? [goal] : [];
+  });
   return (
     <div className="plan-row" data-plan-id={plan.id}>
-      <button className="plan-title-button" type="button" onClick={() => onSelect(plan)}><strong>{plan.title}</strong></button>
+      <div className="plan-row-title-cell">
+        <button className="plan-title-button" type="button" onClick={() => onSelect(plan)}><strong>{plan.title}</strong></button>
+        {chips.length > 0 ? (
+          <div className="plan-row-goal-chips">
+            {chips.map((goal) => <Link key={goal.id} className="goal-chip" to="/monthly-goals" title={`${goal.year} 年 ${goal.month} 月 · ${goal.title}`}>{goal.title}</Link>)}
+          </div>
+        ) : null}
+      </div>
       {columns.map((column) => <PlanColumnValue key={column.id} column={column} plan={plan} />)}
     </div>
   );

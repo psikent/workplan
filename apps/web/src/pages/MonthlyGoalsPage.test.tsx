@@ -1,0 +1,544 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { MonthlyGoal, MonthlyGoalSeries, MonthlyGoalSeriesFrequency, WorkPlan } from "@workplan/contracts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../lib/api";
+import { ToastProvider } from "../components/ToastProvider";
+import MonthlyGoalsPage from "./MonthlyGoalsPage";
+
+const apiMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/api")>()),
+  api: apiMock,
+}));
+
+const linkedPlan: WorkPlan = {
+  id: "3f2a5a12-7e3a-4b3f-a4c0-d1b2e3f4a5b6",
+  title: "官网上线计划",
+  description: "",
+  status: "in_progress",
+  statusMode: "automatic",
+  startAt: "2026-08-10T02:00:00.000Z",
+  endAt: "2026-08-20T03:00:00.000Z",
+  sortOrder: 0,
+  version: 1,
+  seriesId: null,
+  occurrenceKey: null,
+  isException: false,
+  customFields: {},
+  monthlyGoalIds: [],
+  ownerAccount: null,
+  createdAt: "2026-08-01T00:00:00.000Z",
+  updatedAt: "2026-08-01T00:00:00.000Z",
+};
+
+const freePlan: WorkPlan = {
+  ...linkedPlan,
+  id: "a1b2c3d4-1111-4222-8333-444455556666",
+  title: "待排期设计评审",
+  status: "pending",
+  startAt: "2026-08-25T02:00:00.000Z",
+  endAt: "2026-08-26T03:00:00.000Z",
+};
+
+const occupiedPlan: WorkPlan = {
+  ...linkedPlan,
+  id: "b2c3d4e5-2222-4333-8444-555566667777",
+  title: "他人占用的计划",
+  status: "completed",
+  monthlyGoalIds: ["8e7f6a5b-3333-4ddd-8eee-abcdefabcdef"],
+};
+
+function goalFixture(overrides: Partial<MonthlyGoal> = {}): MonthlyGoal {
+  return {
+    id: "7c1e2d3f-aaaa-4bbb-8ccc-0123456789ab",
+    title: "完成官网改版",
+    description: "主页与详情页上线",
+    year: 2026,
+    month: 8,
+    archivedAt: null,
+    version: 1,
+    status: "pending",
+    linkedWorkPlan: null,
+    seriesId: null,
+    occurrenceKey: null,
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+const activeGoal = goalFixture({
+  title: "完成官网改版",
+  id: "5d6e3902-7a69-4e7d-8c1c-4a34ecc0f179",
+  status: "in_progress",
+  linkedWorkPlan: { id: linkedPlan.id, title: linkedPlan.title },
+});
+const unlinkedGoal = goalFixture({ id: "8e7f6a5b-3333-4ddd-8eee-abcdefabcdef", title: "完成内容审核" });
+const archivedGoal = goalFixture({
+  id: "9f0a1b2c-4444-4eee-8fff-012345678901",
+  title: "已归档的季度评审",
+  status: "completed",
+  archivedAt: "2026-08-10T00:00:00.000Z",
+});
+
+let storedGoals: MonthlyGoal[] = [];
+let storedPlans: WorkPlan[] = [];
+let storedSeries: MonthlyGoalSeries[] = [];
+
+export const seriesFixture: MonthlyGoalSeries = {
+  id: "a0b0c0d0-5555-4666-8777-888899990000",
+  template: { title: "定期巡检", description: "每月巡检一次" },
+  frequency: "monthly",
+  interval: 1,
+  startPeriod: { year: 2026, month: 8 },
+  occurrenceCount: 3,
+  untilPeriod: { year: 2026, month: 10 },
+  active: true,
+  version: 1,
+  instanceCount: 3,
+  createdAt: "2026-08-01T00:00:00.000Z",
+  updatedAt: "2026-08-01T00:00:00.000Z",
+};
+
+function mockStatefulApi(
+  initialGoals: MonthlyGoal[] = [activeGoal, unlinkedGoal, archivedGoal],
+  initialPlans: WorkPlan[] = [linkedPlan, freePlan, occupiedPlan],
+  initialSeries: MonthlyGoalSeries[] = [],
+) {
+  storedGoals = initialGoals;
+  storedPlans = initialPlans;
+  storedSeries = initialSeries;
+  apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+    const [cleanPath = "", query = ""] = path.split("?");
+    if (cleanPath === "/monthly-goal-series" && init?.method === "POST") {
+      const input = JSON.parse(String(init.body)) as {
+        template: { title: string; description: string };
+        frequency: MonthlyGoalSeriesFrequency;
+        interval: number;
+        startPeriod: { year: number; month: number };
+        occurrenceCount: number | null;
+        untilPeriod: { year: number; month: number } | null;
+      };
+      const series: MonthlyGoalSeries = {
+        id: seriesFixture.id,
+        template: input.template,
+        frequency: input.frequency,
+        interval: input.interval,
+        startPeriod: input.startPeriod,
+        occurrenceCount: input.occurrenceCount,
+        untilPeriod: input.untilPeriod,
+        active: true,
+        version: 1,
+        instanceCount: input.occurrenceCount ?? 3,
+        createdAt: "2026-08-01T00:00:00.000Z",
+        updatedAt: "2026-08-01T00:00:00.000Z",
+      };
+      const generated: MonthlyGoal[] = [];
+      for (let index = 0; index < (input.occurrenceCount ?? 3); index += 1) {
+        const key = addPeriod(input.startPeriod, stepMonths(input.frequency, input.interval), index);
+        generated.push(goalFixture({ id: `20000000-0000-4000-8000-${String(index).padStart(12, "0")}`, title: input.template.title, description: input.template.description, year: key.year, month: key.month, seriesId: series.id, occurrenceKey: occurrenceKeyOf(key) }));
+      }
+      storedSeries = [...storedSeries, series];
+      storedGoals = [...storedGoals, ...generated];
+      return { series, generated };
+    }
+    if (cleanPath.startsWith("/monthly-goal-series/") && init?.method === "PATCH") {
+      const id = cleanPath.split("/").at(-1)!;
+      const input = JSON.parse(String(init.body)) as { version: number; occurrenceCount?: number | null; untilPeriod?: { year: number; month: number } | null; frequency?: MonthlyGoalSeriesFrequency; interval?: number };
+      const current = storedSeries.find((series) => series.id === id);
+      if (!current) throw new ApiError({ status: 404, code: "NOT_FOUND", detail: "目标重复系列不存在" });
+      const updated: MonthlyGoalSeries = {
+        ...current,
+        frequency: input.frequency ?? current.frequency,
+        interval: input.interval ?? current.interval,
+        occurrenceCount: input.occurrenceCount === undefined ? current.occurrenceCount : input.occurrenceCount,
+        untilPeriod: input.untilPeriod === undefined ? current.untilPeriod : input.untilPeriod,
+        version: current.version + 1,
+      };
+      storedSeries = storedSeries.map((series) => series.id === id ? updated : series);
+      return { series: updated, generated: [] };
+    }
+    if (cleanPath.startsWith("/monthly-goal-series/") && init?.method === "DELETE") {
+      const id = cleanPath.split("/").at(-1)!;
+      storedSeries = storedSeries.map((series) => series.id === id ? { ...series, active: false, version: series.version + 1 } : series);
+      return undefined;
+    }
+    if (cleanPath.startsWith("/monthly-goal-series/")) {
+      const id = cleanPath.split("/").at(-1)!;
+      const series = storedSeries.find((item) => item.id === id);
+      if (!series) throw new ApiError({ status: 404, code: "NOT_FOUND", detail: "目标重复系列不存在" });
+      return { ...series, instances: storedGoals.filter((goal) => goal.seriesId === id).map((goal) => ({ id: goal.id, title: goal.title, year: goal.year, month: goal.month, archivedAt: goal.archivedAt })) };
+    }
+    if (cleanPath === "/monthly-goal-series") return storedSeries;
+    if (cleanPath === "/monthly-goals" && init?.method === "POST") {
+      const input = JSON.parse(String(init.body)) as Partial<MonthlyGoal> & { workPlanId: string | null };
+      const linked = input.workPlanId ? storedPlans.find((plan) => plan.id === input.workPlanId) : undefined;
+      const created = goalFixture({
+        id: "10000000-0000-4000-8000-000000000001",
+        title: input.title ?? "",
+        description: input.description ?? "",
+        year: input.year ?? 2026,
+        month: input.month ?? 8,
+        status: linked?.status ?? null,
+        linkedWorkPlan: linked ? { id: linked.id, title: linked.title } : null,
+      });
+      storedGoals = [...storedGoals, created];
+      return created;
+    }
+    if (cleanPath.startsWith("/monthly-goals/") && init?.method === "PATCH") {
+      const id = cleanPath.split("/").at(-1)!;
+      const input = JSON.parse(String(init.body)) as Partial<MonthlyGoal> & { archived?: boolean; workPlanId?: string | null };
+      const current = storedGoals.find((goal) => goal.id === id);
+      if (!current) throw new ApiError({ status: 404, code: "NOT_FOUND", detail: "月目标不存在" });
+      const linked = input.workPlanId === undefined
+        ? current.linkedWorkPlan
+        : input.workPlanId === null
+          ? null
+          : (() => {
+              const plan = storedPlans.find((item) => item.id === input.workPlanId);
+              return plan ? { id: plan.id, title: plan.title } : null;
+            })();
+      const updated: MonthlyGoal = {
+        ...current,
+        title: input.title ?? current.title,
+        description: input.description ?? current.description,
+        year: input.year ?? current.year,
+        month: input.month ?? current.month,
+        archivedAt: input.archived === undefined ? current.archivedAt : input.archived ? "2026-08-10T00:00:00.000Z" : null,
+        version: current.version + 1,
+        linkedWorkPlan: linked,
+        status: linked ? storedPlans.find((item) => item.id === linked.id)?.status ?? null : null,
+      };
+      storedGoals = storedGoals.map((goal) => goal.id === id ? updated : goal);
+      return updated;
+    }
+    if (cleanPath.startsWith("/monthly-goals/") && init?.method === "DELETE") {
+      const id = cleanPath.split("/").at(-1)!;
+      storedGoals = storedGoals.filter((goal) => goal.id !== id);
+      return undefined;
+    }
+    if (cleanPath === "/monthly-goals") {
+      const params = new URLSearchParams(query);
+      const year = Number(params.get("year"));
+      const month = Number(params.get("month"));
+      return storedGoals.filter((goal) => goal.year === year && goal.month === month);
+    }
+    if (cleanPath === "/work-plans" && query === "limit=500") return storedPlans;
+    throw new Error(`Unexpected API path: ${path}`);
+  });
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 7, 22, 9));
+  apiMock.mockClear();
+  mockStatefulApi();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+function renderPage() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <ToastProvider>
+        <MonthlyGoalsPage />
+      </ToastProvider>
+    </QueryClientProvider>,
+  );
+}
+
+function toolbarSelects(container: HTMLElement) {
+  return container.querySelectorAll<HTMLSelectElement>(".month-selector select");
+}
+
+function stepMonths(frequency: MonthlyGoalSeriesFrequency, interval: number): number {
+  return frequency === "monthly" ? interval : frequency === "quarterly" ? interval * 3 : interval * 12;
+}
+
+function addPeriod(start: { year: number; month: number }, step: number, index: number): { year: number; month: number } {
+  const key = start.year * 12 + start.month - 1 + step * index;
+  return { year: Math.floor(key / 12), month: (key % 12) + 1 };
+}
+
+function occurrenceKeyOf(period: { year: number; month: number }): string {
+  return `${period.year}-${String(period.month).padStart(2, "0")}`;
+}
+
+/** The toast region keeps up to three messages alive, so assertions target the newest one. */
+function latestToast() {
+  return screen.getAllByRole("status").at(-1);
+}
+
+describe("MonthlyGoalsPage", () => {
+  it("renders the month's goals, derived badges and the summary copy", async () => {
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    expect(screen.getByRole("heading", { name: "月目标" })).toBeTruthy();
+    expect(screen.getByText("本月已完成 0 / 2 个目标")).toBeTruthy();
+    expect(screen.getByText("完成官网改版")).toBeTruthy();
+    expect(screen.getByText("完成内容审核")).toBeTruthy();
+
+    expect(screen.getByTitle(linkedPlan.title)).toBeTruthy();
+    expect(screen.getAllByText("进行中")).toHaveLength(2); // linked plan badge + derived goal badge
+    expect(screen.getByText("未关联")).toBeTruthy();
+
+    // Hidden archived goal and its completion excluded from the summary.
+    expect(screen.queryByText("已归档的季度评审")).toBeNull();
+    view.unmount();
+  });
+
+  it("shows archived goals only after toggling and keeps the summary stable", async () => {
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "显示已归档" }));
+    await screen.findByText("已归档的季度评审");
+    expect(screen.getByText("已归档")).toBeTruthy();
+    expect(screen.getByText("本月已完成 0 / 2 个目标")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "显示已归档" }));
+    await waitFor(() => expect(screen.queryByText("已归档的季度评审")).toBeNull());
+    view.unmount();
+  });
+
+  it("switches months and refetches the matching list", async () => {
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    const selects = toolbarSelects(view.container);
+    expect(selects[0]?.value).toBe("2026");
+    expect(selects[1]?.value).toBe("8");
+
+    fireEvent.change(selects[1]!, { target: { value: "9" } });
+    await waitFor(() => expect(apiMock.mock.calls.some(([path]) => path === "/monthly-goals?year=2026&month=9&includeArchived=true")).toBe(true));
+    await screen.findByText("这个月还没有配置月目标");
+    expect(screen.queryByText("完成官网改版")).toBeNull();
+    expect(screen.getByText("本月已完成 0 / 0 个目标")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("creates a goal through the dialog and submits the linked plan", async () => {
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("button", { name: "新建月目标" }));
+    expect(screen.getByRole("heading", { name: "新建月目标" })).toBeTruthy();
+    const form = view.container.querySelector<HTMLFormElement>(".goal-dialog")!;
+    const recurrenceSection = form.querySelector("fieldset.form-section")!;
+    const descriptionField = screen.getByLabelText(/说明/).parentElement!;
+    const gridChildren = Array.from(form.querySelector(".field-grid")!.children);
+    expect(recurrenceSection.classList).toContain("full");
+    expect(gridChildren.indexOf(recurrenceSection)).toBeLessThan(gridChildren.indexOf(descriptionField));
+
+    fireEvent.change(screen.getByLabelText(/目标名称/), { target: { value: "冲刺收尾" } });
+    fireEvent.change(screen.getByLabelText(/说明/), { target: { value: "收尾总结会" } });
+    fireEvent.change(screen.getByRole("combobox", { name: /关联任务/ }), { target: { value: freePlan.id } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const createCall = apiMock.mock.calls.find(([path, init]) => path === "/monthly-goals" && init?.method === "POST");
+      expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+        title: "冲刺收尾",
+        description: "收尾总结会",
+        year: 2026,
+        month: 8,
+        workPlanId: freePlan.id,
+      });
+    });
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("月目标已创建"));
+    expect(screen.queryByRole("heading", { name: "新建月目标" })).toBeNull();
+    await screen.findByText("冲刺收尾");
+    expect(screen.getByText("本月已完成 0 / 3 个目标")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("shows the recurring goal's series editing entry in the goal dialog", async () => {
+    const recurringGoal = goalFixture({
+      title: "定期巡检",
+      seriesId: seriesFixture.id,
+      occurrenceKey: "2026-08",
+    });
+    mockStatefulApi([recurringGoal, unlinkedGoal], [linkedPlan, freePlan, occupiedPlan], [seriesFixture]);
+    const view = renderPage();
+    await screen.findByText("定期巡检");
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑 定期巡检" }));
+    expect(screen.getByText("每月重复 · 共 3 期")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "编辑重复周期" }));
+    expect(await screen.findByRole("dialog", { name: "目标重复周期" })).toBeTruthy();
+    view.unmount();
+  });
+
+  it("edits a goal while keeping other fields untouched", async () => {
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("button", { name: /编辑 完成官网改版/ }));
+    expect(screen.getByRole("heading", { name: "编辑月目标" })).toBeTruthy();
+    expect((screen.getByLabelText(/目标名称/) as HTMLInputElement).value).toBe("完成官网改版");
+
+    fireEvent.change(screen.getByLabelText(/目标名称/), { target: { value: "完成官网改版（二版）" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const patchCall = apiMock.mock.calls.find(([path, init]) => path === "/monthly-goals/5d6e3902-7a69-4e7d-8c1c-4a34ecc0f179" && init?.method === "PATCH");
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
+        title: "完成官网改版（二版）",
+        description: "主页与详情页上线",
+        year: 2026,
+        month: 8,
+        workPlanId: linkedPlan.id,
+        version: 1,
+      });
+    });
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("月目标已保存"));
+    await screen.findByText("完成官网改版（二版）");
+    view.unmount();
+  });
+
+  it("archives, restores and deletes a goal with confirmation", async () => {
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("button", { name: /归档 完成官网改版/ }));
+    await waitFor(() => expect(latestToast()).toHaveTextContent("月目标已归档"));
+    await waitFor(() => expect(screen.queryByText("完成官网改版")).toBeNull());
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "显示已归档" }));
+    await screen.findByText("完成官网改版");
+    fireEvent.click(screen.getByRole("button", { name: /恢复 完成官网改版/ }));
+    await waitFor(() => expect(latestToast()).toHaveTextContent("月目标已恢复"));
+    fireEvent.click(screen.getByRole("checkbox", { name: "显示已归档" }));
+
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: /删除 完成官网改版/ }));
+    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("删除后该月目标将从所有任务标签中消失"));
+    await waitFor(() => expect(latestToast()).toHaveTextContent("月目标已删除"));
+    await waitFor(() => expect(screen.queryByText("完成官网改版")).toBeNull());
+    expect(screen.getByText("完成内容审核")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("links and unlinks a goal through the plan picker, disabling occupied rows", async () => {
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("button", { name: "关联任务 完成内容审核" }));
+    expect(screen.getByRole("dialog", { name: "关联工作计划" })).toBeTruthy();
+
+    const occupiedRow = view.container.querySelector<HTMLButtonElement>(".goal-link-option.disabled");
+    expect(occupiedRow).not.toBeNull();
+    expect(occupiedRow?.textContent).toContain("他人占用的计划");
+    expect(occupiedRow?.disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: /待排期设计评审/ }));
+    await waitFor(() => expect(latestToast()).toHaveTextContent("已关联工作计划"));
+    await screen.findByText("待排期设计评审");
+
+    fireEvent.click(screen.getByRole("button", { name: "关联任务 完成内容审核" }));
+    fireEvent.click(screen.getByRole("button", { name: "解除关联" }));
+    await waitFor(() => expect(latestToast()).toHaveTextContent("已解除关联"));
+    await waitFor(() => expect(screen.queryByTitle("待排期设计评审")).toBeNull());
+    view.unmount();
+  });
+
+  it("surfaces version conflicts in the form and refreshes the list", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.startsWith("/monthly-goals/") && init?.method === "PATCH") {
+        throw new ApiError({ status: 409, code: "VERSION_CONFLICT", detail: "数据已被修改，请刷新后重试" });
+      }
+      if (path.startsWith("/monthly-goals")) return storedGoals;
+      if (path.startsWith("/work-plans")) return storedPlans;
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("button", { name: /编辑 完成官网改版/ }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("数据已被修改，请刷新后重试"));
+    expect(screen.queryByRole("status")).toBeNull();
+    view.unmount();
+  });
+
+  it("submits a recurring series payload and renders the generated instances", async () => {
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("button", { name: "新建月目标" }));
+    fireEvent.change(screen.getByLabelText(/目标名称/), { target: { value: "定期巡检" } });
+    fireEvent.change(screen.getByLabelText(/说明/), { target: { value: "每月巡检一次" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "频率" }), { target: { value: "monthly" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "结束方式" }), { target: { value: "count" } });
+    fireEvent.change(view.container.querySelector<HTMLInputElement>('input[type="number"][min="1"][max="600"]')!, { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const createCall = apiMock.mock.calls.find(([path, init]) => path === "/monthly-goal-series" && init?.method === "POST");
+      expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+        template: { title: "定期巡检", description: "每月巡检一次" },
+        frequency: "monthly",
+        interval: 1,
+        startPeriod: { year: 2026, month: 8 },
+        occurrenceCount: 3,
+        untilPeriod: null,
+      });
+    });
+    await waitFor(() => expect(latestToast()).toHaveTextContent("月目标已创建"));
+    await screen.findByText("定期巡检");
+    await waitFor(() => expect(screen.getByRole("button", { name: "管理系列 定期巡检" })).toBeTruthy());
+    view.unmount();
+  });
+
+  it("opens the series dialog from the badge to edit rules and stop generation", async () => {
+    const recurringGoal = goalFixture({
+      id: "30000000-0000-4000-8000-000000000001",
+      title: "定期巡检",
+      seriesId: seriesFixture.id,
+      occurrenceKey: "2026-08",
+    });
+    const augustGoal = goalFixture({ // keep an ungrouped goal so the list is not all-series
+      id: "40000000-0000-4000-8000-000000000001",
+      title: "完成内容审核",
+    });
+    mockStatefulApi([recurringGoal, augustGoal], [linkedPlan, freePlan, occupiedPlan], [{ ...seriesFixture, instanceCount: 1 }]);
+    const view = renderPage();
+    await screen.findByText("定期巡检");
+
+    const badge = screen.getByRole("button", { name: "管理系列 定期巡检" });
+    expect(badge.getAttribute("title")).toBe("每月重复 · 共 1 期");
+    fireEvent.click(badge);
+
+    expect(await screen.findByRole("dialog", { name: "目标重复周期" })).toBeTruthy();
+    await screen.findByText("起始于 2026 年 8 月 · 已生成 1 期");
+    expect(view.container.querySelectorAll(".series-instance")).toHaveLength(1);
+    expect(view.container.querySelector(".series-instance")?.textContent).toContain("2026 年 8 月");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "结束方式" }), { target: { value: "count" } });
+    fireEvent.change(view.container.querySelector<HTMLInputElement>('input[type="number"][min="1"][max="600"]')!, { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存规则" }));
+
+    await waitFor(() => {
+      const patchCall = apiMock.mock.calls.find(([path, init]) => path === `/monthly-goal-series/${seriesFixture.id}` && init?.method === "PATCH");
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({ occurrenceCount: 5, version: 1 });
+    });
+    await waitFor(() => expect(latestToast()).toHaveTextContent("系列规则已保存"));
+
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "停止生成" }));
+    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("停止后不再生成后续月目标"));
+    await waitFor(() => expect(latestToast()).toHaveTextContent("已停止重复周期"));
+    await waitFor(() => expect(screen.getByText(/（已停止）/)).toBeTruthy());
+    view.unmount();
+  });
+});

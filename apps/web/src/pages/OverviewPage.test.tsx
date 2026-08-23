@@ -10,23 +10,27 @@ const apiMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/api", () => ({ api: apiMock }));
 
+// The overview only lists plans whose endAt is still ahead, so the fixture
+// dates must stay relative to the current time instead of a hardcoded range.
+const now = Date.now();
 const plan: WorkPlan = {
   id: "f6251b28-a2d2-4f7f-bff1-b901cb1d9a53",
   title: "下周计划",
   description: "",
   status: "pending",
   statusMode: "automatic",
-  startAt: new Date(2026, 7, 17, 8, 30).toISOString(),
-  endAt: new Date(2026, 7, 21, 18).toISOString(),
+  startAt: new Date(now + 86_400_000).toISOString(),
+  endAt: new Date(now + 172_800_000).toISOString(),
   sortOrder: 0,
   version: 1,
   seriesId: null,
   occurrenceKey: null,
   isException: false,
   customFields: {},
+  monthlyGoalIds: [],
   ownerAccount: null,
-  createdAt: new Date(2026, 7, 1).toISOString(),
-  updatedAt: new Date(2026, 7, 1).toISOString(),
+  createdAt: new Date(now).toISOString(),
+  updatedAt: new Date(now).toISOString(),
 };
 
 beforeEach(() => {
