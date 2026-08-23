@@ -365,12 +365,60 @@ describe("WorkPlanDrawer", () => {
       linkedWorkPlan: { id: "44444444-4444-4444-8444-444444444444", title: "其他任务" },
     });
 
-    it("renders period labels, disables goals occupied by another plan and sorts newest first", () => {
+    it("offers only Monthly Goals in a new Work Plan's covered month", () => {
+      const view = render(
+        <WorkPlanDrawer
+          plan={null}
+          fields={[]}
+          monthlyGoals={freeGoals}
+          initialDate={new Date(2026, 7, 15)}
+          open
+          saving={false}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByRole("checkbox", { name: /官网改版/ })).toBeTruthy();
+      expect(screen.queryByRole("checkbox", { name: /客服培训/ })).toBeNull();
+      view.unmount();
+    });
+
+    it("offers Monthly Goals across every month covered by a cross-year Work Plan", () => {
+      const novemberGoal = monthlyGoal({ id: "77777777-7777-4777-8777-777777777777", title: "十一月目标", year: 2026, month: 11 });
+      const decemberGoal = monthlyGoal({ id: "88888888-8888-4888-8888-888888888888", title: "十二月目标", year: 2026, month: 12 });
+      const januaryGoal = monthlyGoal({ id: "99999999-9999-4999-8999-999999999999", title: "一月目标", year: 2027, month: 1 });
+      const februaryGoal = monthlyGoal({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", title: "二月目标", year: 2027, month: 2 });
+      const view = render(
+        <WorkPlanDrawer
+          plan={{
+            ...plan,
+            startAt: new Date(2026, 11, 31, 10).toISOString(),
+            endAt: new Date(2027, 0, 1, 2).toISOString(),
+          }}
+          fields={[]}
+          monthlyGoals={[novemberGoal, decemberGoal, januaryGoal, februaryGoal]}
+          open
+          saving={false}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+        />,
+      );
+
+      expect(screen.getAllByRole("checkbox").map((checkbox) => checkbox.closest("label")?.textContent)).toEqual([
+        "2027 年 1 月 · 一月目标",
+        "2026 年 12 月 · 十二月目标",
+      ]);
+      view.unmount();
+    });
+
+    it("sorts covered Monthly Goals and disables goals occupied by another Work Plan", () => {
       const view = render(
         <WorkPlanDrawer
           plan={null}
           fields={[]}
           monthlyGoals={[occupiedGoal, ...freeGoals]}
+          initialDate={new Date(2026, 7, 15)}
           open
           saving={false}
           onClose={vi.fn()}
@@ -380,16 +428,15 @@ describe("WorkPlanDrawer", () => {
 
       expect(screen.getByRole("group", { name: "月目标" })).toBeTruthy();
       const checkboxes = screen.getAllByRole("checkbox");
-      expect(checkboxes).toHaveLength(3);
+      expect(checkboxes).toHaveLength(2);
       expect(checkboxes.map((checkbox) => checkbox.closest("label")?.textContent)).toEqual([
         "2026 年 8 月 · 官网改版",
         "2026 年 8 月 · 季度评审",
-        "2026 年 7 月 · 客服培训",
       ]);
 
       const occupied = screen.getByRole("checkbox", { name: /季度评审/ }) as HTMLInputElement;
       expect(occupied.disabled).toBe(true);
-      expect(occupied.closest("label")?.getAttribute("title")).toBe("该目标已关联其他工作任务");
+      expect(occupied.closest("label")?.getAttribute("title")).toBe("该目标已关联其他工作计划");
       expect((screen.getByRole("checkbox", { name: /官网改版/ }) as HTMLInputElement).disabled).toBe(false);
       view.unmount();
     });
@@ -401,6 +448,7 @@ describe("WorkPlanDrawer", () => {
           plan={null}
           fields={[]}
           monthlyGoals={freeGoals}
+          initialDate={new Date(2026, 7, 15)}
           open
           saving={false}
           onClose={vi.fn()}
@@ -421,7 +469,50 @@ describe("WorkPlanDrawer", () => {
       view.unmount();
     });
 
-    it("prefills checks from the edited plan's monthly goal ids", () => {
+    it("cleans Goal-Plan Links only after date edits form a valid range", async () => {
+      const septemberGoal = monthlyGoal({
+        id: "66666666-6666-4666-8666-666666666666",
+        title: "九月上线",
+        year: 2026,
+        month: 9,
+        createdAt: "2026-09-01T00:00:00.000Z",
+      });
+      const onSave = vi.fn().mockResolvedValue(undefined);
+      const view = render(
+        <WorkPlanDrawer
+          plan={{
+            ...plan,
+            monthlyGoalIds: [freeGoals[0]!.id, septemberGoal.id],
+          }}
+          fields={[]}
+          monthlyGoals={[...freeGoals, septemberGoal]}
+          open
+          saving={false}
+          onClose={vi.fn()}
+          onSave={onSave}
+        />,
+      );
+
+      fireEvent.change(screen.getByLabelText(/开始时间/), { target: { value: "" } });
+      expect((screen.getByRole("checkbox", { name: /官网改版/ }) as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByRole("checkbox", { name: /九月上线/ }) as HTMLInputElement).checked).toBe(true);
+
+      fireEvent.change(screen.getByLabelText(/开始时间/), { target: { value: "2026-09-10T10:00" } });
+      expect((screen.getByRole("checkbox", { name: /官网改版/ }) as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByRole("checkbox", { name: /九月上线/ }) as HTMLInputElement).checked).toBe(true);
+
+      fireEvent.change(screen.getByLabelText(/结束时间/), { target: { value: "2026-09-10T11:00" } });
+      expect(screen.queryByRole("checkbox", { name: /官网改版/ })).toBeNull();
+      expect((screen.getByRole("checkbox", { name: /九月上线/ }) as HTMLInputElement).checked).toBe(true);
+
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+      expect(onSave.mock.calls[0]?.[0]).toMatchObject({ monthlyGoalIds: [septemberGoal.id] });
+      view.unmount();
+    });
+
+    it("keeps an out-of-range Monthly Goal visible and linked until the date range changes", async () => {
+      const onSave = vi.fn().mockResolvedValue(undefined);
       const view = render(
         <WorkPlanDrawer
           plan={{ ...plan, monthlyGoalIds: ["22222222-2222-4222-8222-222222222222"] }}
@@ -430,12 +521,19 @@ describe("WorkPlanDrawer", () => {
           open
           saving={false}
           onClose={vi.fn()}
-          onSave={vi.fn()}
+          onSave={onSave}
         />,
       );
 
-      expect((screen.getByRole("checkbox", { name: /客服培训/ }) as HTMLInputElement).checked).toBe(true);
+      const historicalGoal = screen.getByRole("checkbox", { name: /客服培训/ }) as HTMLInputElement;
+      expect(historicalGoal.checked).toBe(true);
+      expect(historicalGoal.closest("label")?.textContent).toContain("当前关联，不在计划覆盖月份");
       expect((screen.getByRole("checkbox", { name: /官网改版/ }) as HTMLInputElement).checked).toBe(false);
+
+      fireEvent.change(screen.getByLabelText(/工作内容/), { target: { value: "仅修改标题" } });
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+      expect(onSave.mock.calls[0]?.[0]).toMatchObject({ monthlyGoalIds: [freeGoals[1]!.id] });
       view.unmount();
     });
 
@@ -455,6 +553,25 @@ describe("WorkPlanDrawer", () => {
 
       expect(screen.getByText("正在载入月目标…")).toBeTruthy();
       expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+      view.unmount();
+    });
+
+    it("keeps the Monthly Goal section visible when the covered months have no candidates", () => {
+      const view = render(
+        <WorkPlanDrawer
+          plan={null}
+          fields={[]}
+          monthlyGoals={[]}
+          initialDate={new Date(2026, 7, 15)}
+          open
+          saving={false}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByRole("group", { name: "月目标" })).toBeTruthy();
+      expect(screen.getByText("计划覆盖月份内暂无可关联月目标")).toBeTruthy();
       view.unmount();
     });
   });
