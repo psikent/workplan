@@ -1,6 +1,6 @@
 # 04 — 文案、回归测试与整体验收
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02, 03
 Spec: ../spec.md
 Scope: apps/web/src/pages/MonthlyGoalsPage.test.tsx、apps/web/src/components/WorkPlanDrawer.test.tsx、apps/server/src/modules/monthly-goals.ts、apps/server/test/monthly-goals.test.ts
@@ -39,6 +39,13 @@ Scope: apps/web/src/pages/MonthlyGoalsPage.test.tsx、apps/web/src/components/Wo
   - `corepack pnpm --filter @workplan/web build`
   - `corepack pnpm --filter @workplan/server test`
   - `git diff --check`
+
+## Answer
+
+- 月目标新建、编辑和快捷关联入口，以及工作计划抽屉的单月、跨月、跨年候选过滤、搜索、日期清理、历史越界保留、空状态和可访问文案均已有自动化回归覆盖。
+- 服务端占用冲突文案已改为“月目标「…」已关联其他工作计划”，422 状态、错误代码、详情字段和共享类型保持不变。
+- 运行时与活动测试已无月目标关联语境的“关联任务”“工作任务”；`CONTEXT.md` 仅在禁用术语中保留 `Task-Goal Tag`。
+- Web 171 项测试、Server 75 项测试、Web 类型检查与生产构建、仓库完整测试套件及 `git diff --check` 全部通过；规范与规格双轴审查均无发现。
 
 ## Comments
 
