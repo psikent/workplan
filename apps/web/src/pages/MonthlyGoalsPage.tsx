@@ -23,6 +23,12 @@ type GoalDraft = {
   untilMonth: number;
 };
 
+type MonthPeriod = Pick<GoalDraft, "year" | "month">;
+
+function workPlanOverlapsMonth(plan: WorkPlan, period: MonthPeriod): boolean {
+  return rangeOverlapsMonth(plan.startAt, plan.endAt, period.year, period.month);
+}
+
 function emptyDraft(): GoalDraft {
   const now = new Date();
   return {
@@ -82,7 +88,7 @@ export default function MonthlyGoalsPage() {
   const plans = useMemo(() => [...(plansQuery.data ?? [])].sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt)), [plansQuery.data]);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
   const formMonthPlans = useMemo(
-    () => plans.filter((plan) => rangeOverlapsMonth(plan.startAt, plan.endAt, draft.year, draft.month)),
+    () => plans.filter((plan) => workPlanOverlapsMonth(plan, draft)),
     [draft.month, draft.year, plans],
   );
   const formMonthPlanIds = useMemo(() => new Set(formMonthPlans.map((plan) => plan.id)), [formMonthPlans]);
@@ -90,6 +96,12 @@ export default function MonthlyGoalsPage() {
     && draft.workPlanId === editing.linkedWorkPlan?.id
     && !formMonthPlanIds.has(draft.workPlanId)
     ? draft.workPlanId
+    : null;
+  const missingCurrentFormPlan = editing && editing !== "new"
+    && editing.linkedWorkPlan
+    && draft.workPlanId === editing.linkedWorkPlan.id
+    && !plansById.has(draft.workPlanId)
+    ? editing.linkedWorkPlan
     : null;
   const formPlans = useMemo(() => {
     if (!editing || editing === "new") return formMonthPlans;
@@ -101,7 +113,7 @@ export default function MonthlyGoalsPage() {
   const seriesById = useMemo(() => new Map((seriesQuery.data ?? []).map((series) => [series.id, series])), [seriesQuery.data]);
   const quickLinkMonthPlans = useMemo(
     () => linkingGoal
-      ? plans.filter((plan) => rangeOverlapsMonth(plan.startAt, plan.endAt, linkingGoal.year, linkingGoal.month))
+      ? plans.filter((plan) => workPlanOverlapsMonth(plan, linkingGoal))
       : [],
     [linkingGoal, plans],
   );
@@ -112,9 +124,10 @@ export default function MonthlyGoalsPage() {
   const quickLinkCurrentPlan = linkingGoal?.linkedWorkPlan
     ? plansById.get(linkingGoal.linkedWorkPlan.id)
     : undefined;
+  const quickLinkCurrentMissing = Boolean(linkingGoal?.linkedWorkPlan && !quickLinkCurrentPlan);
   const quickLinkCurrentOutOfMonth = Boolean(
     linkingGoal && quickLinkCurrentPlan
-    && !rangeOverlapsMonth(quickLinkCurrentPlan.startAt, quickLinkCurrentPlan.endAt, linkingGoal.year, linkingGoal.month),
+    && !workPlanOverlapsMonth(quickLinkCurrentPlan, linkingGoal),
   );
   const editingSeriesId = editing && editing !== "new" ? editing.seriesId : null;
   const editingSeries = editingSeriesId ? seriesById.get(editingSeriesId) : undefined;
@@ -211,18 +224,18 @@ export default function MonthlyGoalsPage() {
     setError("");
   }
 
-  function updateDraftPeriod(period: Partial<Pick<GoalDraft, "year" | "month">>) {
+  function updateDraftPeriod(period: Partial<MonthPeriod>) {
     setDraft((current) => {
       const next = { ...current, ...period };
       if (!current.workPlanId) return next;
 
       const selectedPlan = plansById.get(current.workPlanId);
-      if (!selectedPlan) return next;
+      if (!selectedPlan) return { ...next, workPlanId: "" };
       const start = Date.parse(selectedPlan.startAt);
       const end = Date.parse(selectedPlan.endAt);
       if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return next;
 
-      return rangeOverlapsMonth(selectedPlan.startAt, selectedPlan.endAt, next.year, next.month)
+      return workPlanOverlapsMonth(selectedPlan, next)
         ? next
         : { ...next, workPlanId: "" };
     });
@@ -361,6 +374,7 @@ export default function MonthlyGoalsPage() {
               <label className="field full"><span>说明</span><textarea rows={2} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} maxLength={2000} /></label>
               <label className="field full"><span>关联计划</span><select value={draft.workPlanId} onChange={(event) => setDraft((current) => ({ ...current, workPlanId: event.target.value }))}>
                 <option value="">不关联</option>
+                {missingCurrentFormPlan ? <option value={missingCurrentFormPlan.id}>{missingCurrentFormPlan.title}（当前关联，未在候选列表中）</option> : null}
                 {formPlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.title}{plan.id === historicalFormPlanId ? "（当前关联，不在所选月份）" : ""}</option>)}
               </select></label>
               <p className="goal-link-hint full">{draft.workPlanId ? "目标完成状态将跟随该工作计划的完成情况。" : "未关联计划时目标显示为「未关联」。"}</p>
@@ -378,7 +392,7 @@ export default function MonthlyGoalsPage() {
             <header><div><h2>关联工作计划</h2><p>选择一条工作计划作为“{linkingGoal.title}”的完成判据。</p></div><button className="icon-button" type="button" onClick={() => setLinkingGoal(null)} aria-label="关闭"><X /></button></header>
             <div className="goal-link-picker">
               {linkingGoal.linkedWorkPlan ? (
-                <div className="goal-link-current"><span className="truncate" title={linkingGoal.linkedWorkPlan.title}>当前关联：{linkingGoal.linkedWorkPlan.title}{quickLinkCurrentOutOfMonth ? "（不在目标所属月份）" : ""}</span><button className="text-button" type="button" disabled={saving} onClick={() => linkMutation.mutate({ goal: linkingGoal, workPlanId: null })}>解除关联</button></div>
+                <div className="goal-link-current"><span className="truncate" title={linkingGoal.linkedWorkPlan.title}>当前关联：{linkingGoal.linkedWorkPlan.title}{quickLinkCurrentOutOfMonth ? "（不在目标所属月份）" : quickLinkCurrentMissing ? "（计划未在候选列表中，无法确认目标所属月份）" : ""}</span><button className="text-button" type="button" disabled={saving} onClick={() => linkMutation.mutate({ goal: linkingGoal, workPlanId: null })}>解除关联</button></div>
               ) : null}
               <label className="search-control goal-link-search"><Search /><input value={planSearch} onChange={(event) => setPlanSearch(event.target.value)} placeholder="搜索工作计划" /></label>
               <div className="goal-link-list">

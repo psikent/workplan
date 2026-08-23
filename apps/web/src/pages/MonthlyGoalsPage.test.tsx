@@ -361,7 +361,7 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
-  it("offers only work plans that overlap the goal month when creating", async () => {
+  it("offers only Work Plans that overlap the Monthly Goal month when creating", async () => {
     const crossMonthPlan: WorkPlan = {
       ...freePlan,
       id: "b3c4d5e6-2222-4333-8444-555566667788",
@@ -392,7 +392,7 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
-  it("keeps an existing out-of-month plan visible when editing", async () => {
+  it("keeps an out-of-month Work Plan visible for an existing Goal-Plan Link", async () => {
     const historicalPlan: WorkPlan = {
       ...freePlan,
       id: "d4e5f607-4444-4555-8666-777788889999",
@@ -438,7 +438,40 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
-  it("clears an out-of-month association from the draft before saving", async () => {
+  it("keeps a Goal-Plan Link visible when its Work Plan is outside the capped candidate response", async () => {
+    const omittedPlan: WorkPlan = {
+      ...freePlan,
+      id: "e6f71829-5656-4777-8888-999900001122",
+      title: "候选列表外的当前计划",
+      startAt: new Date(2026, 8, 10, 9).toISOString(),
+      endAt: new Date(2026, 8, 11, 9).toISOString(),
+    };
+    const omittedPlanGoal = goalFixture({
+      id: "f718293a-6767-4888-8999-000011112233",
+      title: "候选列表外关联目标",
+      linkedWorkPlan: { id: omittedPlan.id, title: omittedPlan.title },
+      status: omittedPlan.status,
+    });
+    mockStatefulApi([omittedPlanGoal], [freePlan]);
+    const view = renderPage();
+    await screen.findByText(omittedPlanGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `编辑 ${omittedPlanGoal.title}` }));
+    const planSelect = screen.getByRole("combobox", { name: /关联计划/ }) as HTMLSelectElement;
+    expect(planSelect.value).toBe(omittedPlan.id);
+    expect(Array.from(planSelect.options, (option) => option.textContent)).toContain(
+      `${omittedPlan.title}（当前关联，未在候选列表中）`,
+    );
+
+    fireEvent.change(screen.getByRole("combobox", { name: "所属月份" }), { target: { value: "9" } });
+    expect(planSelect.value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    fireEvent.click(screen.getByRole("button", { name: `关联计划 ${omittedPlanGoal.title}` }));
+    expect(view.container.querySelector(".goal-link-current")).toHaveTextContent("计划未在候选列表中，无法确认目标所属月份");
+    view.unmount();
+  });
+
+  it("clears an out-of-month Goal-Plan Link from the draft before saving", async () => {
     const view = renderPage();
     await screen.findByText(activeGoal.title);
 
@@ -463,7 +496,7 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
-  it("keeps the persisted association when a year change is cancelled", async () => {
+  it("keeps the persisted Goal-Plan Link when a year change is cancelled", async () => {
     const view = renderPage();
     await screen.findByText(activeGoal.title);
 
@@ -479,7 +512,7 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
-  it("keeps an association that still overlaps the changed month", async () => {
+  it("keeps a Goal-Plan Link whose Work Plan still overlaps the changed month", async () => {
     const crossMonthPlan: WorkPlan = {
       ...freePlan,
       id: "4b5c6d7e-1111-4222-8333-444455556677",
@@ -514,7 +547,7 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
-  it("does not clear an existing association when the plan range is invalid", async () => {
+  it("does not clear a Goal-Plan Link when the Work Plan range is invalid", async () => {
     const invalidPlan: WorkPlan = {
       ...freePlan,
       id: "6d7e8f90-3333-4444-8555-666677778899",
@@ -541,7 +574,7 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
-  it("filters quick-link results by month before applying search", async () => {
+  it("filters quick picker Work Plans by month before applying search", async () => {
     const crossMonthPlan: WorkPlan = {
       ...freePlan,
       id: "f6071829-6666-4777-8888-999900001111",
@@ -574,7 +607,7 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
-  it("marks a quick-link current association that is outside the goal month", async () => {
+  it("marks a quick picker Goal-Plan Link whose Work Plan is outside the Monthly Goal month", async () => {
     const historicalPlan: WorkPlan = {
       ...freePlan,
       id: "18293a4b-8888-4999-8000-111122223333",
@@ -601,7 +634,7 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
-  it("shows the month-specific empty state when no work plans overlap", async () => {
+  it("shows the month-specific empty state when no Work Plans overlap", async () => {
     const septemberPlan: WorkPlan = {
       ...freePlan,
       id: "3a4b5c6d-0000-4111-8222-333344445555",
@@ -619,7 +652,7 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
-  it("uses plan terminology across the monthly-goal association controls", async () => {
+  it("uses Work Plan terminology across Monthly Goal link controls", async () => {
     const view = renderPage();
     await screen.findByText(activeGoal.title);
 
