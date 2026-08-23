@@ -1,6 +1,6 @@
 # 03 — 工作计划抽屉月目标候选过滤
 Type: task
-Status: resolved
+Status: ready-for-agent
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/web/src/components/WorkPlanDrawer.tsx、apps/web/src/components/WorkPlanDrawer.test.tsx
@@ -32,13 +32,6 @@ Scope: apps/web/src/components/WorkPlanDrawer.tsx、apps/web/src/components/Work
 - 无效的临时日期输入不会误删关联。
 - 未修改日期时，历史越界关联保留并清晰标识。
 - 抽屉其他控件和布局无回归。
-
-## Answer
-
-- 工作计划抽屉按草稿时间范围筛选并排序月目标，新建默认日期、`initialDate`、编辑日期及跨月跨年范围均复用 `rangeOverlapsMonth`。
-- 日期输入只有在形成有效正向范围后才清理越界关联；无效临时输入会保留选择，保存载荷只包含清理后仍关联或候选响应无法判定的目标 ID。
-- 历史越界关联初次打开时继续显示、保持勾选并标记“当前关联，不在计划覆盖月份”，有效日期变化清除后不会自动恢复。
-- 月目标区块始终保留并提供覆盖月份空状态，占用冲突提示已统一为“其他工作计划”；组件专项测试、类型检查、生产构建和仓库完整测试均通过。
 
 ## Comments
 
