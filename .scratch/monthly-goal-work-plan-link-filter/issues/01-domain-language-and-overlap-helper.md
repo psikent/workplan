@@ -1,6 +1,6 @@
 # 01 — 领域术语与月份重叠基础
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: none
 Spec: ../spec.md
 Scope: CONTEXT.md、apps/web/src/lib/period.ts、apps/web/src/lib/period.test.ts
@@ -30,3 +30,9 @@ Scope: CONTEXT.md、apps/web/src/lib/period.ts、apps/web/src/lib/period.test.ts
 ## Comments
 
 - 需求访谈已确认使用“时间范围与月份有任何重叠”规则。
+
+## Answer
+
+- `CONTEXT.md` 已使用 `Goal-Plan Link` 作为规范术语，并将 Task 相关叫法列入 Avoid。
+- 新增 `rangeOverlapsMonth`，使用本地月份边界与工作计划半开区间判断重叠，并拒绝无效日期、非法年月和非正向范围。
+- 新增同月、跨月、跨年、边界、非法输入和反向范围测试。
