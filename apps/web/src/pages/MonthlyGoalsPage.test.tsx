@@ -471,6 +471,29 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
+  it("waits for Work Plan candidates before changing the period of a linked Monthly Goal", async () => {
+    const statefulApi = apiMock.getMockImplementation()!;
+    let resolvePlans!: (plans: WorkPlan[]) => void;
+    const pendingPlans = new Promise<WorkPlan[]>((resolve) => {
+      resolvePlans = resolve;
+    });
+    apiMock.mockImplementation((path: string, init?: RequestInit) => (
+      path === "/work-plans?limit=500" ? pendingPlans : statefulApi(path, init)
+    ));
+    const view = renderPage();
+    await screen.findByText(activeGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `编辑 ${activeGoal.title}` }));
+    const monthSelect = screen.getByRole("combobox", { name: "所属月份" });
+    expect(monthSelect).toBeDisabled();
+
+    resolvePlans([linkedPlan, freePlan, occupiedPlan]);
+    await waitFor(() => expect(monthSelect).not.toBeDisabled());
+    fireEvent.change(monthSelect, { target: { value: "9" } });
+    expect((screen.getByRole("combobox", { name: /关联计划/ }) as HTMLSelectElement).value).toBe("");
+    view.unmount();
+  });
+
   it("clears an out-of-month Goal-Plan Link from the draft before saving", async () => {
     const view = renderPage();
     await screen.findByText(activeGoal.title);

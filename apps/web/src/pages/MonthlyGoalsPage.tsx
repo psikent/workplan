@@ -286,6 +286,7 @@ export default function MonthlyGoalsPage() {
   }
 
   const saving = saveMutation.isPending || archiveMutation.isPending || deleteMutation.isPending || linkMutation.isPending;
+  const periodControlsDisabled = Boolean(draft.workPlanId) && plansQuery.isLoading;
 
   return (
     <section className="content-page">
@@ -338,8 +339,8 @@ export default function MonthlyGoalsPage() {
             <header><div><h2>{editing === "new" ? "新建月目标" : "编辑月目标"}</h2><p>目标完成状态由关联工作计划的有效状态自动派生。</p></div><button className="icon-button" type="button" onClick={closeForm} aria-label="关闭"><X /></button></header>
             <div className="field-grid">
               <label className="field"><span>目标名称 <b>*</b></span><input value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} required maxLength={200} /></label>
-              <label className="field"><span>所属月份</span><select value={draft.month} onChange={(event) => updateDraftPeriod({ month: Number(event.target.value) })}>{months.map((option) => <option key={option} value={option}>{option} 月</option>)}</select></label>
-              <label className="field"><span>所属年份</span><select value={draft.year} onChange={(event) => updateDraftPeriod({ year: Number(event.target.value) })}>{yearRange.map((option) => <option key={option} value={option}>{option} 年</option>)}</select></label>
+              <label className="field"><span>所属月份</span><select value={draft.month} disabled={periodControlsDisabled} onChange={(event) => updateDraftPeriod({ month: Number(event.target.value) })}>{months.map((option) => <option key={option} value={option}>{option} 月</option>)}</select></label>
+              <label className="field"><span>所属年份</span><select value={draft.year} disabled={periodControlsDisabled} onChange={(event) => updateDraftPeriod({ year: Number(event.target.value) })}>{yearRange.map((option) => <option key={option} value={option}>{option} 年</option>)}</select></label>
               {editing === "new" ? (
                 <fieldset className="form-section full">
                   <legend><Repeat2 />重复周期</legend>
