@@ -341,7 +341,7 @@ describe("MonthlyGoalsPage", () => {
 
     fireEvent.change(screen.getByLabelText(/目标名称/), { target: { value: "冲刺收尾" } });
     fireEvent.change(screen.getByLabelText(/说明/), { target: { value: "收尾总结会" } });
-    fireEvent.change(screen.getByRole("combobox", { name: /关联任务/ }), { target: { value: freePlan.id } });
+    fireEvent.change(screen.getByRole("combobox", { name: /关联计划/ }), { target: { value: freePlan.id } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => {
@@ -358,6 +358,281 @@ describe("MonthlyGoalsPage", () => {
     expect(screen.queryByRole("heading", { name: "新建月目标" })).toBeNull();
     await screen.findByText("冲刺收尾");
     expect(screen.getByText("本月已完成 0 / 3 个目标")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("offers only work plans that overlap the goal month when creating", async () => {
+    const crossMonthPlan: WorkPlan = {
+      ...freePlan,
+      id: "b3c4d5e6-2222-4333-8444-555566667788",
+      title: "跨月发布计划",
+      startAt: new Date(2026, 6, 31, 23).toISOString(),
+      endAt: new Date(2026, 7, 1, 1).toISOString(),
+    };
+    const septemberPlan: WorkPlan = {
+      ...freePlan,
+      id: "c3d4e5f6-3333-4444-8555-666677778888",
+      title: "九月独立计划",
+      startAt: new Date(2026, 8, 10, 9).toISOString(),
+      endAt: new Date(2026, 8, 11, 9).toISOString(),
+    };
+    mockStatefulApi([activeGoal, unlinkedGoal], [freePlan, septemberPlan, linkedPlan, crossMonthPlan]);
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("button", { name: "新建月目标" }));
+    const planSelect = screen.getByRole("combobox", { name: /关联计划/ }) as HTMLSelectElement;
+
+    expect(Array.from(planSelect.options, (option) => option.textContent)).toEqual([
+      "不关联",
+      crossMonthPlan.title,
+      linkedPlan.title,
+      freePlan.title,
+    ]);
+    view.unmount();
+  });
+
+  it("keeps an existing out-of-month plan visible when editing", async () => {
+    const historicalPlan: WorkPlan = {
+      ...freePlan,
+      id: "d4e5f607-4444-4555-8666-777788889999",
+      title: "九月历史关联计划",
+      startAt: new Date(2026, 8, 10, 9).toISOString(),
+      endAt: new Date(2026, 8, 11, 9).toISOString(),
+    };
+    const otherSeptemberPlan: WorkPlan = {
+      ...historicalPlan,
+      id: "d5e6f718-4545-4666-8777-888899990011",
+      title: "其他九月计划",
+      monthlyGoalIds: [],
+    };
+    const historicalGoal = goalFixture({
+      id: "e5f60718-5555-4666-8777-888899990000",
+      title: "保留历史关联",
+      linkedWorkPlan: { id: historicalPlan.id, title: historicalPlan.title },
+      status: historicalPlan.status,
+    });
+    historicalPlan.monthlyGoalIds = [historicalGoal.id];
+    mockStatefulApi([historicalGoal], [freePlan, historicalPlan, otherSeptemberPlan]);
+    const view = renderPage();
+    await screen.findByText(historicalGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `编辑 ${historicalGoal.title}` }));
+    const planSelect = screen.getByRole("combobox", { name: /关联计划/ }) as HTMLSelectElement;
+
+    expect(planSelect.value).toBe(historicalPlan.id);
+    expect(Array.from(planSelect.options, (option) => option.textContent)).toContain(
+      `${historicalPlan.title}（当前关联，不在所选月份）`,
+    );
+    expect(Array.from(planSelect.options, (option) => option.textContent)).not.toContain(otherSeptemberPlan.title);
+
+    fireEvent.change(screen.getByLabelText(/目标名称/), { target: { value: "保留历史关联（二版）" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => {
+      const patchCall = apiMock.mock.calls.find(([path, init]) => path === `/monthly-goals/${historicalGoal.id}` && init?.method === "PATCH");
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
+        title: "保留历史关联（二版）",
+        workPlanId: historicalPlan.id,
+      });
+    });
+    view.unmount();
+  });
+
+  it("clears an out-of-month association from the draft before saving", async () => {
+    const view = renderPage();
+    await screen.findByText(activeGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `编辑 ${activeGoal.title}` }));
+    const planSelect = screen.getByRole("combobox", { name: /关联计划/ }) as HTMLSelectElement;
+    expect(planSelect.value).toBe(linkedPlan.id);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "所属月份" }), { target: { value: "9" } });
+    expect(planSelect.value).toBe("");
+    fireEvent.change(screen.getByRole("combobox", { name: "所属月份" }), { target: { value: "8" } });
+    expect(planSelect.value).toBe("");
+    fireEvent.change(screen.getByRole("combobox", { name: "所属月份" }), { target: { value: "9" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const patchCall = apiMock.mock.calls.find(([path, init]) => path === `/monthly-goals/${activeGoal.id}` && init?.method === "PATCH");
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
+        month: 9,
+        workPlanId: null,
+      });
+    });
+    view.unmount();
+  });
+
+  it("keeps the persisted association when a year change is cancelled", async () => {
+    const view = renderPage();
+    await screen.findByText(activeGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `编辑 ${activeGoal.title}` }));
+    const planSelect = screen.getByRole("combobox", { name: /关联计划/ }) as HTMLSelectElement;
+    fireEvent.change(screen.getByRole("combobox", { name: "所属年份" }), { target: { value: "2027" } });
+    expect(planSelect.value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(apiMock.mock.calls.some(([path, init]) => path === `/monthly-goals/${activeGoal.id}` && init?.method === "PATCH")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: `编辑 ${activeGoal.title}` }));
+    expect((screen.getByRole("combobox", { name: /关联计划/ }) as HTMLSelectElement).value).toBe(linkedPlan.id);
+    view.unmount();
+  });
+
+  it("keeps an association that still overlaps the changed month", async () => {
+    const crossMonthPlan: WorkPlan = {
+      ...freePlan,
+      id: "4b5c6d7e-1111-4222-8333-444455556677",
+      title: "八九月持续计划",
+      startAt: new Date(2026, 7, 15, 9).toISOString(),
+      endAt: new Date(2026, 8, 15, 9).toISOString(),
+    };
+    const crossMonthGoal = goalFixture({
+      id: "5c6d7e8f-2222-4333-8444-555566667788",
+      title: "跨月目标",
+      linkedWorkPlan: { id: crossMonthPlan.id, title: crossMonthPlan.title },
+      status: crossMonthPlan.status,
+    });
+    crossMonthPlan.monthlyGoalIds = [crossMonthGoal.id];
+    mockStatefulApi([crossMonthGoal], [crossMonthPlan]);
+    const view = renderPage();
+    await screen.findByText(crossMonthGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `编辑 ${crossMonthGoal.title}` }));
+    const planSelect = screen.getByRole("combobox", { name: /关联计划/ }) as HTMLSelectElement;
+    fireEvent.change(screen.getByRole("combobox", { name: "所属月份" }), { target: { value: "9" } });
+    expect(planSelect.value).toBe(crossMonthPlan.id);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const patchCall = apiMock.mock.calls.find(([path, init]) => path === `/monthly-goals/${crossMonthGoal.id}` && init?.method === "PATCH");
+      expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
+        month: 9,
+        workPlanId: crossMonthPlan.id,
+      });
+    });
+    view.unmount();
+  });
+
+  it("does not clear an existing association when the plan range is invalid", async () => {
+    const invalidPlan: WorkPlan = {
+      ...freePlan,
+      id: "6d7e8f90-3333-4444-8555-666677778899",
+      title: "日期异常的历史计划",
+      startAt: new Date(2026, 7, 20, 9).toISOString(),
+      endAt: new Date(2026, 7, 19, 9).toISOString(),
+    };
+    const invalidRangeGoal = goalFixture({
+      id: "7e8f901a-4444-4555-8666-777788889900",
+      title: "日期异常关联目标",
+      linkedWorkPlan: { id: invalidPlan.id, title: invalidPlan.title },
+      status: invalidPlan.status,
+    });
+    invalidPlan.monthlyGoalIds = [invalidRangeGoal.id];
+    mockStatefulApi([invalidRangeGoal], [invalidPlan]);
+    const view = renderPage();
+    await screen.findByText(invalidRangeGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `编辑 ${invalidRangeGoal.title}` }));
+    const planSelect = screen.getByRole("combobox", { name: /关联计划/ }) as HTMLSelectElement;
+    fireEvent.change(screen.getByRole("combobox", { name: "所属月份" }), { target: { value: "9" } });
+
+    expect(planSelect.value).toBe(invalidPlan.id);
+    view.unmount();
+  });
+
+  it("filters quick-link results by month before applying search", async () => {
+    const crossMonthPlan: WorkPlan = {
+      ...freePlan,
+      id: "f6071829-6666-4777-8888-999900001111",
+      title: "跨月交付计划",
+      description: "统一检索词",
+      startAt: new Date(2026, 7, 31, 23).toISOString(),
+      endAt: new Date(2026, 8, 1, 1).toISOString(),
+    };
+    const septemberPlan: WorkPlan = {
+      ...freePlan,
+      id: "0718293a-7777-4888-8999-000011112222",
+      title: "九月迁移计划",
+      description: "统一检索词",
+      startAt: new Date(2026, 8, 10, 9).toISOString(),
+      endAt: new Date(2026, 8, 11, 9).toISOString(),
+    };
+    mockStatefulApi([unlinkedGoal], [freePlan, crossMonthPlan, septemberPlan]);
+    const view = renderPage();
+    await screen.findByText(unlinkedGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `关联计划 ${unlinkedGoal.title}` }));
+    expect(await screen.findByRole("button", { name: new RegExp(crossMonthPlan.title) })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: new RegExp(septemberPlan.title) })).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "统一检索词" } });
+    expect(screen.getByRole("button", { name: new RegExp(crossMonthPlan.title) })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: new RegExp(septemberPlan.title) })).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "没有这个计划" } });
+    expect(screen.getByText("没有匹配的工作计划")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("marks a quick-link current association that is outside the goal month", async () => {
+    const historicalPlan: WorkPlan = {
+      ...freePlan,
+      id: "18293a4b-8888-4999-8000-111122223333",
+      title: "九月历史快捷关联",
+      startAt: new Date(2026, 8, 10, 9).toISOString(),
+      endAt: new Date(2026, 8, 11, 9).toISOString(),
+    };
+    const historicalGoal = goalFixture({
+      id: "293a4b5c-9999-4000-8111-222233334444",
+      title: "历史快捷关联目标",
+      linkedWorkPlan: { id: historicalPlan.id, title: historicalPlan.title },
+      status: historicalPlan.status,
+    });
+    historicalPlan.monthlyGoalIds = [historicalGoal.id];
+    mockStatefulApi([historicalGoal], [freePlan, historicalPlan]);
+    const view = renderPage();
+    await screen.findByText(historicalGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `关联计划 ${historicalGoal.title}` }));
+    const currentLink = view.container.querySelector(".goal-link-current");
+    expect(currentLink).toHaveTextContent(`当前关联：${historicalPlan.title}`);
+    expect(currentLink).toHaveTextContent("不在目标所属月份");
+    expect(screen.queryByRole("button", { name: new RegExp(historicalPlan.title) })).toBeNull();
+    view.unmount();
+  });
+
+  it("shows the month-specific empty state when no work plans overlap", async () => {
+    const septemberPlan: WorkPlan = {
+      ...freePlan,
+      id: "3a4b5c6d-0000-4111-8222-333344445555",
+      title: "仅九月计划",
+      startAt: new Date(2026, 8, 10, 9).toISOString(),
+      endAt: new Date(2026, 8, 11, 9).toISOString(),
+    };
+    mockStatefulApi([unlinkedGoal], [septemberPlan]);
+    const view = renderPage();
+    await screen.findByText(unlinkedGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `关联计划 ${unlinkedGoal.title}` }));
+
+    expect(await screen.findByText("所选月份暂无可关联计划")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("uses plan terminology across the monthly-goal association controls", async () => {
+    const view = renderPage();
+    await screen.findByText(activeGoal.title);
+
+    expect(screen.getByText("每月为工作安排一组随月份变化的目标，并自动跟随关联计划完成。")).toBeTruthy();
+    expect(view.container.querySelector(".goals-table.table-head")).toHaveTextContent("关联计划");
+    const linkButton = screen.getByRole("button", { name: `关联计划 ${unlinkedGoal.title}` });
+    expect(linkButton).toHaveAttribute("title", "关联计划");
+
+    fireEvent.click(screen.getByRole("button", { name: "新建月目标" }));
+    expect(screen.getByRole("combobox", { name: "关联计划" })).toBeTruthy();
+    expect(screen.getByText("未关联计划时目标显示为「未关联」。")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "频率" }), { target: { value: "monthly" } });
+    expect(screen.getByText(/每期可单独编辑与关联计划/)).toBeTruthy();
     view.unmount();
   });
 
@@ -421,7 +696,7 @@ describe("MonthlyGoalsPage", () => {
 
     const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: /删除 完成官网改版/ }));
-    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("删除后该月目标将从所有任务标签中消失"));
+    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("删除后该月目标将从关联的工作计划中消失"));
     await waitFor(() => expect(latestToast()).toHaveTextContent("月目标已删除"));
     await waitFor(() => expect(screen.queryByText("完成官网改版")).toBeNull());
     expect(screen.getByText("完成内容审核")).toBeTruthy();
@@ -432,7 +707,7 @@ describe("MonthlyGoalsPage", () => {
     const view = renderPage();
     await screen.findByText("完成官网改版");
 
-    fireEvent.click(screen.getByRole("button", { name: "关联任务 完成内容审核" }));
+    fireEvent.click(screen.getByRole("button", { name: "关联计划 完成内容审核" }));
     expect(screen.getByRole("dialog", { name: "关联工作计划" })).toBeTruthy();
 
     const occupiedRow = view.container.querySelector<HTMLButtonElement>(".goal-link-option.disabled");
@@ -444,7 +719,7 @@ describe("MonthlyGoalsPage", () => {
     await waitFor(() => expect(latestToast()).toHaveTextContent("已关联工作计划"));
     await screen.findByText("待排期设计评审");
 
-    fireEvent.click(screen.getByRole("button", { name: "关联任务 完成内容审核" }));
+    fireEvent.click(screen.getByRole("button", { name: "关联计划 完成内容审核" }));
     fireEvent.click(screen.getByRole("button", { name: "解除关联" }));
     await waitFor(() => expect(latestToast()).toHaveTextContent("已解除关联"));
     await waitFor(() => expect(screen.queryByTitle("待排期设计评审")).toBeNull());

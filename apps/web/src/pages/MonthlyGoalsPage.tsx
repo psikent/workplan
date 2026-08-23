@@ -5,6 +5,7 @@ import { Archive, Pencil, Plus, Repeat2, RotateCcw, Search, Target, Trash2, X } 
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import { type ApiError, api, jsonBody } from "../lib/api";
+import { rangeOverlapsMonth } from "../lib/period";
 
 type SeriesFrequency = MonthlyGoalSeriesFrequency | "";
 
@@ -79,11 +80,42 @@ export default function MonthlyGoalsPage() {
   const completedCount = useMemo(() => goals.filter((goal) => !goal.archivedAt && goal.status === "completed").length, [goals]);
   const activeCount = useMemo(() => goals.filter((goal) => !goal.archivedAt).length, [goals]);
   const plans = useMemo(() => [...(plansQuery.data ?? [])].sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt)), [plansQuery.data]);
+  const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
+  const formMonthPlans = useMemo(
+    () => plans.filter((plan) => rangeOverlapsMonth(plan.startAt, plan.endAt, draft.year, draft.month)),
+    [draft.month, draft.year, plans],
+  );
+  const formMonthPlanIds = useMemo(() => new Set(formMonthPlans.map((plan) => plan.id)), [formMonthPlans]);
+  const historicalFormPlanId = editing && editing !== "new"
+    && draft.workPlanId === editing.linkedWorkPlan?.id
+    && !formMonthPlanIds.has(draft.workPlanId)
+    ? draft.workPlanId
+    : null;
+  const formPlans = useMemo(() => {
+    if (!editing || editing === "new") return formMonthPlans;
+    return plans.filter((plan) => (
+      (formMonthPlanIds.has(plan.id) || plan.id === historicalFormPlanId)
+      && (!plan.monthlyGoalIds.includes(editing.id) || plan.id === editing.linkedWorkPlan?.id)
+    ));
+  }, [editing, formMonthPlanIds, formMonthPlans, historicalFormPlanId, plans]);
   const seriesById = useMemo(() => new Map((seriesQuery.data ?? []).map((series) => [series.id, series])), [seriesQuery.data]);
+  const quickLinkMonthPlans = useMemo(
+    () => linkingGoal
+      ? plans.filter((plan) => rangeOverlapsMonth(plan.startAt, plan.endAt, linkingGoal.year, linkingGoal.month))
+      : [],
+    [linkingGoal, plans],
+  );
   const filteredPlans = useMemo(() => {
     const query = planSearch.trim().toLocaleLowerCase();
-    return query ? plans.filter((plan) => `${plan.title} ${plan.description}`.toLocaleLowerCase().includes(query)) : plans;
-  }, [planSearch, plans]);
+    return query ? quickLinkMonthPlans.filter((plan) => `${plan.title} ${plan.description}`.toLocaleLowerCase().includes(query)) : quickLinkMonthPlans;
+  }, [planSearch, quickLinkMonthPlans]);
+  const quickLinkCurrentPlan = linkingGoal?.linkedWorkPlan
+    ? plansById.get(linkingGoal.linkedWorkPlan.id)
+    : undefined;
+  const quickLinkCurrentOutOfMonth = Boolean(
+    linkingGoal && quickLinkCurrentPlan
+    && !rangeOverlapsMonth(quickLinkCurrentPlan.startAt, quickLinkCurrentPlan.endAt, linkingGoal.year, linkingGoal.month),
+  );
   const editingSeriesId = editing && editing !== "new" ? editing.seriesId : null;
   const editingSeries = editingSeriesId ? seriesById.get(editingSeriesId) : undefined;
 
@@ -179,6 +211,23 @@ export default function MonthlyGoalsPage() {
     setError("");
   }
 
+  function updateDraftPeriod(period: Partial<Pick<GoalDraft, "year" | "month">>) {
+    setDraft((current) => {
+      const next = { ...current, ...period };
+      if (!current.workPlanId) return next;
+
+      const selectedPlan = plansById.get(current.workPlanId);
+      if (!selectedPlan) return next;
+      const start = Date.parse(selectedPlan.startAt);
+      const end = Date.parse(selectedPlan.endAt);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return next;
+
+      return rangeOverlapsMonth(selectedPlan.startAt, selectedPlan.endAt, next.year, next.month)
+        ? next
+        : { ...next, workPlanId: "" };
+    });
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -218,7 +267,7 @@ export default function MonthlyGoalsPage() {
   }
 
   function handleDelete(goal: MonthlyGoal) {
-    if (window.confirm(`删除后该月目标将从所有任务标签中消失，确定删除“${goal.title}”吗？`)) {
+    if (window.confirm(`删除后该月目标将从关联的工作计划中消失，确定删除“${goal.title}”吗？`)) {
       deleteMutation.mutate(goal);
     }
   }
@@ -228,7 +277,7 @@ export default function MonthlyGoalsPage() {
   return (
     <section className="content-page">
       <header className="page-header">
-        <div><h1>月目标</h1><p>每月为工作安排一组随月份变化的目标，并自动跟随关联任务完成。</p></div>
+        <div><h1>月目标</h1><p>每月为工作安排一组随月份变化的目标，并自动跟随关联计划完成。</p></div>
         <div className="header-actions">
           <label className={`secondary-button compact-check ${showArchived ? "selected" : ""}`}><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /><span>显示已归档</span></label>
           <button className="primary-button" type="button" onClick={openCreate}><Plus />新建月目标</button>
@@ -243,7 +292,7 @@ export default function MonthlyGoalsPage() {
 
       <div className="settings-panel">
         <div className="settings-panel-header"><div><Target /><strong>目标列表</strong></div><span>{visibleGoals.length} 个目标</span></div>
-        <div className="goals-table table-head"><span>目标名称</span><span>所属月份</span><span>说明</span><span>关联任务</span><span>状态</span><span /></div>
+        <div className="goals-table table-head"><span>目标名称</span><span>所属月份</span><span>说明</span><span>关联计划</span><span>状态</span><span /></div>
         {visibleGoals.map((goal) => (
           <div className={`goals-table ${goal.archivedAt ? "archived" : ""}`} key={goal.id}>
             <div><strong>{goal.title}</strong>{goal.archivedAt ? <small>已归档</small> : null}</div>
@@ -257,7 +306,7 @@ export default function MonthlyGoalsPage() {
               {goal.seriesId ? (
                 <button className="icon-button" type="button" title={seriesBadgeTitle(seriesById.get(goal.seriesId))} aria-label={`管理系列 ${goal.title}`} disabled={saving} onClick={() => setManagingSeriesId(goal.seriesId)}><Repeat2 /></button>
               ) : null}
-              <button className="icon-button" type="button" title="关联任务" aria-label={`关联任务 ${goal.title}`} disabled={saving} onClick={() => { setLinkingGoal(goal); setPlanSearch(""); }}><Target /></button>
+              <button className="icon-button" type="button" title="关联计划" aria-label={`关联计划 ${goal.title}`} disabled={saving} onClick={() => { setLinkingGoal(goal); setPlanSearch(""); }}><Target /></button>
               <button className="icon-button" type="button" title="编辑" aria-label={`编辑 ${goal.title}`} disabled={saving} onClick={() => openEdit(goal)}><Pencil /></button>
               <button className="icon-button" type="button" title={goal.archivedAt ? "恢复" : "归档"} aria-label={goal.archivedAt ? `恢复 ${goal.title}` : `归档 ${goal.title}`} disabled={saving} onClick={() => handleArchive(goal)}>{goal.archivedAt ? <RotateCcw /> : <Archive />}</button>
               <button className="icon-button" type="button" title="删除" aria-label={`删除 ${goal.title}`} disabled={saving} onClick={() => handleDelete(goal)}><Trash2 /></button>
@@ -276,8 +325,8 @@ export default function MonthlyGoalsPage() {
             <header><div><h2>{editing === "new" ? "新建月目标" : "编辑月目标"}</h2><p>目标完成状态由关联工作计划的有效状态自动派生。</p></div><button className="icon-button" type="button" onClick={closeForm} aria-label="关闭"><X /></button></header>
             <div className="field-grid">
               <label className="field"><span>目标名称 <b>*</b></span><input value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} required maxLength={200} /></label>
-              <label className="field"><span>所属月份</span><select value={draft.month} onChange={(event) => setDraft((current) => ({ ...current, month: Number(event.target.value) }))}>{months.map((option) => <option key={option} value={option}>{option} 月</option>)}</select></label>
-              <label className="field"><span>所属年份</span><select value={draft.year} onChange={(event) => setDraft((current) => ({ ...current, year: Number(event.target.value) }))}>{yearRange.map((option) => <option key={option} value={option}>{option} 年</option>)}</select></label>
+              <label className="field"><span>所属月份</span><select value={draft.month} onChange={(event) => updateDraftPeriod({ month: Number(event.target.value) })}>{months.map((option) => <option key={option} value={option}>{option} 月</option>)}</select></label>
+              <label className="field"><span>所属年份</span><select value={draft.year} onChange={(event) => updateDraftPeriod({ year: Number(event.target.value) })}>{yearRange.map((option) => <option key={option} value={option}>{option} 年</option>)}</select></label>
               {editing === "new" ? (
                 <fieldset className="form-section full">
                   <legend><Repeat2 />重复周期</legend>
@@ -294,7 +343,7 @@ export default function MonthlyGoalsPage() {
                       </>
                     )}
                   </div>
-                  {draft.recurrence ? <p className="goal-link-hint">保存后将立即生成从 {draft.year} 年 {draft.month} 月起的独立月目标实例，每期可单独编辑与关联任务。</p> : null}
+                  {draft.recurrence ? <p className="goal-link-hint">保存后将立即生成从 {draft.year} 年 {draft.month} 月起的独立月目标实例，每期可单独编辑与关联计划。</p> : null}
                 </fieldset>
               ) : (
                 <fieldset className="form-section full">
@@ -310,11 +359,11 @@ export default function MonthlyGoalsPage() {
                 </fieldset>
               )}
               <label className="field full"><span>说明</span><textarea rows={2} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} maxLength={2000} /></label>
-              <label className="field full"><span>关联任务</span><select value={draft.workPlanId} onChange={(event) => setDraft((current) => ({ ...current, workPlanId: event.target.value }))}>
+              <label className="field full"><span>关联计划</span><select value={draft.workPlanId} onChange={(event) => setDraft((current) => ({ ...current, workPlanId: event.target.value }))}>
                 <option value="">不关联</option>
-                {(editing === "new" ? plans : plans.filter((plan) => !plan.monthlyGoalIds.includes(editing.id) || plan.id === editing.linkedWorkPlan?.id)).map((plan) => <option key={plan.id} value={plan.id}>{plan.title}</option>)}
+                {formPlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.title}{plan.id === historicalFormPlanId ? "（当前关联，不在所选月份）" : ""}</option>)}
               </select></label>
-              <p className="goal-link-hint full">{draft.workPlanId ? "目标完成状态将跟随该工作计划的完成情况。" : "未关联任务时目标显示为「未关联」。"}</p>
+              <p className="goal-link-hint full">{draft.workPlanId ? "目标完成状态将跟随该工作计划的完成情况。" : "未关联计划时目标显示为「未关联」。"}</p>
             </div>
             {error ? <div className="form-error" role="alert">{error}</div> : null}
             <footer><button className="secondary-button" type="button" onClick={closeForm}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</button></footer>
@@ -329,7 +378,7 @@ export default function MonthlyGoalsPage() {
             <header><div><h2>关联工作计划</h2><p>选择一条工作计划作为“{linkingGoal.title}”的完成判据。</p></div><button className="icon-button" type="button" onClick={() => setLinkingGoal(null)} aria-label="关闭"><X /></button></header>
             <div className="goal-link-picker">
               {linkingGoal.linkedWorkPlan ? (
-                <div className="goal-link-current"><span className="truncate" title={linkingGoal.linkedWorkPlan.title}>当前关联：{linkingGoal.linkedWorkPlan.title}</span><button className="text-button" type="button" disabled={saving} onClick={() => linkMutation.mutate({ goal: linkingGoal, workPlanId: null })}>解除关联</button></div>
+                <div className="goal-link-current"><span className="truncate" title={linkingGoal.linkedWorkPlan.title}>当前关联：{linkingGoal.linkedWorkPlan.title}{quickLinkCurrentOutOfMonth ? "（不在目标所属月份）" : ""}</span><button className="text-button" type="button" disabled={saving} onClick={() => linkMutation.mutate({ goal: linkingGoal, workPlanId: null })}>解除关联</button></div>
               ) : null}
               <label className="search-control goal-link-search"><Search /><input value={planSearch} onChange={(event) => setPlanSearch(event.target.value)} placeholder="搜索工作计划" /></label>
               <div className="goal-link-list">
@@ -342,7 +391,9 @@ export default function MonthlyGoalsPage() {
                     </button>
                   );
                 })}
-                {filteredPlans.length === 0 && !plansQuery.isLoading ? <div className="goal-link-empty">没有匹配的工作计划</div> : null}
+                {filteredPlans.length === 0 && !plansQuery.isLoading ? (
+                  <div className="goal-link-empty">{quickLinkMonthPlans.length === 0 ? "所选月份暂无可关联计划" : "没有匹配的工作计划"}</div>
+                ) : null}
                 {linkError ? <div className="form-error" role="alert">{linkError}</div> : null}
               </div>
             </div>

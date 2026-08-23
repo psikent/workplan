@@ -1,6 +1,6 @@
 # 02 — 月目标页面关联计划候选过滤
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/web/src/pages/MonthlyGoalsPage.tsx、apps/web/src/pages/MonthlyGoalsPage.test.tsx
@@ -38,3 +38,10 @@ Scope: apps/web/src/pages/MonthlyGoalsPage.tsx、apps/web/src/pages/MonthlyGoals
 ## Comments
 
 - 用户确认文案替换覆盖月目标页面全部关联入口，而非仅新增/编辑表单。
+
+## Answer
+
+- 新建、编辑和快捷关联入口均按目标月份筛选工作计划，跨月计划在实际覆盖月份内保持可选，快捷搜索只作用于月份候选。
+- 年月变更会在草稿中清除有效但越界的关联，并保留仍重叠、日期无效或无法确认的关联；取消不提交，保存才持久化解绑。
+- 编辑表单和快捷弹窗保留并标记历史越界当前关联，同时提供月份无候选空状态。
+- 月目标页面关联文案已统一为“计划”，并新增页面级测试覆盖候选、清理、历史数据、搜索、空状态和可访问名称。
