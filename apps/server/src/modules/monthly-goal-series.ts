@@ -1,11 +1,20 @@
+import { createHash } from "node:crypto";
 import type {
   CreateMonthlyGoalSeries,
+  DissolveMonthlyGoalSeries,
   MonthlyGoal,
   MonthlyGoalPeriod,
   MonthlyGoalSeries,
+  MonthlyGoalSeriesDissolveInstance,
+  MonthlyGoalSeriesDissolvePreview,
+  MonthlyGoalSeriesDissolveReason,
+  MonthlyGoalSeriesDissolveResult,
   MonthlyGoalSeriesFrequency,
   UpdateMonthlyGoalSeries,
+  WorkPlanStatus,
+  WorkPlanStatusMode,
 } from "@workplan/contracts";
+import { deriveWorkPlanStatus } from "@workplan/contracts";
 import type { DatabaseBundle } from "../db/index.js";
 import { invalidInput, notFound, versionConflict } from "../errors.js";
 import { newId, nowIso } from "../utils.js";
@@ -28,6 +37,24 @@ type SeriesRow = {
 };
 
 type InstancePeriod = { id: string; title: string; year: number; month: number; archivedAt: string | null };
+
+type DissolveInstanceRow = {
+  id: string;
+  title: string;
+  description: string;
+  year: number;
+  month: number;
+  archived_at: string | null;
+  work_plan_id: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  work_plan_title: string | null;
+  work_plan_status: WorkPlanStatus | null;
+  work_plan_status_mode: WorkPlanStatusMode | null;
+  work_plan_start_at: string | null;
+  work_plan_end_at: string | null;
+};
 
 export type SeriesDetail = MonthlyGoalSeries & { instances: InstancePeriod[] };
 
@@ -169,6 +196,117 @@ export class MonthlyGoalSeriesService {
       if (!exists) throw notFound("目标重复系列不存在");
       throw versionConflict();
     }
+  }
+
+  previewDissolve(id: string, keepGoalId: string): MonthlyGoalSeriesDissolvePreview {
+    const series = this.database.sqlite.prepare("SELECT * FROM monthly_goal_series WHERE id = ?").get(id) as SeriesRow | undefined;
+    if (!series) throw notFound("目标重复系列不存在");
+    const rows = this.dissolveRows(id);
+    const keep = rows.find((row) => row.id === keepGoalId);
+    if (!keep) {
+      const goalExists = this.database.sqlite.prepare("SELECT id FROM monthly_goals WHERE id = ?").get(keepGoalId);
+      if (!goalExists) throw notFound("月目标不存在");
+      throw invalidInput("发起目标不属于该重复系列");
+    }
+    const instances = rows.map((row) => this.classifyDissolveInstance(row, keepGoalId));
+    return {
+      seriesId: id,
+      seriesVersion: series.version,
+      snapshotToken: this.dissolveSnapshotToken(series, rows),
+      keepGoal: { id: keep.id, title: keep.title, year: keep.year, month: keep.month },
+      counts: {
+        retained: instances.filter((instance) => instance.action === "retain").length,
+        deleted: instances.filter((instance) => instance.action === "delete").length,
+        linked: rows.filter((row) => row.work_plan_id !== null).length,
+      },
+      instances,
+    };
+  }
+
+  dissolve(id: string, input: DissolveMonthlyGoalSeries): MonthlyGoalSeriesDissolveResult {
+    const execute = this.database.sqlite.transaction(() => {
+      const preview = this.previewDissolve(id, input.keepGoalId);
+      if (preview.snapshotToken !== input.snapshotToken) throw versionConflict();
+      if (preview.keepGoal.title !== input.confirmationTitle) throw invalidInput("请输入发起目标的完整名称确认解散");
+      const retainedIds = preview.instances.filter((instance) => instance.action === "retain").map((instance) => instance.id);
+      const deletedIds = preview.instances.filter((instance) => instance.action === "delete").map((instance) => instance.id);
+      if (deletedIds.length > 0) {
+        this.database.sqlite
+          .prepare(`DELETE FROM monthly_goals WHERE id IN (${deletedIds.map(() => "?").join(",")})`)
+          .run(...deletedIds);
+      }
+      this.database.sqlite
+        .prepare(`UPDATE monthly_goals SET series_id = NULL, occurrence_key = NULL, version = version + 1, updated_at = ? WHERE id IN (${retainedIds.map(() => "?").join(",")})`)
+        .run(nowIso(), ...retainedIds);
+      this.database.sqlite.prepare("DELETE FROM monthly_goal_series WHERE id = ?").run(id);
+      return { retainedCount: retainedIds.length, deletedCount: deletedIds.length };
+    });
+    return execute();
+  }
+
+  private dissolveRows(id: string): DissolveInstanceRow[] {
+    return this.database.sqlite
+      .prepare(
+        `SELECT monthly_goals.id, monthly_goals.title, monthly_goals.description, monthly_goals.year, monthly_goals.month,
+          monthly_goals.archived_at, monthly_goals.work_plan_id, monthly_goals.version, monthly_goals.created_at, monthly_goals.updated_at,
+          work_plans.title AS work_plan_title, work_plans.status AS work_plan_status, work_plans.status_mode AS work_plan_status_mode,
+          work_plans.start_at AS work_plan_start_at, work_plans.end_at AS work_plan_end_at
+        FROM monthly_goals
+        LEFT JOIN work_plans ON work_plans.id = monthly_goals.work_plan_id
+        WHERE monthly_goals.series_id = ?
+        ORDER BY monthly_goals.year, monthly_goals.month, monthly_goals.id`,
+      )
+      .all(id) as DissolveInstanceRow[];
+  }
+
+  private classifyDissolveInstance(row: DissolveInstanceRow, keepGoalId: string): MonthlyGoalSeriesDissolveInstance {
+    const reasons: MonthlyGoalSeriesDissolveReason[] = [];
+    const status = row.work_plan_id && row.work_plan_status && row.work_plan_status_mode && row.work_plan_start_at && row.work_plan_end_at
+      ? row.work_plan_status_mode === "manual"
+        ? row.work_plan_status
+        : deriveWorkPlanStatus(row.work_plan_start_at, row.work_plan_end_at)
+      : null;
+    if (row.id === keepGoalId) reasons.push("selected");
+    if (row.updated_at !== row.created_at) reasons.push("edited");
+    if (row.archived_at !== null) reasons.push("archived");
+    if (row.work_plan_id !== null) reasons.push("linked");
+    if (status === "completed") reasons.push("completed");
+    return {
+      id: row.id,
+      title: row.title,
+      year: row.year,
+      month: row.month,
+      archivedAt: row.archived_at,
+      linkedWorkPlan: row.work_plan_id && row.work_plan_title ? { id: row.work_plan_id, title: row.work_plan_title } : null,
+      status,
+      action: reasons.length > 0 ? "retain" : "delete",
+      reasons,
+    };
+  }
+
+  private dissolveSnapshotToken(series: SeriesRow, rows: DissolveInstanceRow[]): string {
+    return createHash("sha256")
+      .update(JSON.stringify({
+        series: { id: series.id, version: series.version, active: series.active },
+        instances: rows.map((row) => ({
+          id: row.id,
+          title: row.title,
+          description: row.description,
+          year: row.year,
+          month: row.month,
+          archivedAt: row.archived_at,
+          workPlanId: row.work_plan_id,
+          version: row.version,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          workPlanTitle: row.work_plan_title,
+          workPlanStatus: row.work_plan_status,
+          workPlanStatusMode: row.work_plan_status_mode,
+          workPlanStartAt: row.work_plan_start_at,
+          workPlanEndAt: row.work_plan_end_at,
+        })),
+      }))
+      .digest("hex");
   }
 
   private insertMissingPeriods(id: string, template: { title: string; description: string }, periods: MonthlyGoalPeriod[]): MonthlyGoal[] {

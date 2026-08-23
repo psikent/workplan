@@ -41,7 +41,7 @@ The Monthly Goal status computed from its linked Work Plan's effective status, r
 _Avoid_: Manual goal status, goal progress percentage
 
 **Goal Recurrence**:
-A Monthly Goal template plus a period rule (frequency monthly/quarterly/yearly × interval, ending at a count or a year-month). Creating or updating a Recurring Series immediately generates one independent Monthly Goal instance per period; instances stay independent (each can be edited, archived, deleted, or linked to a different Work Plan), stopping a series only halts further generation.
+A Monthly Goal template plus a period rule (frequency monthly/quarterly/yearly × interval, ending at a count or a year-month). Creating or updating a Recurring Series immediately generates one independent Monthly Goal instance per period; instances stay independent (each can be edited, archived, deleted, or linked to a different Work Plan). Stopping a series only halts further generation and preserves the series; dissolving it deletes the rule, keeps the selected or previously used instances as ordinary Monthly Goals, and removes untouched generated instances.
 _Avoid_: Goal template, auto-generated task
 
 **Work Owner Account**:

@@ -618,3 +618,22 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .series-instance.archived { opacity: .58; }
 .field-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 14px 22px; border-top: 1px solid var(--line); }
 .field-dialog-footer > div { display: flex; gap: 9px; }
+.series-dialog .field-dialog-footer > div:first-child { flex-wrap: wrap; }
+.series-dissolve-layer { z-index: 120; }
+.series-dissolve-dialog { width: min(680px, 100%); }
+.dissolve-preview { display: grid; gap: 16px; padding: 18px 22px 0; }
+.dissolve-summary { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); }
+.dissolve-summary strong { color: var(--ink); font-size: 13px; }
+.dissolve-summary span { color: var(--muted); font-size: 12px; }
+.dissolve-group { display: grid; gap: 8px; }
+.dissolve-group h3 { margin: 0; color: var(--ink); font-size: 13px; }
+.dissolve-group.danger-zone h3 { color: #c43e3a; }
+.dissolve-instance-list { max-height: 180px; overflow-y: auto; border: 1px solid var(--line-soft); border-radius: 7px; }
+.dissolve-instance { min-height: 44px; display: grid; grid-template-columns: 100px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 11px; border-bottom: 1px solid var(--line-soft); font-size: 12px; }
+.dissolve-instance:last-child { border-bottom: 0; }
+.dissolve-instance > span, .dissolve-instance small { color: var(--muted); }
+.dissolve-instance strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dissolve-instance.delete small { color: #9a3840; }
+.dissolve-confirm { grid-column: 1 / -1; }
+.dissolve-warning { margin: -8px 0 0; color: #9a3840; font-size: 11px; }
+.dissolve-preview > .field-dialog-footer { margin: 0 -22px; }

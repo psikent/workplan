@@ -263,6 +263,55 @@ export const monthlyGoalSeriesDetailSchema = monthlyGoalSeriesSchema.extend({
   instances: z.array(monthlyGoalSeriesInstanceSchema),
 });
 
+export const monthlyGoalSeriesDissolveReasons = ["selected", "edited", "archived", "linked", "completed"] as const;
+export const monthlyGoalSeriesDissolveReasonSchema = z.enum(monthlyGoalSeriesDissolveReasons);
+export const monthlyGoalSeriesDissolveActionSchema = z.enum(["retain", "delete"]);
+
+export const monthlyGoalSeriesDissolvePreviewQuerySchema = z.object({
+  keepGoalId: z.string().uuid(),
+}).strict();
+
+export const monthlyGoalSeriesDissolveInstanceSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  year: monthlyGoalYearSchema,
+  month: monthlyGoalMonthSchema,
+  archivedAt: isoDateTimeSchema.nullable(),
+  linkedWorkPlan: z.object({ id: z.string().uuid(), title: z.string() }).nullable(),
+  status: workPlanStatusSchema.nullable(),
+  action: monthlyGoalSeriesDissolveActionSchema,
+  reasons: z.array(monthlyGoalSeriesDissolveReasonSchema),
+});
+
+export const monthlyGoalSeriesDissolvePreviewSchema = z.object({
+  seriesId: z.string().uuid(),
+  seriesVersion: z.number().int().positive(),
+  snapshotToken: z.string().regex(/^[a-f0-9]{64}$/),
+  keepGoal: z.object({
+    id: z.string().uuid(),
+    title: z.string(),
+    year: monthlyGoalYearSchema,
+    month: monthlyGoalMonthSchema,
+  }),
+  counts: z.object({
+    retained: z.number().int().min(1),
+    deleted: z.number().int().min(0),
+    linked: z.number().int().min(0),
+  }),
+  instances: z.array(monthlyGoalSeriesDissolveInstanceSchema),
+});
+
+export const dissolveMonthlyGoalSeriesSchema = z.object({
+  keepGoalId: z.string().uuid(),
+  snapshotToken: z.string().regex(/^[a-f0-9]{64}$/),
+  confirmationTitle: z.string().min(1).max(200),
+}).strict();
+
+export const monthlyGoalSeriesDissolveResultSchema = z.object({
+  retainedCount: z.number().int().min(1),
+  deletedCount: z.number().int().min(0),
+});
+
 function periodKey(period: { year: number; month: number }): number {
   return period.year * 12 + period.month - 1;
 }
@@ -647,6 +696,11 @@ export type MonthlyGoalSeriesInstance = z.infer<typeof monthlyGoalSeriesInstance
 export type MonthlyGoalSeriesDetail = z.infer<typeof monthlyGoalSeriesDetailSchema>;
 export type CreateMonthlyGoalSeries = z.infer<typeof createMonthlyGoalSeriesSchema>;
 export type UpdateMonthlyGoalSeries = z.infer<typeof updateMonthlyGoalSeriesSchema>;
+export type MonthlyGoalSeriesDissolveReason = z.infer<typeof monthlyGoalSeriesDissolveReasonSchema>;
+export type MonthlyGoalSeriesDissolveInstance = z.infer<typeof monthlyGoalSeriesDissolveInstanceSchema>;
+export type MonthlyGoalSeriesDissolvePreview = z.infer<typeof monthlyGoalSeriesDissolvePreviewSchema>;
+export type DissolveMonthlyGoalSeries = z.infer<typeof dissolveMonthlyGoalSeriesSchema>;
+export type MonthlyGoalSeriesDissolveResult = z.infer<typeof monthlyGoalSeriesDissolveResultSchema>;
 export type WorkPlanStatus = z.infer<typeof workPlanStatusSchema>;
 export type WorkPlanStatusMode = z.infer<typeof workPlanStatusModeSchema>;
 export type UserRole = z.infer<typeof userRoleSchema>;

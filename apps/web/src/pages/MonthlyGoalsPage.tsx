@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { MonthlyGoal, MonthlyGoalSeries, MonthlyGoalSeriesDetail, MonthlyGoalSeriesFrequency, WorkPlan } from "@workplan/contracts";
-import { Archive, Pencil, Plus, Repeat2, RotateCcw, Search, Target, Trash2, X } from "lucide-react";
+import type {
+  MonthlyGoal,
+  MonthlyGoalSeries,
+  MonthlyGoalSeriesDetail,
+  MonthlyGoalSeriesDissolvePreview,
+  MonthlyGoalSeriesDissolveReason,
+  MonthlyGoalSeriesDissolveResult,
+  MonthlyGoalSeriesFrequency,
+  WorkPlan,
+} from "@workplan/contracts";
+import { Archive, Pencil, Plus, Repeat2, RotateCcw, Search, Target, Trash2, Unlink2, X } from "lucide-react";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import { type ApiError, api, jsonBody } from "../lib/api";
@@ -72,7 +81,7 @@ export default function MonthlyGoalsPage() {
   const [linkingGoal, setLinkingGoal] = useState<MonthlyGoal | null>(null);
   const [planSearch, setPlanSearch] = useState("");
   const [linkError, setLinkError] = useState("");
-  const [managingSeriesId, setManagingSeriesId] = useState<string | null>(null);
+  const [managingSeries, setManagingSeries] = useState<{ seriesId: string; keepGoalId: string } | null>(null);
 
   const goalsQuery = useQuery({
     queryKey: ["monthly-goals", year, month],
@@ -318,7 +327,7 @@ export default function MonthlyGoalsPage() {
             {goal.status ? <StatusBadge status={goal.status} /> : <span className="goal-unlinked">未关联</span>}
             <div className="field-row-actions">
               {goal.seriesId ? (
-                <button className="icon-button" type="button" title={seriesBadgeTitle(seriesById.get(goal.seriesId))} aria-label={`管理系列 ${goal.title}`} disabled={saving} onClick={() => setManagingSeriesId(goal.seriesId)}><Repeat2 /></button>
+                <button className="icon-button" type="button" title={seriesBadgeTitle(seriesById.get(goal.seriesId))} aria-label={`管理系列 ${goal.title}`} disabled={saving} onClick={() => setManagingSeries({ seriesId: goal.seriesId!, keepGoalId: goal.id })}><Repeat2 /></button>
               ) : null}
               <button className="icon-button" type="button" title="关联计划" aria-label={`关联计划 ${goal.title}`} disabled={saving} onClick={() => { setLinkingGoal(goal); setPlanSearch(""); }}><Target /></button>
               <button className="icon-button" type="button" title="编辑" aria-label={`编辑 ${goal.title}`} disabled={saving} onClick={() => openEdit(goal)}><Pencil /></button>
@@ -365,7 +374,7 @@ export default function MonthlyGoalsPage() {
                   {editingSeriesId ? (
                     <div className="goal-recurrence-summary">
                       <span>{editingSeries ? seriesBadgeTitle(editingSeries) : "已设置重复周期"}</span>
-                      <button className="secondary-button compact-button" type="button" onClick={() => setManagingSeriesId(editingSeriesId)}>编辑重复周期</button>
+                      <button className="secondary-button compact-button" type="button" onClick={() => setManagingSeries({ seriesId: editingSeriesId, keepGoalId: editing.id })}>编辑重复周期</button>
                     </div>
                   ) : (
                     <p className="goal-link-hint">不重复</p>
@@ -416,10 +425,11 @@ export default function MonthlyGoalsPage() {
         </div>
       ) : null}
 
-      {managingSeriesId ? (
+      {managingSeries ? (
         <SeriesDialog
-          seriesId={managingSeriesId}
-          onClose={() => setManagingSeriesId(null)}
+          seriesId={managingSeries.seriesId}
+          keepGoalId={managingSeries.keepGoalId}
+          onClose={() => setManagingSeries(null)}
           onChanged={async () => {
             await queryClient.invalidateQueries({ queryKey: ["monthly-goals"] });
             await queryClient.invalidateQueries({ queryKey: ["monthly-goal-series"] });
@@ -440,11 +450,12 @@ type SeriesRuleDraft = {
   untilMonth: number;
 };
 
-function SeriesDialog({ seriesId, onClose, onChanged }: { seriesId: string; onClose: () => void; onChanged: () => Promise<void> }) {
+function SeriesDialog({ seriesId, keepGoalId, onClose, onChanged }: { seriesId: string; keepGoalId: string; onClose: () => void; onChanged: () => Promise<void> }) {
   const queryClient = useQueryClient();
   const { showSuccess } = useToast();
   const [draft, setDraft] = useState<SeriesRuleDraft | null>(null);
   const [error, setError] = useState("");
+  const [dissolving, setDissolving] = useState(false);
   const detailQuery = useQuery({
     queryKey: ["monthly-goal-series", seriesId],
     queryFn: () => api<MonthlyGoalSeriesDetail>(`/monthly-goal-series/${seriesId}`),
@@ -557,10 +568,117 @@ function SeriesDialog({ seriesId, onClose, onChanged }: { seriesId: string; onCl
           </div>
           {error ? <div className="form-error full" role="alert">{error}</div> : null}
           <footer className="field-dialog-footer full">
-            <button className="danger-button" type="button" disabled={!detail.active || busy} onClick={handleStop}><Archive />{detail.active ? "停止生成" : "已停止"}</button>
+            <div>
+              <button className="danger-button" type="button" disabled={!detail.active || busy} onClick={handleStop}><Archive />{detail.active ? "停止生成" : "已停止"}</button>
+              <button className="danger-button" type="button" disabled={busy} onClick={() => setDissolving(true)}><Unlink2 />解散重复系列</button>
+            </div>
             <div><button className="secondary-button" type="button" onClick={onClose}>关闭</button><button className="primary-button" type="submit" disabled={busy}>{busy ? "保存中…" : "保存规则"}</button></div>
           </footer>
         </form>
+      </div>
+      {dissolving ? (
+        <DissolveSeriesDialog
+          seriesId={seriesId}
+          keepGoalId={keepGoalId}
+          onClose={() => setDissolving(false)}
+          onDissolved={async (result) => {
+            await onChanged();
+            showSuccess(`重复系列已解散：保留 ${result.retainedCount} 个，删除 ${result.deletedCount} 个`);
+            onClose();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+const dissolveReasonLabels: Record<MonthlyGoalSeriesDissolveReason, string> = {
+  selected: "发起目标",
+  edited: "已编辑",
+  archived: "已归档",
+  linked: "已关联",
+  completed: "已完成",
+};
+
+function DissolveSeriesDialog({ seriesId, keepGoalId, onClose, onDissolved }: {
+  seriesId: string;
+  keepGoalId: string;
+  onClose: () => void;
+  onDissolved: (result: MonthlyGoalSeriesDissolveResult) => Promise<void>;
+}) {
+  const queryClient = useQueryClient();
+  const [confirmationTitle, setConfirmationTitle] = useState("");
+  const [error, setError] = useState("");
+  const previewQuery = useQuery({
+    queryKey: ["monthly-goal-series-dissolve-preview", seriesId, keepGoalId],
+    queryFn: () => api<MonthlyGoalSeriesDissolvePreview>(`/monthly-goal-series/${seriesId}/dissolve-preview?keepGoalId=${keepGoalId}`),
+  });
+  const preview = previewQuery.data;
+  const mutation = useMutation({
+    mutationFn: () => api<MonthlyGoalSeriesDissolveResult>(`/monthly-goal-series/${seriesId}/dissolve`, {
+      method: "POST",
+      ...jsonBody({ keepGoalId, snapshotToken: preview!.snapshotToken, confirmationTitle }),
+    }),
+    onSuccess: onDissolved,
+    onError: (caught) => {
+      if ((caught as ApiError).problem?.code === "VERSION_CONFLICT") {
+        setError("数据已发生变化，请重新确认解散范围");
+        setConfirmationTitle("");
+        void queryClient.invalidateQueries({ queryKey: ["monthly-goal-series-dissolve-preview", seriesId, keepGoalId] });
+      } else {
+        setError(caught instanceof Error ? caught.message : "解散失败");
+      }
+    },
+  });
+  const retained = preview?.instances.filter((instance) => instance.action === "retain") ?? [];
+  const deleted = preview?.instances.filter((instance) => instance.action === "delete") ?? [];
+  const busy = mutation.isPending;
+
+  return (
+    <div className="modal-layer series-dissolve-layer">
+      <button className="modal-backdrop" type="button" onClick={onClose} aria-label="关闭解散预览" />
+      <div className="field-dialog series-dissolve-dialog" role="dialog" aria-label="解散重复系列">
+        <header>
+          <div><h2>解散重复系列</h2><p>保留有使用痕迹的月目标，并永久删除未使用的自动实例。</p></div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="关闭"><X /></button>
+        </header>
+        {!preview ? (
+          <div className="empty-state"><Target /><h3>{previewQuery.isLoading ? "正在计算解散范围…" : "无法读取解散范围"}</h3>{previewQuery.error ? <p>{previewQuery.error instanceof Error ? previewQuery.error.message : "加载失败"}</p> : null}</div>
+        ) : (
+          <form className="dissolve-preview" onSubmit={(event) => { event.preventDefault(); setError(""); mutation.mutate(); }}>
+            <div className="dissolve-summary">
+              <strong>将保留 {preview.counts.retained} 个，永久删除 {preview.counts.deleted} 个</strong>
+              <span>{preview.counts.linked > 0 ? `其中 ${preview.counts.linked} 个已关联工作计划，将保留关联。` : "没有实例关联工作计划。"}</span>
+            </div>
+            <section className="dissolve-group" aria-label="保留为普通月目标">
+              <h3>保留为普通月目标（{retained.length}）</h3>
+              <div className="dissolve-instance-list">{retained.map((instance) => (
+                <div className="dissolve-instance retain" key={instance.id}>
+                  <span>{instance.year} 年 {instance.month} 月</span>
+                  <strong>{instance.title}</strong>
+                  <small>{instance.reasons.map((reason) => dissolveReasonLabels[reason]).join("、")}</small>
+                </div>
+              ))}</div>
+            </section>
+            <section className="dissolve-group danger-zone" aria-label="永久删除">
+              <h3>永久删除（{deleted.length}）</h3>
+              <div className="dissolve-instance-list">{deleted.map((instance) => (
+                <div className="dissolve-instance delete" key={instance.id}>
+                  <span>{instance.year} 年 {instance.month} 月</span>
+                  <strong>{instance.title}</strong>
+                  <small>未使用的自动实例</small>
+                </div>
+              ))}</div>
+            </section>
+            <label className="field dissolve-confirm"><span>输入目标名称确认</span><input value={confirmationTitle} onChange={(event) => setConfirmationTitle(event.target.value)} placeholder={preview.keepGoal.title} autoComplete="off" /></label>
+            <p className="dissolve-warning">此操作不可撤销。请输入“{preview.keepGoal.title}”确认。</p>
+            {error ? <div className="form-error" role="alert">{error}</div> : null}
+            <footer className="field-dialog-footer">
+              <button className="secondary-button" type="button" disabled={busy} onClick={onClose}>取消</button>
+              <button className="danger-button" type="submit" disabled={busy || confirmationTitle !== preview.keepGoal.title}>{busy ? "解散中…" : `解散并删除 ${preview.counts.deleted} 个目标`}</button>
+            </footer>
+          </form>
+        )}
       </div>
     </div>
   );

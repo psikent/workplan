@@ -386,10 +386,28 @@ describe("editor permissions", () => {
       payload: { template: { title: "Token 系列" }, frequency: "monthly", startPeriod: { year: 2026, month: 8 }, occurrenceCount: 2 },
     });
     expect(tokenSeries.statusCode).toBe(201);
-    const tokenSeriesBody = tokenSeries.json<{ series: { id: string; version: number } }>().series;
+    const tokenSeriesResult = tokenSeries.json<{
+      series: { id: string; version: number };
+      generated: Array<{ id: string; title: string }>;
+    }>();
+    const tokenSeriesBody = tokenSeriesResult.series;
     expect((await tokenRequest({ method: "GET", url: "/api/v1/monthly-goal-series" })).statusCode).toBe(200);
     expect((await tokenRequest({ method: "GET", url: `/api/v1/monthly-goal-series/${tokenSeriesBody.id}` })).statusCode).toBe(200);
     expect((await tokenRequest({ method: "DELETE", url: `/api/v1/monthly-goal-series/${tokenSeriesBody.id}?version=${tokenSeriesBody.version}` })).statusCode).toBe(204);
+    const tokenPreview = await tokenRequest({
+      method: "GET",
+      url: `/api/v1/monthly-goal-series/${tokenSeriesBody.id}/dissolve-preview?keepGoalId=${tokenSeriesResult.generated[0]!.id}`,
+    });
+    expect(tokenPreview.statusCode).toBe(200);
+    expect((await tokenRequest({
+      method: "POST",
+      url: `/api/v1/monthly-goal-series/${tokenSeriesBody.id}/dissolve`,
+      payload: {
+        keepGoalId: tokenSeriesResult.generated[0]!.id,
+        snapshotToken: tokenPreview.json<{ snapshotToken: string }>().snapshotToken,
+        confirmationTitle: tokenSeriesResult.generated[0]!.title,
+      },
+    })).statusCode).toBe(200);
 
     const password = "very-secure-web-editor-password";
     const passwordEditor = await context.request({
@@ -597,6 +615,275 @@ describe("monthly goal series", () => {
 
     const missing = await context.request({ method: "GET", url: `/api/v1/monthly-goal-series/00000000-0000-4000-8000-000000000001` });
     expect(missing.statusCode).toBe(404);
+  });
+
+  it("dissolves a series by retaining the selected goal and deleting untouched generated goals", async () => {
+    const context = await createContext();
+    const created = await context.request({ method: "POST", url: "/api/v1/monthly-goal-series", payload: seriesInput() });
+    const body = created.json<{
+      series: { id: string; version: number };
+      generated: Array<{ id: string; title: string; version: number }>;
+    }>();
+    const [selected, ...untouched] = body.generated;
+
+    const preview = await context.request({
+      method: "GET",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve-preview?keepGoalId=${selected!.id}`,
+    });
+    expect(preview.statusCode).toBe(200);
+    const previewBody = preview.json<{
+      snapshotToken: string;
+      keepGoal: { id: string; title: string };
+      counts: { retained: number; deleted: number; linked: number };
+      instances: Array<{ id: string; action: "retain" | "delete"; reasons: string[] }>;
+    }>();
+    expect(previewBody.snapshotToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(previewBody.keepGoal).toMatchObject({ id: selected!.id, title: "定期巡检" });
+    expect(previewBody.counts).toEqual({ retained: 1, deleted: 2, linked: 0 });
+    expect(previewBody.instances.map(({ id, action, reasons }) => ({ id, action, reasons }))).toEqual([
+      { id: selected!.id, action: "retain", reasons: ["selected"] },
+      ...untouched.map((goal) => ({ id: goal.id, action: "delete" as const, reasons: [] })),
+    ]);
+
+    const dissolved = await context.request({
+      method: "POST",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve`,
+      payload: {
+        keepGoalId: selected!.id,
+        snapshotToken: previewBody.snapshotToken,
+        confirmationTitle: selected!.title,
+      },
+    });
+    expect(dissolved.statusCode).toBe(200);
+    expect(dissolved.json()).toEqual({ retainedCount: 1, deletedCount: 2 });
+
+    expect((await context.request({ method: "GET", url: `/api/v1/monthly-goal-series/${body.series.id}` })).statusCode).toBe(404);
+    const retained = await context.request({ method: "GET", url: `/api/v1/monthly-goals/${selected!.id}` });
+    expect(retained.statusCode).toBe(200);
+    expect(retained.json<{ seriesId: string | null; occurrenceKey: string | null; version: number }>()).toMatchObject({
+      seriesId: null,
+      occurrenceKey: null,
+      version: selected!.version + 1,
+    });
+    for (const goal of untouched) {
+      expect((await context.request({ method: "GET", url: `/api/v1/monthly-goals/${goal.id}` })).statusCode).toBe(404);
+    }
+  });
+
+  it("dissolves a one-instance series without deleting its selected goal", async () => {
+    const context = await createContext();
+    const created = await context.request({
+      method: "POST",
+      url: "/api/v1/monthly-goal-series",
+      payload: seriesInput({ occurrenceCount: 1 }),
+    });
+    const body = created.json<{ series: { id: string }; generated: Array<{ id: string; title: string }> }>();
+    const selected = body.generated[0]!;
+    const preview = await context.request({
+      method: "GET",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve-preview?keepGoalId=${selected.id}`,
+    });
+    expect(preview.json<{ counts: { retained: number; deleted: number; linked: number } }>().counts).toEqual({ retained: 1, deleted: 0, linked: 0 });
+
+    const dissolved = await context.request({
+      method: "POST",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve`,
+      payload: {
+        keepGoalId: selected.id,
+        snapshotToken: preview.json<{ snapshotToken: string }>().snapshotToken,
+        confirmationTitle: selected.title,
+      },
+    });
+    expect(dissolved.statusCode).toBe(200);
+    expect(dissolved.json()).toEqual({ retainedCount: 1, deletedCount: 0 });
+    expect((await context.request({ method: "GET", url: `/api/v1/monthly-goals/${selected.id}` })).json<{ seriesId: string | null }>().seriesId).toBeNull();
+  });
+
+  it("preserves used instances when dissolving an already stopped series", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
+    const context = await createContext();
+    const created = await context.request({
+      method: "POST",
+      url: "/api/v1/monthly-goal-series",
+      payload: seriesInput({ occurrenceCount: 9 }),
+    });
+    const body = created.json<{
+      series: { id: string; version: number };
+      generated: Array<{ id: string; title: string; version: number }>;
+    }>();
+    const [selected, titleGoal, descriptionGoal, movedGoal, archivedGoal, restoredGoal, linkedGoal, unlinkedGoal, untouchedGoal] = body.generated;
+    vi.setSystemTime(new Date("2026-08-02T00:00:00.000Z"));
+
+    const edited = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${titleGoal!.id}`,
+      payload: { title: "独立修改后的巡检", version: titleGoal!.version },
+    });
+    expect(edited.statusCode).toBe(200);
+    expect((await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${descriptionGoal!.id}`,
+      payload: { description: "这个实例有独立说明", version: descriptionGoal!.version },
+    })).statusCode).toBe(200);
+    expect((await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${movedGoal!.id}`,
+      payload: { year: 2027, month: 5, version: movedGoal!.version },
+    })).statusCode).toBe(200);
+    const archived = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${archivedGoal!.id}`,
+      payload: { archived: true, version: archivedGoal!.version },
+    });
+    expect(archived.statusCode).toBe(200);
+    const archivedThenRestored = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${restoredGoal!.id}`,
+      payload: { archived: true, version: restoredGoal!.version },
+    });
+    expect(archivedThenRestored.statusCode).toBe(200);
+    expect((await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${restoredGoal!.id}`,
+      payload: { archived: false, version: archivedThenRestored.json<{ version: number }>().version },
+    })).statusCode).toBe(200);
+    const completedPlan = await createPlan(context, automaticPlanInput({
+      title: "已经完成的关联计划",
+      startAt: "2026-07-01T00:00:00.000Z",
+      endAt: "2026-07-02T00:00:00.000Z",
+    }));
+    const linked = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${linkedGoal!.id}`,
+      payload: { workPlanId: completedPlan.id, version: linkedGoal!.version },
+    });
+    expect(linked.statusCode).toBe(200);
+    const linkedThenUnlinked = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${unlinkedGoal!.id}`,
+      payload: { workPlanId: completedPlan.id, version: unlinkedGoal!.version },
+    });
+    const unlinked = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${unlinkedGoal!.id}`,
+      payload: { workPlanId: null, version: linkedThenUnlinked.json<{ version: number }>().version },
+    });
+    expect(unlinked.statusCode).toBe(200);
+    const stopped = await context.request({
+      method: "DELETE",
+      url: `/api/v1/monthly-goal-series/${body.series.id}?version=${body.series.version}`,
+    });
+    expect(stopped.statusCode).toBe(204);
+
+    const preview = await context.request({
+      method: "GET",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve-preview?keepGoalId=${selected!.id}`,
+    });
+    const previewBody = preview.json<{
+      snapshotToken: string;
+      counts: { retained: number; deleted: number; linked: number };
+      instances: Array<{ id: string; action: string; reasons: string[] }>;
+    }>();
+    expect(previewBody.counts).toEqual({ retained: 8, deleted: 1, linked: 1 });
+    expect(new Map(previewBody.instances.map((instance) => [instance.id, instance]))).toMatchObject(new Map([
+      [selected!.id, { action: "retain", reasons: ["selected"] }],
+      [titleGoal!.id, { action: "retain", reasons: ["edited"] }],
+      [descriptionGoal!.id, { action: "retain", reasons: ["edited"] }],
+      [movedGoal!.id, { action: "retain", reasons: ["edited"] }],
+      [archivedGoal!.id, { action: "retain", reasons: ["edited", "archived"] }],
+      [restoredGoal!.id, { action: "retain", reasons: ["edited"] }],
+      [linkedGoal!.id, { action: "retain", reasons: ["edited", "linked", "completed"] }],
+      [unlinkedGoal!.id, { action: "retain", reasons: ["edited"] }],
+      [untouchedGoal!.id, { action: "delete", reasons: [] }],
+    ]));
+
+    const dissolved = await context.request({
+      method: "POST",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve`,
+      payload: {
+        keepGoalId: selected!.id,
+        snapshotToken: previewBody.snapshotToken,
+        confirmationTitle: selected!.title,
+      },
+    });
+    expect(dissolved.statusCode).toBe(200);
+    expect(dissolved.json()).toEqual({ retainedCount: 8, deletedCount: 1 });
+    for (const goal of [selected, titleGoal, descriptionGoal, movedGoal, archivedGoal, restoredGoal, linkedGoal, unlinkedGoal]) {
+      expect((await context.request({ method: "GET", url: `/api/v1/monthly-goals/${goal!.id}` })).json<{ seriesId: string | null }>().seriesId).toBeNull();
+    }
+    expect((await context.request({ method: "GET", url: `/api/v1/monthly-goals/${untouchedGoal!.id}` })).statusCode).toBe(404);
+  });
+
+  it("rejects invalid dissolve confirmation and stale previews without partial changes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
+    const context = await createContext();
+    const created = await context.request({ method: "POST", url: "/api/v1/monthly-goal-series", payload: seriesInput() });
+    const body = created.json<{
+      series: { id: string; version: number };
+      generated: Array<{ id: string; title: string; version: number }>;
+    }>();
+    const [selected, changed] = body.generated;
+    const outsideGoal = await createGoal(context, { title: "系列外目标" });
+
+    const outsidePreview = await context.request({
+      method: "GET",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve-preview?keepGoalId=${outsideGoal.id}`,
+    });
+    expect(outsidePreview.statusCode).toBe(422);
+    expect(outsidePreview.json<{ detail: string }>().detail).toBe("发起目标不属于该重复系列");
+
+    const preview = await context.request({
+      method: "GET",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve-preview?keepGoalId=${selected!.id}`,
+    });
+    const snapshotToken = preview.json<{ snapshotToken: string }>().snapshotToken;
+    const wrongConfirmation = await context.request({
+      method: "POST",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve`,
+      payload: { keepGoalId: selected!.id, snapshotToken, confirmationTitle: "错误名称" },
+    });
+    expect(wrongConfirmation.statusCode).toBe(422);
+    expect(wrongConfirmation.json<{ detail: string }>().detail).toBe("请输入发起目标的完整名称确认解散");
+
+    const changedSeries = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goal-series/${body.series.id}`,
+      payload: { occurrenceCount: 4, version: body.series.version },
+    });
+    expect(changedSeries.statusCode).toBe(200);
+    const staleAfterSeriesChange = await context.request({
+      method: "POST",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve`,
+      payload: { keepGoalId: selected!.id, snapshotToken, confirmationTitle: selected!.title },
+    });
+    expect(staleAfterSeriesChange.statusCode).toBe(409);
+    const refreshedPreview = await context.request({
+      method: "GET",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve-preview?keepGoalId=${selected!.id}`,
+    });
+    const refreshedSnapshotToken = refreshedPreview.json<{ snapshotToken: string }>().snapshotToken;
+
+    vi.setSystemTime(new Date("2026-08-02T00:00:00.000Z"));
+    const changedAfterPreview = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${changed!.id}`,
+      payload: { description: "预览后发生变化", version: changed!.version },
+    });
+    expect(changedAfterPreview.statusCode).toBe(200);
+    const stale = await context.request({
+      method: "POST",
+      url: `/api/v1/monthly-goal-series/${body.series.id}/dissolve`,
+      payload: { keepGoalId: selected!.id, snapshotToken: refreshedSnapshotToken, confirmationTitle: selected!.title },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json<{ code: string }>().code).toBe("VERSION_CONFLICT");
+
+    const unchangedSeries = await context.request({ method: "GET", url: `/api/v1/monthly-goal-series/${body.series.id}` });
+    expect(unchangedSeries.statusCode).toBe(200);
+    expect(unchangedSeries.json<{ instanceCount: number }>().instanceCount).toBe(4);
+    expect((await context.request({ method: "GET", url: `/api/v1/monthly-goals/${selected!.id}` })).json<{ seriesId: string }>().seriesId).toBe(body.series.id);
   });
 });
 

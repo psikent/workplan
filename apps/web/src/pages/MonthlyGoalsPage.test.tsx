@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { MonthlyGoal, MonthlyGoalSeries, MonthlyGoalSeriesFrequency, WorkPlan } from "@workplan/contracts";
+import type { MonthlyGoal, MonthlyGoalSeries, MonthlyGoalSeriesDissolvePreview, MonthlyGoalSeriesFrequency, WorkPlan } from "@workplan/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
 import { ToastProvider } from "../components/ToastProvider";
@@ -905,6 +905,137 @@ describe("MonthlyGoalsPage", () => {
     expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining("停止后不再生成后续月目标"));
     await waitFor(() => expect(latestToast()).toHaveTextContent("已停止重复周期"));
     await waitFor(() => expect(screen.getByText(/（已停止）/)).toBeTruthy());
+    expect(screen.getByRole("button", { name: "解散重复系列" })).toBeEnabled();
+    view.unmount();
+  });
+
+  it("previews and dissolves a series after confirming the selected goal title", async () => {
+    const selectedGoal = goalFixture({
+      id: "50000000-0000-4000-8000-000000000001",
+      title: "保留本期巡检",
+      seriesId: seriesFixture.id,
+      occurrenceKey: "2026-08",
+    });
+    const protectedGoal = goalFixture({
+      id: "50000000-0000-4000-8000-000000000002",
+      title: "已经关联的九月巡检",
+      year: 2026,
+      month: 9,
+      seriesId: seriesFixture.id,
+      occurrenceKey: "2026-09",
+      linkedWorkPlan: { id: linkedPlan.id, title: linkedPlan.title },
+      status: "completed",
+    });
+    const untouchedGoal = goalFixture({
+      id: "50000000-0000-4000-8000-000000000003",
+      title: "十月自动巡检",
+      year: 2026,
+      month: 10,
+      seriesId: seriesFixture.id,
+      occurrenceKey: "2026-10",
+    });
+    mockStatefulApi([selectedGoal, protectedGoal, untouchedGoal], [linkedPlan], [seriesFixture]);
+    const statefulApi = apiMock.getMockImplementation()!;
+    const preview: MonthlyGoalSeriesDissolvePreview = {
+      seriesId: seriesFixture.id,
+      seriesVersion: 1,
+      snapshotToken: "a".repeat(64),
+      keepGoal: { id: selectedGoal.id, title: selectedGoal.title, year: selectedGoal.year, month: selectedGoal.month },
+      counts: { retained: 2, deleted: 1, linked: 1 },
+      instances: [
+        { id: selectedGoal.id, title: selectedGoal.title, year: 2026, month: 8, archivedAt: null, linkedWorkPlan: null, status: null, action: "retain", reasons: ["selected"] },
+        { id: protectedGoal.id, title: protectedGoal.title, year: 2026, month: 9, archivedAt: null, linkedWorkPlan: protectedGoal.linkedWorkPlan, status: "completed", action: "retain", reasons: ["edited", "linked", "completed"] },
+        { id: untouchedGoal.id, title: untouchedGoal.title, year: 2026, month: 10, archivedAt: null, linkedWorkPlan: null, status: null, action: "delete", reasons: [] },
+      ],
+    };
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === `/monthly-goal-series/${seriesFixture.id}/dissolve-preview?keepGoalId=${selectedGoal.id}`) return preview;
+      if (path === `/monthly-goal-series/${seriesFixture.id}/dissolve` && init?.method === "POST") {
+        storedGoals = storedGoals
+          .filter((goal) => goal.id !== untouchedGoal.id)
+          .map((goal) => goal.seriesId === seriesFixture.id ? { ...goal, seriesId: null, occurrenceKey: null, version: goal.version + 1 } : goal);
+        storedSeries = storedSeries.filter((series) => series.id !== seriesFixture.id);
+        return { retainedCount: 2, deletedCount: 1 };
+      }
+      return statefulApi(path, init);
+    });
+    const view = renderPage();
+    await screen.findByText(selectedGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `管理系列 ${selectedGoal.title}` }));
+    fireEvent.click(await screen.findByRole("button", { name: "解散重复系列" }));
+
+    const dissolveDialog = await screen.findByRole("dialog", { name: "解散重复系列" });
+    expect(await within(dissolveDialog).findByText("保留为普通月目标（2）")).toBeTruthy();
+    expect(within(dissolveDialog).getByText("永久删除（1）")).toBeTruthy();
+    expect(within(dissolveDialog).getByText(protectedGoal.title)).toBeTruthy();
+    expect(within(dissolveDialog).getByText("已编辑、已关联、已完成")).toBeTruthy();
+    expect(within(dissolveDialog).getByText(untouchedGoal.title)).toBeTruthy();
+    const dissolveButton = within(dissolveDialog).getByRole("button", { name: "解散并删除 1 个目标" });
+    expect(dissolveButton).toBeDisabled();
+
+    fireEvent.change(within(dissolveDialog).getByLabelText("输入目标名称确认"), { target: { value: selectedGoal.title } });
+    expect(dissolveButton).toBeEnabled();
+    fireEvent.click(dissolveButton);
+
+    await waitFor(() => {
+      const dissolveCall = apiMock.mock.calls.find(([path, init]) => path === `/monthly-goal-series/${seriesFixture.id}/dissolve` && init?.method === "POST");
+      expect(JSON.parse(String(dissolveCall?.[1]?.body))).toEqual({
+        keepGoalId: selectedGoal.id,
+        snapshotToken: preview.snapshotToken,
+        confirmationTitle: selectedGoal.title,
+      });
+    });
+    await waitFor(() => expect(latestToast()).toHaveTextContent("重复系列已解散：保留 2 个，删除 1 个"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "目标重复周期" })).toBeNull());
+    expect(screen.queryByRole("button", { name: `管理系列 ${selectedGoal.title}` })).toBeNull();
+    view.unmount();
+  });
+
+  it("reloads the dissolve preview and clears confirmation after a version conflict", async () => {
+    const selectedGoal = goalFixture({
+      id: "60000000-0000-4000-8000-000000000001",
+      title: "冲突测试巡检",
+      seriesId: seriesFixture.id,
+      occurrenceKey: "2026-08",
+    });
+    mockStatefulApi([selectedGoal], [linkedPlan], [{ ...seriesFixture, instanceCount: 1 }]);
+    const statefulApi = apiMock.getMockImplementation()!;
+    const preview: MonthlyGoalSeriesDissolvePreview = {
+      seriesId: seriesFixture.id,
+      seriesVersion: 1,
+      snapshotToken: "b".repeat(64),
+      keepGoal: { id: selectedGoal.id, title: selectedGoal.title, year: selectedGoal.year, month: selectedGoal.month },
+      counts: { retained: 1, deleted: 0, linked: 0 },
+      instances: [
+        { id: selectedGoal.id, title: selectedGoal.title, year: 2026, month: 8, archivedAt: null, linkedWorkPlan: null, status: null, action: "retain", reasons: ["selected"] },
+      ],
+    };
+    let previewRequests = 0;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === `/monthly-goal-series/${seriesFixture.id}/dissolve-preview?keepGoalId=${selectedGoal.id}`) {
+        previewRequests += 1;
+        return preview;
+      }
+      if (path === `/monthly-goal-series/${seriesFixture.id}/dissolve` && init?.method === "POST") {
+        throw new ApiError({ status: 409, code: "VERSION_CONFLICT", detail: "数据已发生变化" });
+      }
+      return statefulApi(path, init);
+    });
+    const view = renderPage();
+    await screen.findByText(selectedGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `管理系列 ${selectedGoal.title}` }));
+    fireEvent.click(await screen.findByRole("button", { name: "解散重复系列" }));
+    const dissolveDialog = await screen.findByRole("dialog", { name: "解散重复系列" });
+    const confirmationInput = await within(dissolveDialog).findByLabelText("输入目标名称确认");
+    fireEvent.change(confirmationInput, { target: { value: selectedGoal.title } });
+    fireEvent.click(within(dissolveDialog).getByRole("button", { name: "解散并删除 0 个目标" }));
+
+    await waitFor(() => expect(within(dissolveDialog).getByRole("alert")).toHaveTextContent("数据已发生变化，请重新确认解散范围"));
+    expect(confirmationInput).toHaveValue("");
+    expect(within(dissolveDialog).getByRole("button", { name: "解散并删除 0 个目标" })).toBeDisabled();
+    await waitFor(() => expect(previewRequests).toBeGreaterThanOrEqual(2));
     view.unmount();
   });
 });

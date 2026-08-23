@@ -1,5 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { createMonthlyGoalSeriesSchema, updateMonthlyGoalSeriesSchema } from "@workplan/contracts";
+import {
+  createMonthlyGoalSeriesSchema,
+  dissolveMonthlyGoalSeriesSchema,
+  monthlyGoalSeriesDissolvePreviewQuerySchema,
+  updateMonthlyGoalSeriesSchema,
+} from "@workplan/contracts";
 import { z } from "zod";
 import type { MonthlyGoalSeriesService } from "../modules/monthly-goal-series.js";
 
@@ -12,6 +17,15 @@ export async function registerMonthlyGoalSeriesRoutes(app: FastifyInstance, seri
     "/api/v1/monthly-goal-series/:id",
     { schema: { params: idParams } },
     async (request) => series.get((request.params as { id: string }).id),
+  );
+
+  app.get(
+    "/api/v1/monthly-goal-series/:id/dissolve-preview",
+    { schema: { params: idParams, querystring: monthlyGoalSeriesDissolvePreviewQuerySchema } },
+    async (request) => {
+      const query = monthlyGoalSeriesDissolvePreviewQuerySchema.parse(request.query);
+      return series.previewDissolve((request.params as { id: string }).id, query.keepGoalId);
+    },
   );
 
   app.post(
@@ -36,6 +50,15 @@ export async function registerMonthlyGoalSeriesRoutes(app: FastifyInstance, seri
     async (request, reply) => {
       series.stop((request.params as { id: string }).id, (request.query as { version: number }).version);
       reply.code(204).send();
+    },
+  );
+
+  app.post(
+    "/api/v1/monthly-goal-series/:id/dissolve",
+    { schema: { params: idParams, body: dissolveMonthlyGoalSeriesSchema } },
+    async (request) => {
+      const input = dissolveMonthlyGoalSeriesSchema.parse(request.body);
+      return series.dissolve((request.params as { id: string }).id, input);
     },
   );
 }
