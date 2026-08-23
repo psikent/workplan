@@ -230,7 +230,7 @@ export default function MonthlyGoalsPage() {
       if (!current.workPlanId) return next;
 
       const selectedPlan = plansById.get(current.workPlanId);
-      if (!selectedPlan) return { ...next, workPlanId: "" };
+      if (!selectedPlan) return next;
       const start = Date.parse(selectedPlan.startAt);
       const end = Date.parse(selectedPlan.endAt);
       if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return next;

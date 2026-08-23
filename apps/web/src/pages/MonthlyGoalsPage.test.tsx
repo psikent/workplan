@@ -464,7 +464,7 @@ describe("MonthlyGoalsPage", () => {
     );
 
     fireEvent.change(screen.getByRole("combobox", { name: "所属月份" }), { target: { value: "9" } });
-    expect(planSelect.value).toBe("");
+    expect(planSelect.value).toBe(omittedPlan.id);
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     fireEvent.click(screen.getByRole("button", { name: `关联计划 ${omittedPlanGoal.title}` }));
     expect(view.container.querySelector(".goal-link-current")).toHaveTextContent("计划未在候选列表中，无法确认目标所属月份");
