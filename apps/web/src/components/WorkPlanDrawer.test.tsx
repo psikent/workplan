@@ -384,6 +384,37 @@ describe("WorkPlanDrawer", () => {
       view.unmount();
     });
 
+    it("offers Monthly Goals from both months covered by a cross-month Work Plan", () => {
+      const septemberGoal = monthlyGoal({
+        id: "66666666-6666-4666-8666-666666666666",
+        title: "九月上线",
+        year: 2026,
+        month: 9,
+        createdAt: "2026-09-01T00:00:00.000Z",
+      });
+      const view = render(
+        <WorkPlanDrawer
+          plan={{
+            ...plan,
+            startAt: new Date(2026, 7, 31, 23).toISOString(),
+            endAt: new Date(2026, 8, 1, 1).toISOString(),
+          }}
+          fields={[]}
+          monthlyGoals={[...freeGoals, septemberGoal]}
+          open
+          saving={false}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+        />,
+      );
+
+      expect(screen.getAllByRole("checkbox").map((checkbox) => checkbox.closest("label")?.textContent)).toEqual([
+        "2026 年 9 月 · 九月上线",
+        "2026 年 8 月 · 官网改版",
+      ]);
+      view.unmount();
+    });
+
     it("offers Monthly Goals across every month covered by a cross-year Work Plan", () => {
       const novemberGoal = monthlyGoal({ id: "77777777-7777-4777-8777-777777777777", title: "十一月目标", year: 2026, month: 11 });
       const decemberGoal = monthlyGoal({ id: "88888888-8888-4888-8888-888888888888", title: "十二月目标", year: 2026, month: 12 });
@@ -505,9 +536,14 @@ describe("WorkPlanDrawer", () => {
       expect(screen.queryByRole("checkbox", { name: /官网改版/ })).toBeNull();
       expect((screen.getByRole("checkbox", { name: /九月上线/ }) as HTMLInputElement).checked).toBe(true);
 
+      fireEvent.change(screen.getByLabelText(/开始时间/), { target: { value: "2026-08-11T10:00" } });
+      fireEvent.change(screen.getByLabelText(/结束时间/), { target: { value: "2026-08-11T11:00" } });
+      expect(screen.queryByRole("checkbox", { name: /九月上线/ })).toBeNull();
+      expect((screen.getByRole("checkbox", { name: /官网改版/ }) as HTMLInputElement).checked).toBe(false);
+
       fireEvent.click(screen.getByRole("button", { name: "保存" }));
       await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-      expect(onSave.mock.calls[0]?.[0]).toMatchObject({ monthlyGoalIds: [septemberGoal.id] });
+      expect(onSave.mock.calls[0]?.[0]).toMatchObject({ monthlyGoalIds: [] });
       view.unmount();
     });
 

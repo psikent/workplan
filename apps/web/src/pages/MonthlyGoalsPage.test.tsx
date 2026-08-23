@@ -392,6 +392,41 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
+  it("offers same-month and cross-month Work Plans when editing without showing other months", async () => {
+    const crossMonthPlan: WorkPlan = {
+      ...freePlan,
+      id: "c4d5e6f7-4444-4555-8666-777788889999",
+      title: "七八月持续计划",
+      startAt: new Date(2026, 6, 31, 23).toISOString(),
+      endAt: new Date(2026, 7, 2, 9).toISOString(),
+    };
+    const septemberPlan: WorkPlan = {
+      ...freePlan,
+      id: "d5e6f708-5555-4666-8777-888899990000",
+      title: "九月独立计划",
+      startAt: new Date(2026, 8, 10, 9).toISOString(),
+      endAt: new Date(2026, 8, 11, 9).toISOString(),
+    };
+    mockStatefulApi([activeGoal], [linkedPlan, freePlan, crossMonthPlan, septemberPlan]);
+    const view = renderPage();
+    await screen.findByText(activeGoal.title);
+
+    fireEvent.click(screen.getByRole("button", { name: `编辑 ${activeGoal.title}` }));
+    const optionLabels = Array.from(
+      (screen.getByRole("combobox", { name: /关联计划/ }) as HTMLSelectElement).options,
+      (option) => option.textContent,
+    );
+
+    expect(optionLabels).toEqual([
+      "不关联",
+      crossMonthPlan.title,
+      linkedPlan.title,
+      freePlan.title,
+    ]);
+    expect(optionLabels).not.toContain(septemberPlan.title);
+    view.unmount();
+  });
+
   it("keeps an out-of-month Work Plan visible for an existing Goal-Plan Link", async () => {
     const historicalPlan: WorkPlan = {
       ...freePlan,

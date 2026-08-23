@@ -109,7 +109,7 @@ export class MonthlyGoalService {
           .all(...uniqueIds, workPlanId) as Array<{ id: string; title: string }>)
       : [];
     if (occupied.length > 0) {
-      throw invalidInput(`月目标「${occupied[0]!.title}」已关联其他工作任务`, { monthlyGoalIds: [occupied[0]!.id] });
+      throw invalidInput(`月目标「${occupied[0]!.title}」已关联其他工作计划`, { monthlyGoalIds: [occupied[0]!.id] });
     }
     const execute = this.database.sqlite.transaction(() => {
       const timestamp = nowIso();

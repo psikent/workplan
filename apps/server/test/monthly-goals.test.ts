@@ -311,7 +311,7 @@ describe("work plan side links", () => {
     });
     expect(conflict.statusCode).toBe(422);
     expect(conflict.json<{ detail: string; errors?: Record<string, string[]> }>()).toMatchObject({
-      detail: "月目标「被占用的目标」已关联其他工作任务",
+      detail: "月目标「被占用的目标」已关联其他工作计划",
       errors: { monthlyGoalIds: [goal.id] },
     });
 
