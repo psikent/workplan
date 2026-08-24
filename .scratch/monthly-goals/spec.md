@@ -21,6 +21,7 @@
 | 目标任务标签 (Task-Goal Tag) | 工作任务上引用某个月目标的标记，即 Work Plan 的 monthlyGoalIds；一条任务可挂多个，一个月目标只接受一个 | 自由标签、备注标签 |
 | 目标状态派生 (Derived Goal Status) | 月目标的完成状态由其关联工作计划的**有效状态**算出（尊重手动状态覆盖）；无关联时为「未关联」而非某种状态 | 手动目标状态、目标进度百分比 |
 | 目标配置页 (Goal Configuration Page) | 路由 /monthly-goals 的独立页面，管理与查看所有月目标 | 目标工作台 |
+| 目标重复周期 (Goal Recurrence) | 一条模板 + 周期规则（频率/间隔/结束条件）；创建或修改时立即生成各期独立月目标实例；实例彼此独立可编辑 | 月目标模板、自动生成任务 |
 
 同步维护 CONTEXT.md 词条（见票据 01）。
 
@@ -153,17 +154,75 @@
 - 空态：这个月还没有配置月目标
 - 乐观锁冲突：数据已被修改，请刷新后重试
 
+### R10 目标重复周期（Goal Recurrence）
+
+**已确认建模约束**：一条「目标重复系列」= 模板（标题/说明）+ 周期规则；创建/更新系列时**立即**生成覆盖全部目标期数的**独立**月目标实例。模板**不含**关联任务（每期实例由用户各自设置）；实例彼此独立（可编辑/归档/删除/关联不同任务）；规则可改（影响未来补齐的期数），删除系列 = 停止（不再生成，已生成实例保留）。
+
+- **周期语义（period-based）**：系列锚定起始期 `startPeriod { year, month }`；频率 `monthly | quarterly | yearly` × `interval`（monthly 步长 +interval 个月，quarterly +3×interval，yearly +12×interval）。
+- **结束方式**：`occurrenceCount`（共 N 期，1..600）与 `untilPeriod { year, month }`（至某年某月，含）至少提供一项；两者都提供时取先到期者。缺结束条件 → 422（拒绝无界生成）。
+- **实例生成**：每个期数生成一条月目标：title/description 取自模板；year/month = 期；archived_at NULL；work_plan_id NULL；series_id + occurrence_key（如 `2026-08`，同一系列内唯一）。总期数上限 600（超限 422）。
+- **规则修改（PATCH）**：更新模板/频率/结束条件后按新规则计算目标期列表，**补齐缺失期**（已存在期跳过），**不删除**已生成实例；返回 `{ series, generated }`（generated = 本次新增实例）。停止（DELETE，需 version）= active 置 0，不再生成。
+- **实例独立性**：删除/归档/编辑某个实例不影响系列与其余实例；实例删除后不会自动补生成（除非再次 PATCH 系列）。
+
+**数据模型（迁移 #8）**：
+
+    CREATE TABLE monthly_goal_series (
+      id TEXT PRIMARY KEY,
+      template_json TEXT NOT NULL,          -- { title, description }
+      frequency TEXT NOT NULL,              -- monthly | quarterly | yearly
+      interval INTEGER NOT NULL DEFAULT 1,
+      start_year INTEGER NOT NULL,
+      start_month INTEGER NOT NULL,         -- 1-12，首期
+      occurrence_count INTEGER,             -- 可空；与 until_* 至少一项
+      until_year INTEGER,
+      until_month INTEGER,                  -- 同时可空；含该期
+      active INTEGER NOT NULL DEFAULT 1,
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    ALTER TABLE monthly_goals ADD COLUMN series_id TEXT REFERENCES monthly_goal_series(id) ON DELETE SET NULL;
+    ALTER TABLE monthly_goals ADD COLUMN occurrence_key TEXT;
+    CREATE UNIQUE INDEX monthly_goal_series_occurrence_idx ON monthly_goals(series_id, occurrence_key);
+
+- SQLite 对 NULL 不参与唯一性：非系列月目标是多行 NULL，不冲突；同一系列内 occurrence_key 唯一。
+- 同步在 apps/server/src/db/schema.ts 用 drizzle 增加 monthlyGoalSeries 定义与 monthlyGoals 新列。
+- 兼容性：既有 monthly_goals 行（NULL series_id/occurrence_key）即为非系列实例；无需数据回填。
+
+**契约（packages/contracts/src/index.ts）**：
+
+- `monthlyGoalSeriesSchema`（响应 DTO）：id、template:{ title, description }、frequency、interval、startPeriod:{ year, month }、occurrenceCount（可空）、untilPeriod（可空）、active、version、instanceCount（派生，含已生成实例数）、createdAt、updatedAt。
+- `createMonthlyGoalSeriesSchema`（strict）：template:{ title(1..200)、description(默认 '') }、frequency、interval(1..12, 默认 1)、startPeriod、occurrenceCount(1..600, 可空)、untilPeriod(可空)；superRefine：至少一个结束条件、until ≥ startPeriod。
+- `updateMonthlyGoalSeriesSchema`（create 的字段全部 optional + version；缺省=不变、提供=替换；更新后仍需至少一个结束条件）。
+- `monthlyGoalSchema` 增加 `seriesId: uuid | null`、`occurrenceKey: string | null`；导出类型同步（MonthlyGoalSeries、CreateMonthlyGoalSeries、UpdateMonthlyGoalSeries、Period）。
+
+**服务与 API（apps/server/src/modules/monthly-goal-series.ts + routes/monthly-goal-series.ts）**：
+
+- `MonthlyGoalSeriesService`：create（生成全部实例）、list、get（含实例摘要 id/year/month/archivedAt）、update（补齐缺失期）、stop(id, version)（active=0）；无 admin 限制（编辑者可达），与月目标同权。
+- 路由：GET /api/v1/monthly-goal-series、GET /:id、POST（201）、PATCH /:id、DELETE /:id?version=（204）。
+- MonthlyGoalService：serialize 增加 seriesId/occurrenceKey（行内字段，无需额外查询）；实例删除走既有 DELETE 逻辑（实例独立）。
+- TransferService：`schemaVersion` 升到 **4**；version4BusinessTables = v3 + monthly_goal_series；deleteOrder 先删 monthly_goals 再删 monthly_goal_series；INSERT 顺序 series 先于 goals（FK）；导入 v1/v2/v3 文件不报错（v3 行无 series 列 → 自动 NULL；v4 文件的 series_id 随表导入）。
+
+**Web（R5 页面扩展）**：
+
+- 新建/编辑抽屉增加「重复周期」区块：默认「不重复」；可选每月/每季度/每年 + 间隔（1..12）+ 结束方式（共 N 期 或 到某年某月，至少一项）。提交时若设置周期 → POST /api/v1/monthly-goal-series（首期 = 当前表单的所属月份），否则维持 POST /monthly-goals。
+- 编辑一个系列实例：显示系列归属（只读徽标 + 「管理系列」入口），保存仍只更新该实例自身。
+- 实例行徽标：系列实例显示 Repeat2 徽标，title 显示「每 {interval} 个月重复 · 第 {k}/{n} 期」摘要；点击打开系列对话框：规则展示与编辑（频率/间隔/结束条件，PATCH）、已生成期列表（期数 + 归档状态）、「停止生成」按钮（确认文案：停止后不再生成，已生成的月目标保留）。
+- 页面其他行为不变；列表按既有年月过滤展示实例（实例即普通月目标）。
+
 ## 验收标准
 
 1. 月目标配置页可按月增删改查，完成状态随关联任务实时派生且尊重手动状态。
 2. 一条任务可勾选多个月目标；一个月目标可反向关联/解绑唯一任务；占用冲突给出明确错误。
 3. 管理员与编辑者都能进入 /monthly-goals 并配置。
-4. JSON 导出为 schemaVersion 3 且含 monthly_goals；v1/v2 文件导入不报错。
-5. 全部既有测试通过（含「tags 已被移除」断言），新增测试覆盖 R8 各项。
+4. JSON 导出为 schemaVersion 4 且含 monthly_goals 与 monthly_goal_series；v1/v2/v3 文件导入不报错（series 清空、goals 保留）。
+5. 全部既有测试通过（含「tags 已被移除」断言），新增测试覆盖 R8 各项与 R10 各项。
 6. pnpm typecheck 与 pnpm test（contracts -> server -> web -> 脚本）全绿。
+7. 目标重复系列：创建立即生成全部期数实例（正确性：频率步长、count/until 相交、无界拒绝、600 上限）；实例独立编辑/归档/删除；规则修改后补齐缺失期；停止后不再生成；编辑者与管理员同权。
 
 ## 范围外（Out of scope）
 
 - 与月目标无关的自由标签、提醒、通知（延续「删除 tag/reminder/notification API」的既有决策）。
 - 一个月目标关联多条任务、目标权重/百分比、目标逾期或历史报表、目标 XLS 导出、目标可见性的账号级细分。
-- 月目标自动生成（如每月 1 日按模板创建）；备注/协作评论。
+- **后台定时按规则到期自动补生成**（如「每月 1 日按模板创建」的定时任务模式）——本特性仅创建/修改规则时立即补生成；备注/协作评论。
+- 重复系列模板绑定任务、绑定工作计划系列并期期自动匹配 occurrence；跨系列合并/折叠展示。

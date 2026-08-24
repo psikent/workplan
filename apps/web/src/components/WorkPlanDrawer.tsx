@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
-import type { CreateWorkPlan, CustomFieldDefinition, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
-import { Archive, CalendarClock, Copy, Repeat2, X } from "lucide-react";
+import type { CreateWorkPlan, CustomFieldDefinition, MonthlyGoal, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
+import { Archive, CalendarClock, Copy, Repeat2, Target, X } from "lucide-react";
 import { fromDateTimeLocal, statusLabels, toDateTimeLocal } from "../lib/format";
+import { rangeOverlapsMonth } from "../lib/period";
 
 type RecurrenceInput = { frequency: "daily" | "weekly" | "monthly"; interval: number; timeZone: string } | null;
 
@@ -10,6 +11,8 @@ type Props = {
   plan: WorkPlan | null;
   series?: WorkPlanSeries | null | undefined;
   fields: CustomFieldDefinition[];
+  monthlyGoals?: MonthlyGoal[];
+  monthlyGoalsLoading?: boolean;
   initialDate?: Date | null;
   ownerAccountMappings?: OwnerAccountMapping[];
   ownerAccountMappingsLoading?: boolean;
@@ -38,8 +41,19 @@ function defaultCustomValues(fields: CustomFieldDefinition[]) {
   }));
 }
 
-export default function WorkPlanDrawer({ plan, series, fields, initialDate = null, ownerAccountMappings = [], ownerAccountMappingsLoading = false, ownerAccountMappingsError = false, open, saving, onClose, onSave, onDuplicate, onDelete }: Props) {
+function isValidPlanRange(startAt: string, endAt: string): boolean {
+  const startTimestamp = Date.parse(startAt);
+  const endTimestamp = Date.parse(endAt);
+  return Number.isFinite(startTimestamp) && Number.isFinite(endTimestamp) && endTimestamp > startTimestamp;
+}
+
+export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = [], monthlyGoalsLoading = false, initialDate = null, ownerAccountMappings = [], ownerAccountMappingsLoading = false, ownerAccountMappingsError = false, open, saving, onClose, onSave, onDuplicate, onDelete }: Props) {
   const defaults = useMemo(() => defaultTimes(initialDate ?? undefined), [initialDate, open]);
+  const sortedMonthlyGoals = useMemo(
+    () => [...monthlyGoals].sort((left, right) => right.year - left.year || right.month - left.month || left.createdAt.localeCompare(right.createdAt)),
+    [monthlyGoals],
+  );
+  const monthlyGoalsById = useMemo(() => new Map(monthlyGoals.map((goal) => [goal.id, goal])), [monthlyGoals]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<WorkPlanStatus>("pending");
@@ -47,9 +61,19 @@ export default function WorkPlanDrawer({ plan, series, fields, initialDate = nul
   const [startAt, setStartAt] = useState(defaults.startAt);
   const [endAt, setEndAt] = useState(defaults.endAt);
   const [customValues, setCustomValues] = useState<Record<string, unknown>>({});
+  const [monthlyGoalIds, setMonthlyGoalIds] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [interval, setIntervalValue] = useState(1);
   const [error, setError] = useState("");
+  const selectedMonthlyGoalIds = useMemo(() => new Set(monthlyGoalIds), [monthlyGoalIds]);
+  const visibleMonthlyGoals = useMemo(
+    () => sortedMonthlyGoals.filter((goal) => (
+      selectedMonthlyGoalIds.has(goal.id)
+      || rangeOverlapsMonth(startAt, endAt, goal.year, goal.month)
+    )),
+    [endAt, selectedMonthlyGoalIds, sortedMonthlyGoals, startAt],
+  );
+  const validPlanRange = isValidPlanRange(startAt, endAt);
 
   useEffect(() => {
     const nextDefaults = defaultTimes(initialDate ?? undefined);
@@ -60,6 +84,7 @@ export default function WorkPlanDrawer({ plan, series, fields, initialDate = nul
     setStartAt(plan ? toDateTimeLocal(plan.startAt) : nextDefaults.startAt);
     setEndAt(plan ? toDateTimeLocal(plan.endAt) : nextDefaults.endAt);
     setCustomValues(plan?.customFields ?? {});
+    setMonthlyGoalIds(plan?.monthlyGoalIds ?? []);
     setRecurrence(series?.active ? series.recurrence.frequency : "none");
     setIntervalValue(series?.active ? series.recurrence.interval : 1);
     setError("");
@@ -85,6 +110,20 @@ export default function WorkPlanDrawer({ plan, series, fields, initialDate = nul
     return () => window.clearInterval(refreshTimer);
   }, [endAt, open, startAt, statusMode]);
 
+  function updatePlanRange(field: "startAt" | "endAt", value: string) {
+    if (field === "startAt") setStartAt(value);
+    else setEndAt(value);
+
+    const nextStartAt = field === "startAt" ? value : startAt;
+    const nextEndAt = field === "endAt" ? value : endAt;
+    if (!isValidPlanRange(nextStartAt, nextEndAt)) return;
+
+    setMonthlyGoalIds((current) => current.filter((id) => {
+      const goal = monthlyGoalsById.get(id);
+      return !goal || rangeOverlapsMonth(nextStartAt, nextEndAt, goal.year, goal.month);
+    }));
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -105,6 +144,7 @@ export default function WorkPlanDrawer({ plan, series, fields, initialDate = nul
           startAt: startIso,
           endAt: endIso,
           customFields: customValues,
+          monthlyGoalIds,
           ...(plan ? { version: plan.version } : {}),
         },
         recurrence === "none" ? null : { frequency: recurrence, interval, timeZone: "Asia/Shanghai" },
@@ -161,8 +201,8 @@ export default function WorkPlanDrawer({ plan, series, fields, initialDate = nul
             <label className="field"><span>状态 <b>*</b> <small>{statusMode === "automatic" ? "自动" : "手动"}</small></span><select value={status} onChange={(event) => { setStatus(event.target.value as WorkPlanStatus); setStatusMode("manual"); }}>{Object.entries(statusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
             <div className="status-mode-help"><small>{statusMode === "automatic" ? "根据开始和结束时间自动更新；选择状态后将切换为手动。" : "当前状态由你手动指定，不再随时间自动变化。"}</small>{statusMode === "manual" ? <button className="text-button" type="button" onClick={() => setStatusMode("automatic")}>恢复自动</button> : null}</div>
           </div>
-          <label className="field"><span>开始时间 <b>*</b></span><input type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} required /></label>
-          <label className="field"><span>结束时间 <b>*</b></span><input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} required /></label>
+          <label className="field"><span>开始时间 <b>*</b></span><input type="datetime-local" value={startAt} onChange={(event) => updatePlanRange("startAt", event.target.value)} required /></label>
+          <label className="field"><span>结束时间 <b>*</b></span><input type="datetime-local" value={endAt} onChange={(event) => updatePlanRange("endAt", event.target.value)} required /></label>
           <fieldset className="form-section recurrence-section full">
             <legend><Repeat2 />计划周期</legend>
             <div className="field-grid compact">
@@ -170,6 +210,31 @@ export default function WorkPlanDrawer({ plan, series, fields, initialDate = nul
               <label className="field"><span>间隔</span><input type="number" min={1} max={365} value={interval} required={recurrence !== "none"} disabled={cycleLoading || recurrence === "none"} onChange={(event) => setIntervalValue(Number(event.target.value))} /></label>
             </div>
             <p className="recurrence-summary">{cycleSummary}</p>
+          </fieldset>
+
+          <fieldset className="form-section full">
+            <legend><Target />月目标</legend>
+            {monthlyGoalsLoading ? <p className="recurrence-summary">正在载入月目标…</p> : visibleMonthlyGoals.length > 0 ? (
+                <div className="goal-multi-select">
+                  {visibleMonthlyGoals.map((goal) => {
+                    const occupied = Boolean(goal.linkedWorkPlan) && goal.linkedWorkPlan!.id !== plan?.id;
+                    const checked = selectedMonthlyGoalIds.has(goal.id);
+                    const outOfRange = checked && validPlanRange && !rangeOverlapsMonth(startAt, endAt, goal.year, goal.month);
+                    const label = `${goal.year} 年 ${goal.month} 月 · ${goal.title}${outOfRange ? "（当前关联，不在计划覆盖月份）" : ""}`;
+                    return (
+                      <label key={goal.id} className={`goal-option ${occupied ? "disabled" : ""}`} title={occupied ? "该目标已关联其他工作计划" : label}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={occupied}
+                          onChange={(event) => setMonthlyGoalIds((current) => event.target.checked ? [...current, goal.id] : current.filter((id) => id !== goal.id))}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+            ) : <p className="recurrence-summary">计划覆盖月份内暂无可关联月目标</p>}
           </fieldset>
 
           {activeFields.length > 0 ? (

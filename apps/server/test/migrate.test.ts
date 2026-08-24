@@ -16,7 +16,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 6 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 8 });
     expect(database.prepare("SELECT id, username, role, login_mode AS loginMode, disabled_at AS disabledAt, version FROM users").get()).toEqual({
       id: "user-1",
       username: "lxj",
@@ -44,10 +44,11 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 6 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 8 });
     expect(database.prepare("SELECT id, title FROM work_plans").get()).toEqual({ id: "plan-1", title: "保留计划" });
     expect(database.prepare("SELECT id, name FROM export_templates").get()).toEqual({ id: "template-1", name: "保留模板" });
     expect(database.prepare("SELECT COUNT(*) AS count FROM owner_account_mappings").get()).toEqual({ count: 9 });
+    expect(database.prepare("SELECT COUNT(*) AS count FROM monthly_goals").get()).toEqual({ count: 0 });
     expect(() => database.prepare("INSERT INTO owner_account_mappings(owner_name, account) VALUES (?, ?)").run("重复账号", "fengmingqian@zh.gd.csg.cn")).toThrow();
     database.close();
   });

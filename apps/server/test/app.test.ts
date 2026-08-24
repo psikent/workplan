@@ -815,6 +815,45 @@ describe("work plan API", () => {
     expect(shifted.json<{ isException: boolean }>().isException).toBe(true);
   });
 
+  it("does not generate a duplicate on the edited occurrence's calendar day", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2027-08-08T00:00:00.000Z"));
+    const context = await createContext();
+    const create = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plan-series",
+      payload: {
+        workPlan: planInput({ startAt: "2027-08-09T02:00:00.000Z", endAt: "2027-08-09T03:00:00.000Z" }),
+        recurrence: { frequency: "daily", interval: 1, count: 3, timeZone: "Asia/Shanghai" },
+      },
+    });
+    expect(create.statusCode).toBe(201);
+    const created = create.json<{ generated: Array<{ id: string; version: number }>; series: { id: string; version: number } }>();
+    const first = created.generated[0]!;
+
+    const edit = await context.request({
+      method: "PATCH",
+      url: `/api/v1/work-plans/${first.id}`,
+      payload: { startAt: "2027-08-09T04:00:00.000Z", endAt: "2027-08-09T05:00:00.000Z", version: first.version },
+    });
+    expect(edit.statusCode).toBe(200);
+
+    const updateSeries = await context.request({
+      method: "PATCH",
+      url: `/api/v1/work-plan-series/${created.series.id}`,
+      payload: {
+        workPlan: { startAt: "2027-08-09T04:00:00.000Z", endAt: "2027-08-09T05:00:00.000Z" },
+        recurrence: { frequency: "daily", interval: 1, count: 3, timeZone: "Asia/Shanghai" },
+        version: created.series.version,
+      },
+    });
+    expect(updateSeries.statusCode).toBe(200);
+
+    const plans = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
+    const sameDay = plans.json<Array<{ startAt: string }>>().filter((plan) => plan.startAt.startsWith("2027-08-09"));
+    expect(sameDay).toHaveLength(1);
+  });
+
   it("turns an existing work plan into the first occurrence of a recurring rule", async () => {
     const context = await createContext();
     const created = await context.request({ method: "POST", url: "/api/v1/work-plans", payload: planInput() });
@@ -870,21 +909,23 @@ describe("work plan API", () => {
     expect(validation.json<{ valid: boolean }>().valid).toBe(true);
   });
 
-  it("round-trips owner mappings in JSON version 2 and preserves them when importing version 1", async () => {
+  it("round-trips owner mappings in JSON version 4 and preserves them when importing version 1", async () => {
     const context = await createContext();
     const exported = await context.request({ method: "GET", url: "/api/v1/export" });
     expect(exported.statusCode).toBe(200);
-    const version2 = exported.json<{
+    const version4 = exported.json<{
       schemaVersion: number;
       exportedAt: string;
       data: Record<string, Array<Record<string, unknown>>>;
     }>();
-    expect(version2.schemaVersion).toBe(2);
-    expect(version2.data.owner_account_mappings).toHaveLength(9);
+    expect(version4.schemaVersion).toBe(4);
+    expect(version4.data.owner_account_mappings).toHaveLength(9);
+    expect(version4.data.monthly_goals).toEqual([]);
+    expect(version4.data.monthly_goal_series).toEqual([]);
 
     context.database.sqlite.prepare("UPDATE owner_account_mappings SET account = ? WHERE owner_name = ?").run("changed@example.com", "冯铭倩");
-    const { owner_account_mappings: _mappings, ...version1Data } = version2.data;
-    const version1 = { schemaVersion: 1, exportedAt: version2.exportedAt, data: version1Data };
+    const { owner_account_mappings: _mappings, monthly_goals: _monthlyGoals, monthly_goal_series: _series, ...version1Data } = version4.data;
+    const version1 = { schemaVersion: 1, exportedAt: version4.exportedAt, data: version1Data };
     const oldValidation = await context.request({ method: "POST", url: "/api/v1/import/validate", payload: version1 });
     expect(oldValidation.statusCode).toBe(200);
     const oldImport = await context.request({ method: "POST", url: "/api/v1/import", payload: version1 });
@@ -892,9 +933,9 @@ describe("work plan API", () => {
     expect(context.database.sqlite.prepare("SELECT account FROM owner_account_mappings WHERE owner_name = ?").get("冯铭倩")).toEqual({ account: "changed@example.com" });
 
     const replacement = {
-      ...version2,
+      ...version4,
       data: {
-        ...version2.data,
+        ...version4.data,
         owner_account_mappings: [{ owner_name: "测试负责人", account: "test.owner@example.com" }],
       },
     };

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { CustomFieldDefinition, ExportTemplate, WorkPlan } from "@workplan/contracts";
+import type { CustomFieldDefinition, ExportTemplate, MonthlyGoal, WorkPlan } from "@workplan/contracts";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../components/ToastProvider";
@@ -54,6 +54,7 @@ const plan: WorkPlan = {
   occurrenceKey: null,
   isException: false,
   customFields: { owner: "lxj", effort: 8 },
+  monthlyGoalIds: [],
   ownerAccount: null,
   createdAt: new Date(2026, 7, 1).toISOString(),
   updatedAt: new Date(2026, 7, 1).toISOString(),
@@ -105,6 +106,22 @@ const exportTemplate: ExportTemplate = {
   updatedAt: new Date(2026, 7, 1).toISOString(),
 };
 
+const monthlyGoal: MonthlyGoal = {
+  id: "7c1e2d3f-aaaa-4bbb-8ccc-0123456789ab",
+  title: "完成官网改版",
+  description: "",
+  year: 2026,
+  month: 8,
+  archivedAt: null,
+  version: 1,
+  status: "pending",
+  linkedWorkPlan: null,
+  seriesId: null,
+  occurrenceKey: null,
+  createdAt: new Date(2026, 7, 1).toISOString(),
+  updatedAt: new Date(2026, 7, 1).toISOString(),
+};
+
 beforeEach(() => {
   sessionMock.user = { username: "lxj", role: "admin", loginMode: "password" };
   localStorage.clear();
@@ -116,6 +133,7 @@ beforeEach(() => {
     if (path === "/owner-account-mappings") return [{ ownerName: "冯铭倩", account: "fengmingqian@zh.gd.csg.cn" }];
     if (path === "/work-plans/import.xls") return { imported: 1 };
     if (path.startsWith("/work-plan-series")) return [];
+    if (path === "/monthly-goals") return [monthlyGoal];
     if (path.startsWith("/work-plans")) return [plan];
     if (path.startsWith("/custom-fields")) return [ownerField, effortField];
     throw new Error(`Unexpected API path: ${path}`);
@@ -155,6 +173,7 @@ function mockMutableWorkPlans(initialPlans: WorkPlan[] = [plan]) {
     if (path === "/owner-account-mappings") return [{ ownerName: "冯铭倩", account: "fengmingqian@zh.gd.csg.cn" }];
     if (path.startsWith("/work-plan-series")) return [];
     if (path.startsWith("/custom-fields")) return [ownerField, effortField];
+    if (path === "/monthly-goals") return [monthlyGoal];
     if (path === "/work-plans?limit=500") return storedPlans;
     if (path === "/work-plans" && init?.method === "POST") {
       const input = JSON.parse(String(init.body)) as Partial<WorkPlan>;
@@ -285,6 +304,32 @@ describe("work plan ordering and copying", () => {
     await waitFor(() => expect(drawerPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
       plan: { id: copiedPlanId, title: "示例计划（副本）" },
       open: true,
+    }));
+    view.unmount();
+  });
+});
+
+describe("monthly goal chips", () => {
+  it("shows goal chips on plan rows that link back to the goals page", async () => {
+    const taggedPlan = { ...plan, monthlyGoalIds: [monthlyGoal.id] };
+    mockMutableWorkPlans([taggedPlan]);
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    const chip = await screen.findByRole("link", { name: monthlyGoal.title });
+    expect(chip.getAttribute("href")).toBe("/monthly-goals");
+    expect(chip.getAttribute("title")).toBe("2026 年 8 月 · 完成官网改版");
+    view.unmount();
+  });
+
+  it("passes the loaded goals and the occupied state into the drawer", async () => {
+    const taggedPlan = { ...plan, monthlyGoalIds: [monthlyGoal.id] };
+    mockMutableWorkPlans([taggedPlan]);
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    await waitFor(() => expect(drawerPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      monthlyGoals: [{ id: monthlyGoal.id, title: "完成官网改版" }],
     }));
     view.unmount();
   });

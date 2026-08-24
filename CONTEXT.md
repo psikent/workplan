@@ -32,13 +32,17 @@ _Avoid_: Metadata blob, task field
 A per-month work objective, defined by an Administrator or an Editor, with its own title, description, and month. It links to at most one Work Plan and derives its completion from that Work Plan's effective status.
 _Avoid_: Goal tag, milestone, target
 
-**Task-Goal Tag**:
-The link marker on a Work Plan that references a Monthly Goal. A Work Plan may carry several Task-Goal Tags for several Monthly Goals; a Monthly Goal accepts at most one Task-Goal Tag.
-_Avoid_: Free-form tag, label, remark tag
+**Goal-Plan Link**:
+The association connecting a Monthly Goal to a Work Plan. A Work Plan may carry several Goal-Plan Links for several Monthly Goals; a Monthly Goal accepts at most one Goal-Plan Link.
+_Avoid_: Task-Goal Tag, task link, goal tag, free-form tag
 
 **Derived Goal Status**:
 The Monthly Goal status computed from its linked Work Plan's effective status, respecting any Manual Status Override. A Monthly Goal without a linked Work Plan is unlinked rather than having a status.
 _Avoid_: Manual goal status, goal progress percentage
+
+**Goal Recurrence**:
+A Monthly Goal template plus a period rule (frequency monthly/quarterly/yearly × interval, ending at a count or a year-month). Creating or updating a Recurring Series immediately generates one independent Monthly Goal instance per period; instances stay independent (each can be edited, archived, deleted, or linked to a different Work Plan). Stopping a series only halts further generation and preserves the series; dissolving it deletes the rule, keeps the selected or previously used instances as ordinary Monthly Goals, and removes untouched generated instances.
+_Avoid_: Goal template, auto-generated task
 
 **Work Owner Account**:
 A read-only Work Plan property derived at read and export time by mapping the `owner` Custom Field's displayed person name to an internally maintained account. It is not editable or stored on an individual Work Plan.

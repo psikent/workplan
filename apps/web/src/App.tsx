@@ -8,6 +8,7 @@ import BrandMark from "./components/BrandMark";
 
 const WorkPlansPage = lazy(() => import("./pages/WorkPlansPage"));
 const OverviewPage = lazy(() => import("./pages/OverviewPage"));
+const MonthlyGoalsPage = lazy(() => import("./pages/MonthlyGoalsPage"));
 const CustomFieldsPage = lazy(() => import("./pages/CustomFieldsPage"));
 const AccountManagementPage = lazy(() => import("./pages/AccountManagementPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
@@ -109,6 +110,7 @@ export default function App() {
               <Route path="/" element={<Navigate to="/work-plans" replace />} />
               <Route path="/overview" element={<OverviewPage />} />
               <Route path="/work-plans" element={<WorkPlansPage />} />
+              <Route path="/monthly-goals" element={<MonthlyGoalsPage />} />
               <Route path="/custom-fields" element={state.user.role === "admin" ? <CustomFieldsPage /> : <Navigate to="/work-plans" replace />} />
               <Route path="/accounts" element={state.user.role === "admin" ? <AccountManagementPage /> : <Navigate to="/work-plans" replace />} />
               <Route path="/settings" element={state.user.role === "admin" ? <SettingsPage /> : <Navigate to="/work-plans" replace />} />

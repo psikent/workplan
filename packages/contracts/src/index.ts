@@ -40,6 +40,7 @@ export const workPlanSchema = z.object({
   occurrenceKey: z.string().nullable(),
   isException: z.boolean(),
   customFields: z.record(z.string(), z.unknown()),
+  monthlyGoalIds: z.array(z.string().uuid()).default([]),
   ownerAccount: z.string().email().nullable(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
@@ -53,6 +54,7 @@ const workPlanValuesSchema = z.object({
   startAt: isoDateTimeSchema,
   endAt: isoDateTimeSchema,
   customFields: z.record(z.string(), z.unknown()).default({}),
+  monthlyGoalIds: z.array(z.string().uuid()).optional(),
 }).strict();
 
 const validateTimeRange = (
@@ -140,6 +142,179 @@ export const searchWorkPlansSchema = z.object({
   limit: z.number().int().min(1).max(500).default(100),
   offset: z.number().int().min(0).default(0),
 });
+
+export const monthlyGoalSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  description: z.string(),
+  year: z.number().int().min(2000).max(2100),
+  month: z.number().int().min(1).max(12),
+  archivedAt: isoDateTimeSchema.nullable(),
+  version: z.number().int(),
+  status: workPlanStatusSchema.nullable(),
+  linkedWorkPlan: z.object({ id: z.string().uuid(), title: z.string() }).nullable(),
+  seriesId: z.string().uuid().nullable(),
+  occurrenceKey: z.string().nullable(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+});
+
+const monthlyGoalTitleSchema = z.string().trim().min(1).max(200);
+const monthlyGoalDescriptionSchema = z.string().max(2_000);
+const monthlyGoalYearSchema = z.number().int().min(2000).max(2100);
+const monthlyGoalMonthSchema = z.number().int().min(1).max(12);
+const monthlyGoalWorkPlanIdSchema = z.string().uuid().nullable();
+
+export const createMonthlyGoalSchema = z
+  .object({
+    title: monthlyGoalTitleSchema,
+    description: monthlyGoalDescriptionSchema.default(""),
+    year: monthlyGoalYearSchema,
+    month: monthlyGoalMonthSchema,
+    workPlanId: monthlyGoalWorkPlanIdSchema.default(null),
+  })
+  .strict();
+
+export const updateMonthlyGoalSchema = z
+  .object({
+    title: monthlyGoalTitleSchema.optional(),
+    description: monthlyGoalDescriptionSchema.optional(),
+    year: monthlyGoalYearSchema.optional(),
+    month: monthlyGoalMonthSchema.optional(),
+    workPlanId: monthlyGoalWorkPlanIdSchema.optional(),
+    archived: z.boolean().optional(),
+    version: z.number().int().positive(),
+  })
+  .strict();
+
+export const monthlyGoalSeriesFrequencies = ["monthly", "quarterly", "yearly"] as const;
+export const monthlyGoalSeriesFrequencySchema = z.enum(monthlyGoalSeriesFrequencies);
+
+export const monthlyGoalPeriodSchema = z.object({
+  year: monthlyGoalYearSchema,
+  month: monthlyGoalMonthSchema,
+});
+
+const monthlyGoalSeriesTemplateSchema = z.object({
+  title: monthlyGoalTitleSchema,
+  description: monthlyGoalDescriptionSchema.default(""),
+});
+
+export const createMonthlyGoalSeriesSchema = z
+  .object({
+    template: monthlyGoalSeriesTemplateSchema,
+    frequency: monthlyGoalSeriesFrequencySchema,
+    interval: z.number().int().min(1).max(12).default(1),
+    startPeriod: monthlyGoalPeriodSchema,
+    occurrenceCount: z.number().int().min(1).max(600).nullable().optional(),
+    untilPeriod: monthlyGoalPeriodSchema.nullable().optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.occurrenceCount == null && value.untilPeriod == null) {
+      context.addIssue({ code: "custom", path: ["occurrenceCount"], message: "必须指定期数或结束月份之一" });
+    }
+    if (value.untilPeriod && periodKey(value.untilPeriod) < periodKey(value.startPeriod)) {
+      context.addIssue({ code: "custom", path: ["untilPeriod"], message: "结束月份不能早于起始月份" });
+    }
+  });
+
+export const updateMonthlyGoalSeriesSchema = z
+  .object({
+    template: monthlyGoalSeriesTemplateSchema.partial().optional(),
+    frequency: monthlyGoalSeriesFrequencySchema.optional(),
+    interval: z.number().int().min(1).max(12).optional(),
+    startPeriod: monthlyGoalPeriodSchema.optional(),
+    occurrenceCount: z.number().int().min(1).max(600).nullable().optional(),
+    untilPeriod: monthlyGoalPeriodSchema.nullable().optional(),
+    version: z.number().int().positive(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.startPeriod && value.untilPeriod && periodKey(value.untilPeriod) < periodKey(value.startPeriod)) {
+      context.addIssue({ code: "custom", path: ["untilPeriod"], message: "结束月份不能早于起始月份" });
+    }
+  });
+
+export const monthlyGoalSeriesSchema = z.object({
+  id: z.string().uuid(),
+  template: z.object({ title: z.string(), description: z.string() }),
+  frequency: monthlyGoalSeriesFrequencySchema,
+  interval: z.number().int().min(1).max(12),
+  startPeriod: monthlyGoalPeriodSchema,
+  occurrenceCount: z.number().int().min(1).max(600).nullable(),
+  untilPeriod: monthlyGoalPeriodSchema.nullable(),
+  active: z.boolean(),
+  version: z.number().int().positive(),
+  instanceCount: z.number().int().min(0),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+});
+
+export const monthlyGoalSeriesInstanceSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  year: z.number().int().min(2000).max(2100),
+  month: z.number().int().min(1).max(12),
+  archivedAt: isoDateTimeSchema.nullable(),
+});
+
+export const monthlyGoalSeriesDetailSchema = monthlyGoalSeriesSchema.extend({
+  instances: z.array(monthlyGoalSeriesInstanceSchema),
+});
+
+export const monthlyGoalSeriesDissolveReasons = ["selected", "edited", "archived", "linked", "completed"] as const;
+export const monthlyGoalSeriesDissolveReasonSchema = z.enum(monthlyGoalSeriesDissolveReasons);
+export const monthlyGoalSeriesDissolveActionSchema = z.enum(["retain", "delete"]);
+
+export const monthlyGoalSeriesDissolvePreviewQuerySchema = z.object({
+  keepGoalId: z.string().uuid(),
+}).strict();
+
+export const monthlyGoalSeriesDissolveInstanceSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  year: monthlyGoalYearSchema,
+  month: monthlyGoalMonthSchema,
+  archivedAt: isoDateTimeSchema.nullable(),
+  linkedWorkPlan: z.object({ id: z.string().uuid(), title: z.string() }).nullable(),
+  status: workPlanStatusSchema.nullable(),
+  action: monthlyGoalSeriesDissolveActionSchema,
+  reasons: z.array(monthlyGoalSeriesDissolveReasonSchema),
+});
+
+export const monthlyGoalSeriesDissolvePreviewSchema = z.object({
+  seriesId: z.string().uuid(),
+  seriesVersion: z.number().int().positive(),
+  snapshotToken: z.string().regex(/^[a-f0-9]{64}$/),
+  keepGoal: z.object({
+    id: z.string().uuid(),
+    title: z.string(),
+    year: monthlyGoalYearSchema,
+    month: monthlyGoalMonthSchema,
+  }),
+  counts: z.object({
+    retained: z.number().int().min(1),
+    deleted: z.number().int().min(0),
+    linked: z.number().int().min(0),
+  }),
+  instances: z.array(monthlyGoalSeriesDissolveInstanceSchema),
+});
+
+export const dissolveMonthlyGoalSeriesSchema = z.object({
+  keepGoalId: z.string().uuid(),
+  snapshotToken: z.string().regex(/^[a-f0-9]{64}$/),
+  confirmationTitle: z.string().min(1).max(200),
+}).strict();
+
+export const monthlyGoalSeriesDissolveResultSchema = z.object({
+  retainedCount: z.number().int().min(1),
+  deletedCount: z.number().int().min(0),
+});
+
+function periodKey(period: { year: number; month: number }): number {
+  return period.year * 12 + period.month - 1;
+}
 
 export const customFieldOptionSchema = z.object({
   id: z.string().uuid(),
@@ -291,7 +466,7 @@ export const updateUserStatusSchema = z.object({
 });
 
 export const importPayloadSchema = z.object({
-  schemaVersion: z.union([z.literal(1), z.literal(2)]),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   exportedAt: isoDateTimeSchema,
   data: z.record(z.string(), z.unknown()),
 });
@@ -511,6 +686,21 @@ export const problemDetailsSchema = z.object({
 export type WorkPlan = z.infer<typeof workPlanSchema>;
 export type CreateWorkPlan = z.infer<typeof createWorkPlanSchema>;
 export type UpdateWorkPlan = z.infer<typeof updateWorkPlanSchema>;
+export type MonthlyGoal = z.infer<typeof monthlyGoalSchema>;
+export type CreateMonthlyGoal = z.infer<typeof createMonthlyGoalSchema>;
+export type UpdateMonthlyGoal = z.infer<typeof updateMonthlyGoalSchema>;
+export type MonthlyGoalPeriod = z.infer<typeof monthlyGoalPeriodSchema>;
+export type MonthlyGoalSeriesFrequency = z.infer<typeof monthlyGoalSeriesFrequencySchema>;
+export type MonthlyGoalSeries = z.infer<typeof monthlyGoalSeriesSchema>;
+export type MonthlyGoalSeriesInstance = z.infer<typeof monthlyGoalSeriesInstanceSchema>;
+export type MonthlyGoalSeriesDetail = z.infer<typeof monthlyGoalSeriesDetailSchema>;
+export type CreateMonthlyGoalSeries = z.infer<typeof createMonthlyGoalSeriesSchema>;
+export type UpdateMonthlyGoalSeries = z.infer<typeof updateMonthlyGoalSeriesSchema>;
+export type MonthlyGoalSeriesDissolveReason = z.infer<typeof monthlyGoalSeriesDissolveReasonSchema>;
+export type MonthlyGoalSeriesDissolveInstance = z.infer<typeof monthlyGoalSeriesDissolveInstanceSchema>;
+export type MonthlyGoalSeriesDissolvePreview = z.infer<typeof monthlyGoalSeriesDissolvePreviewSchema>;
+export type DissolveMonthlyGoalSeries = z.infer<typeof dissolveMonthlyGoalSeriesSchema>;
+export type MonthlyGoalSeriesDissolveResult = z.infer<typeof monthlyGoalSeriesDissolveResultSchema>;
 export type WorkPlanStatus = z.infer<typeof workPlanStatusSchema>;
 export type WorkPlanStatusMode = z.infer<typeof workPlanStatusModeSchema>;
 export type UserRole = z.infer<typeof userRoleSchema>;
