@@ -815,6 +815,45 @@ describe("work plan API", () => {
     expect(shifted.json<{ isException: boolean }>().isException).toBe(true);
   });
 
+  it("does not generate a duplicate on the edited occurrence's calendar day", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2027-08-08T00:00:00.000Z"));
+    const context = await createContext();
+    const create = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plan-series",
+      payload: {
+        workPlan: planInput({ startAt: "2027-08-09T02:00:00.000Z", endAt: "2027-08-09T03:00:00.000Z" }),
+        recurrence: { frequency: "daily", interval: 1, count: 3, timeZone: "Asia/Shanghai" },
+      },
+    });
+    expect(create.statusCode).toBe(201);
+    const created = create.json<{ generated: Array<{ id: string; version: number }>; series: { id: string; version: number } }>();
+    const first = created.generated[0]!;
+
+    const edit = await context.request({
+      method: "PATCH",
+      url: `/api/v1/work-plans/${first.id}`,
+      payload: { startAt: "2027-08-09T04:00:00.000Z", endAt: "2027-08-09T05:00:00.000Z", version: first.version },
+    });
+    expect(edit.statusCode).toBe(200);
+
+    const updateSeries = await context.request({
+      method: "PATCH",
+      url: `/api/v1/work-plan-series/${created.series.id}`,
+      payload: {
+        workPlan: { startAt: "2027-08-09T04:00:00.000Z", endAt: "2027-08-09T05:00:00.000Z" },
+        recurrence: { frequency: "daily", interval: 1, count: 3, timeZone: "Asia/Shanghai" },
+        version: created.series.version,
+      },
+    });
+    expect(updateSeries.statusCode).toBe(200);
+
+    const plans = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
+    const sameDay = plans.json<Array<{ startAt: string }>>().filter((plan) => plan.startAt.startsWith("2027-08-09"));
+    expect(sameDay).toHaveLength(1);
+  });
+
   it("turns an existing work plan into the first occurrence of a recurring rule", async () => {
     const context = await createContext();
     const created = await context.request({ method: "POST", url: "/api/v1/work-plans", payload: planInput() });

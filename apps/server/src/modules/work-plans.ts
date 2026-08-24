@@ -150,8 +150,8 @@ export class WorkPlanService {
 
   createOccurrence(input: CreateWorkPlan, seriesId: string, occurrenceKey: string): WorkPlan | null {
     const exists = this.database.sqlite
-      .prepare("SELECT id FROM work_plans WHERE series_id = ? AND occurrence_key = ?")
-      .get(seriesId, occurrenceKey) as { id: string } | undefined;
+      .prepare("SELECT id FROM work_plans WHERE series_id = ? AND (occurrence_key = ? OR julianday(start_at) = julianday(?))")
+      .get(seriesId, occurrenceKey, input.startAt) as { id: string } | undefined;
     if (exists) return null;
     return this.createInternal(input, seriesId, occurrenceKey);
   }
