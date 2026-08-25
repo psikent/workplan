@@ -36,6 +36,16 @@ function formatFileTimestamp(date: Date): string {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 }
 
+function normalizeExportDateTime(value: string): number {
+  const date = new Date(value);
+  date.setSeconds(0, 0);
+  const excelEpoch = Date.UTC(1899, 11, 31);
+  const calendarDays = Math.floor((Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - excelEpoch) / 86_400_000);
+  const excelLeapYearBugOffset = calendarDays >= 60 ? 1 : 0;
+  const dayFraction = (date.getHours() * 3_600 + date.getMinutes() * 60) / 86_400;
+  return calendarDays + excelLeapYearBugOffset + dayFraction;
+}
+
 export class SpreadsheetTransferService {
   constructor(
     private readonly database: DatabaseBundle,
@@ -192,7 +202,7 @@ export class SpreadsheetTransferService {
     if (column.source === "title") return plan.title;
     if (column.source === "description") return plan.description;
     if (column.source === "status") return statusLabels[plan.status];
-    if (column.source === "startAt" || column.source === "endAt") return new Date(plan[column.source]);
+    if (column.source === "startAt" || column.source === "endAt") return normalizeExportDateTime(plan[column.source]);
     if (column.source === "ownerAccount") return plan.ownerAccount ?? "";
     const key = column.source.slice("custom:".length);
     const value = plan.customFields[key];
