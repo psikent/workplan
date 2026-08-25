@@ -949,7 +949,15 @@ describe("work plan API", () => {
 
   it("edits export templates and round-trips work plans through BIFF8 XLS", async () => {
     const context = await createContext();
-    const created = await context.request({ method: "POST", url: "/api/v1/work-plans", payload: planInput({ title: "XLS 往返计划" }) });
+    const created = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plans",
+      payload: planInput({
+        title: "XLS 往返计划",
+        startAt: "2027-08-09T08:30:43.000Z",
+        endAt: "2027-08-09T09:30:43.000Z",
+      }),
+    });
     expect(created.statusCode).toBe(201);
 
     const templatesResponse = await context.request({ method: "GET", url: "/api/v1/export-templates" });
@@ -977,6 +985,10 @@ describe("work plan API", () => {
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.["计划标题"]).toBe("XLS 往返计划");
+    expect(rows[0]?.["开始时间"]).toBeInstanceOf(Date);
+    expect((rows[0]?.["开始时间"] as Date).getSeconds()).toBe(0);
+    expect(rows[0]?.["结束时间"]).toBeInstanceOf(Date);
+    expect((rows[0]?.["结束时间"] as Date).getSeconds()).toBe(0);
 
     const imported = await context.request({
       method: "POST",
