@@ -54,11 +54,15 @@ The account responsible for access management, data import, and global Work Plan
 _Avoid_: Owner, superuser
 
 **Editor**:
-A password or Token-authenticated account that can use the Work Plan workbench and read or change every Work Plan without managing access or global definitions.
+A password or Token-authenticated account that can query and change business data without managing access or global definitions.
 _Avoid_: Collaborator, limited administrator
 
+**Viewer**:
+A password or Token-authenticated account that can query and export all business data without changing business data or managing access or global definitions.
+_Avoid_: Read-only Editor, Reader, Observer, Query Account
+
 **Token-only Account**:
-A kind of Editor that authenticates external API requests with an issued access Token and has no password login or Web workbench access.
+A kind of Editor or Viewer that authenticates external API requests with an issued access Token and has no password login or Web workbench access.
 _Avoid_: API user, service account
 
 **Environment Configuration Package**:
