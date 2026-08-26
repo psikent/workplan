@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { createMonthlyGoalSchema, updateMonthlyGoalSchema } from "@workplan/contracts";
+import { createMonthlyGoalSchema, monthlyGoalQuickEditSchema, updateMonthlyGoalSchema } from "@workplan/contracts";
 import { z } from "zod";
 import { invalidInput } from "../errors.js";
 import type { MonthlyGoalService } from "../modules/monthly-goals.js";
@@ -24,6 +24,12 @@ export async function registerMonthlyGoalRoutes(app: FastifyInstance, monthlyGoa
     if (!parsed.success) throw invalidInput("查询参数无效");
     return monthlyGoals.list(parsed.data);
   });
+
+  app.put(
+    "/api/v1/monthly-goals/quick-edit",
+    { schema: { body: monthlyGoalQuickEditSchema } },
+    async (request) => monthlyGoals.quickEdit(monthlyGoalQuickEditSchema.parse(request.body)),
+  );
 
   app.get(
     "/api/v1/monthly-goals/:id",

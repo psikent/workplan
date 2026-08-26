@@ -1,6 +1,6 @@
 # 01 — 年度快速编辑契约与原子服务
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: none
 Spec: ../spec.md
 Scope: packages/contracts/src/index.ts、apps/server/src/modules/monthly-goals.ts、apps/server/src/routes/monthly-goals.ts、apps/server/test/monthly-goals.test.ts
@@ -43,6 +43,12 @@ Scope: packages/contracts/src/index.ts、apps/server/src/modules/monthly-goals.t
   - `corepack pnpm --filter @workplan/server typecheck`
 
 ## Comments
+
+## Answer
+
+已实现年度快速编辑契约、SQLite 原子服务和 `PUT /api/v1/monthly-goals/quick-edit` 路由。覆盖标题规范化、完整 baseline 乐观锁、整组归档/恢复/改名、普通实例创建、系列实例与关联保留，以及失败零部分写入。
+
+验证通过：contracts build、Monthly Goal 服务端测试 87/87、server typecheck、仓库全量测试、生产构建和 `git diff --check`。
 
 - 不新增独立年度行表、唯一索引、数据库迁移或删除 API。
 

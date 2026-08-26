@@ -1,4 +1,4 @@
-import type { CreateMonthlyGoal, MonthlyGoal, UpdateMonthlyGoal, WorkPlanStatus } from "@workplan/contracts";
+import type { CreateMonthlyGoal, MonthlyGoal, MonthlyGoalQuickEdit, MonthlyGoalQuickEditResult, UpdateMonthlyGoal, WorkPlanStatus } from "@workplan/contracts";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
 import type { DatabaseBundle } from "../db/index.js";
 import { invalidInput, notFound, versionConflict } from "../errors.js";
@@ -84,6 +84,93 @@ export class MonthlyGoalService {
       .run(title, description, year, month, workPlanId, archivedAt, nowIso(), id, input.version);
     if (result.changes === 0) throw versionConflict();
     return this.get(id);
+  }
+
+  quickEdit(input: MonthlyGoalQuickEdit): MonthlyGoalQuickEditResult {
+    const execute = this.database.sqlite.transaction(() => {
+      const current = this.database.sqlite
+        .prepare("SELECT * FROM monthly_goals WHERE year = ? ORDER BY created_at ASC, title ASC, id ASC")
+        .all(input.year) as MonthlyGoalRow[];
+      const baseline = new Map(input.baseline.map((item) => [item.id, item.version]));
+      if (baseline.size !== current.length || current.some((row) => baseline.get(row.id) !== row.version)) {
+        throw versionConflict();
+      }
+
+      const groups = new Map<string, MonthlyGoalRow[]>();
+      for (const goal of current) {
+        const title = goal.title.trim();
+        const group = groups.get(title) ?? [];
+        group.push(goal);
+        groups.set(title, group);
+      }
+
+      const rowsByOriginalTitle = new Map<string, MonthlyGoalQuickEdit["rows"][number]>();
+      for (const row of input.rows) {
+        if (row.originalTitle === null) continue;
+        if (rowsByOriginalTitle.has(row.originalTitle)) throw invalidInput("已有目标名称不能重复");
+        if (!groups.has(row.originalTitle)) throw invalidInput(`年度目标「${row.originalTitle}」不存在或已发生变化`);
+        rowsByOriginalTitle.set(row.originalTitle, row);
+      }
+      for (const title of groups.keys()) {
+        if (!rowsByOriginalTitle.has(title)) throw invalidInput(`年度目标「${title}」未提交`);
+      }
+
+      let createdCount = 0;
+      let updatedCount = 0;
+      const timestamp = nowIso();
+      const update = this.database.sqlite.prepare(
+        "UPDATE monthly_goals SET title = ?, archived_at = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
+      );
+      const insert = this.database.sqlite.prepare(
+        "INSERT INTO monthly_goals(id, title, description, year, month, work_plan_id, archived_at, version, series_id, occurrence_key, created_at, updated_at) VALUES (?, ?, '', ?, ?, NULL, NULL, 1, NULL, NULL, ?, ?)",
+      );
+
+      for (const [originalTitle, group] of groups) {
+        const row = rowsByOriginalTitle.get(originalTitle)!;
+        const activeMonths = new Set(row.activeMonths);
+        const existingMonths = new Set(group.map((goal) => goal.month));
+        const initiallyActiveMonths = new Set(
+          group.filter((goal) => goal.archived_at === null).map((goal) => goal.month),
+        );
+
+        for (const goal of group) {
+          const initiallyActive = initiallyActiveMonths.has(goal.month);
+          const shouldBeActive = activeMonths.has(goal.month);
+          let archivedAt = goal.archived_at;
+          if (initiallyActive && !shouldBeActive && goal.archived_at === null) archivedAt = timestamp;
+          if (!initiallyActive && shouldBeActive && goal.archived_at !== null) archivedAt = null;
+          if (goal.title !== row.title || archivedAt !== goal.archived_at) {
+            const result = update.run(row.title, archivedAt, timestamp, goal.id, goal.version);
+            if (result.changes !== 1) throw versionConflict();
+            updatedCount += 1;
+          }
+        }
+
+        for (const month of activeMonths) {
+          if (existingMonths.has(month)) continue;
+          insert.run(newId(), row.title, input.year, month, timestamp, timestamp);
+          createdCount += 1;
+        }
+      }
+
+      for (const row of input.rows) {
+        if (row.originalTitle !== null) continue;
+        for (const month of row.activeMonths) {
+          insert.run(newId(), row.title, input.year, month, timestamp, timestamp);
+          createdCount += 1;
+        }
+      }
+
+      const saved = this.database.sqlite
+        .prepare("SELECT * FROM monthly_goals WHERE year = ? ORDER BY year DESC, month DESC, created_at ASC")
+        .all(input.year) as MonthlyGoalRow[];
+      return {
+        createdCount,
+        updatedCount,
+        goals: this.serializeMany(saved, Date.now()),
+      };
+    });
+    return execute();
   }
 
   delete(id: string, version: number): void {

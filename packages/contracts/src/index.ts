@@ -187,6 +187,59 @@ export const updateMonthlyGoalSchema = z
   })
   .strict();
 
+export const monthlyGoalQuickEditBaselineSchema = z
+  .object({
+    id: z.string().uuid(),
+    version: z.number().int().positive(),
+  })
+  .strict();
+
+const monthlyGoalQuickEditActiveMonthsSchema = z.array(monthlyGoalMonthSchema).superRefine((months, context) => {
+  if (new Set(months).size !== months.length) {
+    context.addIssue({ code: "custom", message: "月份不能重复" });
+  }
+});
+
+export const monthlyGoalQuickEditRowSchema = z
+  .object({
+    originalTitle: monthlyGoalTitleSchema.nullable(),
+    title: monthlyGoalTitleSchema,
+    activeMonths: monthlyGoalQuickEditActiveMonthsSchema,
+  })
+  .strict()
+  .superRefine((row, context) => {
+    if (row.originalTitle === null && row.activeMonths.length === 0) {
+      context.addIssue({ code: "custom", path: ["activeMonths"], message: "新行至少需要一个月份" });
+    }
+  });
+
+export const monthlyGoalQuickEditSchema = z
+  .object({
+    year: monthlyGoalYearSchema,
+    baseline: z.array(monthlyGoalQuickEditBaselineSchema),
+    rows: z.array(monthlyGoalQuickEditRowSchema),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (new Set(value.baseline.map((item) => item.id)).size !== value.baseline.length) {
+      context.addIssue({ code: "custom", path: ["baseline"], message: "baseline 中的月目标 ID 不能重复" });
+    }
+    const originalTitles = value.rows.map((row) => row.originalTitle).filter((title): title is string => title !== null);
+    if (new Set(originalTitles).size !== originalTitles.length) {
+      context.addIssue({ code: "custom", path: ["rows"], message: "已有目标名称不能重复" });
+    }
+    const titles = value.rows.map((row) => row.title);
+    if (new Set(titles).size !== titles.length) {
+      context.addIssue({ code: "custom", path: ["rows"], message: "最终目标名称不能重复" });
+    }
+  });
+
+export const monthlyGoalQuickEditResultSchema = z.object({
+  createdCount: z.number().int().min(0),
+  updatedCount: z.number().int().min(0),
+  goals: z.array(monthlyGoalSchema),
+});
+
 export const monthlyGoalSeriesFrequencies = ["monthly", "quarterly", "yearly"] as const;
 export const monthlyGoalSeriesFrequencySchema = z.enum(monthlyGoalSeriesFrequencies);
 
@@ -689,6 +742,8 @@ export type UpdateWorkPlan = z.infer<typeof updateWorkPlanSchema>;
 export type MonthlyGoal = z.infer<typeof monthlyGoalSchema>;
 export type CreateMonthlyGoal = z.infer<typeof createMonthlyGoalSchema>;
 export type UpdateMonthlyGoal = z.infer<typeof updateMonthlyGoalSchema>;
+export type MonthlyGoalQuickEdit = z.infer<typeof monthlyGoalQuickEditSchema>;
+export type MonthlyGoalQuickEditResult = z.infer<typeof monthlyGoalQuickEditResultSchema>;
 export type MonthlyGoalPeriod = z.infer<typeof monthlyGoalPeriodSchema>;
 export type MonthlyGoalSeriesFrequency = z.infer<typeof monthlyGoalSeriesFrequencySchema>;
 export type MonthlyGoalSeries = z.infer<typeof monthlyGoalSeriesSchema>;
