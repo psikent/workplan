@@ -201,6 +201,266 @@ describe("monthly goal CRUD", () => {
   });
 });
 
+describe("monthly goal annual quick edit", () => {
+  it("creates ordinary goals for active months in one request", async () => {
+    const context = await createContext();
+    const response = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: {
+        year: 2026,
+        baseline: [],
+        rows: [{ originalTitle: null, title: "年度目标", activeMonths: [1, 3] }],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ createdCount: number; updatedCount: number; goals: Array<Record<string, unknown>> }>()).toMatchObject({
+      createdCount: 2,
+      updatedCount: 0,
+      goals: [
+        { title: "年度目标", year: 2026, month: 3, description: "", archivedAt: null, linkedWorkPlan: null, seriesId: null, occurrenceKey: null, version: 1 },
+        { title: "年度目标", year: 2026, month: 1, description: "", archivedAt: null, linkedWorkPlan: null, seriesId: null, occurrenceKey: null, version: 1 },
+      ],
+    });
+  });
+
+  it("rejects duplicate months and a new row without an active month", async () => {
+    const context = await createContext();
+    const response = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: {
+        year: 2026,
+        baseline: [],
+        rows: [
+          { originalTitle: null, title: "重复月份", activeMonths: [1, 1] },
+          { originalTitle: null, title: "没有月份", activeMonths: [] },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json<{ code: string }>().code).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects invalid years, names and month ranges", async () => {
+    const context = await createContext();
+    const invalidPayloads = [
+      { year: 1999, baseline: [], rows: [{ originalTitle: null, title: "非法年份", activeMonths: [1] }] },
+      { year: 2026, baseline: [], rows: [{ originalTitle: null, title: "   ", activeMonths: [1] }] },
+      { year: 2026, baseline: [], rows: [
+        { originalTitle: null, title: "同名", activeMonths: [1] },
+        { originalTitle: null, title: " 同名 ", activeMonths: [2] },
+      ] },
+      { year: 2026, baseline: [], rows: [{ originalTitle: null, title: "越界月份", activeMonths: [13] }] },
+    ];
+
+    for (const payload of invalidPayloads) {
+      const response = await context.request({ method: "PUT", url: "/api/v1/monthly-goals/quick-edit", payload });
+      expect(response.statusCode).toBe(422);
+      expect(response.json<{ code: string }>().code).toBe("VALIDATION_ERROR");
+    }
+  });
+
+  it("rejects a fabricated original title and duplicate baseline IDs", async () => {
+    const context = await createContext();
+    const goal = await createGoal(context, { title: "真实目标", month: 1 });
+    const fabricated = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: {
+        year: 2026,
+        baseline: [{ id: goal.id, version: goal.version }],
+        rows: [{ originalTitle: "伪造目标", title: "新名称", activeMonths: [1] }],
+      },
+    });
+    expect(fabricated.statusCode).toBe(422);
+
+    const duplicateBaseline = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: {
+        year: 2026,
+        baseline: [{ id: goal.id, version: goal.version }, { id: goal.id, version: goal.version }],
+        rows: [{ originalTitle: "真实目标", title: "新名称", activeMonths: [1] }],
+      },
+    });
+    expect(duplicateBaseline.statusCode).toBe(422);
+  });
+
+  it("archives, restores and renames a complete group without changing its links", async () => {
+    const context = await createContext();
+    const plan = await createPlan(context, planInput({ title: "年度关联计划" }));
+    const monthOne = await createGoal(context, { title: "  年度目标  ", month: 1, description: "保留说明", workPlanId: plan.id });
+    const monthTwo = await createGoal(context, { title: "年度目标", month: 2 });
+    const archivedDuplicate = await createGoal(context, { title: "年度目标", month: 2, description: "已归档副本" });
+    const archivedMonthFive = await createGoal(context, { title: "年度目标", month: 5 });
+    const archive = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${archivedDuplicate.id}`,
+      payload: { archived: true, version: archivedDuplicate.version },
+    });
+    expect(archive.statusCode).toBe(200);
+    const archiveFive = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${archivedMonthFive.id}`,
+      payload: { archived: true, version: archivedMonthFive.version },
+    });
+    expect(archiveFive.statusCode).toBe(200);
+    const series = await context.request({
+      method: "POST",
+      url: "/api/v1/monthly-goal-series",
+      payload: {
+        template: { title: "年度目标", description: "系列说明" },
+        frequency: "monthly",
+        startPeriod: { year: 2026, month: 4 },
+        occurrenceCount: 1,
+      },
+    });
+    expect(series.statusCode).toBe(201);
+    const seriesGoal = series.json<{ series: { id: string }; generated: Array<{ id: string; version: number }> }>().generated[0]!;
+    const before = await context.request({ method: "GET", url: "/api/v1/monthly-goals?year=2026&includeArchived=true" });
+    const baseline = before.json<Array<{ id: string; version: number }>>().map(({ id, version }) => ({ id, version }));
+
+    const response = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: {
+        year: 2026,
+        baseline,
+        rows: [{ originalTitle: "年度目标", title: "年度目标-改名", activeMonths: [2, 3, 4, 5, 6] }],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ createdCount: number; updatedCount: number }>()).toMatchObject({ createdCount: 2, updatedCount: 5 });
+    const saved = response.json<{ goals: Array<{ id: string; title: string; month: number; version: number; archivedAt: string | null; description: string; linkedWorkPlan: unknown; seriesId: string | null }> }>().goals;
+    expect(saved).toHaveLength(7);
+    expect(saved.every((goal) => goal.title === "年度目标-改名")).toBe(true);
+    expect(saved.find((goal) => goal.id === monthOne.id)).toMatchObject({ month: 1, archivedAt: expect.any(String), description: "保留说明", linkedWorkPlan: { id: plan.id }, version: 2 });
+    expect(saved.filter((goal) => goal.month === 2).map((goal) => goal.archivedAt !== null)).toEqual([false, true]);
+    expect(saved.find((goal) => goal.id === archivedMonthFive.id)).toMatchObject({ month: 5, archivedAt: null, description: "主页与详情页上线", version: 3 });
+    expect(saved.find((goal) => goal.id === seriesGoal.id)).toMatchObject({ month: 4, seriesId: expect.any(String), version: 2 });
+    expect(saved.find((goal) => goal.month === 6)).toMatchObject({ title: "年度目标-改名", seriesId: null, occurrenceKey: null, description: "", linkedWorkPlan: null, version: 1 });
+    expect((await context.request({ method: "GET", url: `/api/v1/monthly-goal-series/${series.json<{ series: { id: string } }>().series.id}` })).json<{ template: { title: string } }>().template.title).toBe("年度目标");
+  });
+
+  it("swaps existing row names without crossing their instance groups", async () => {
+    const context = await createContext();
+    const first = await createGoal(context, { title: "甲目标", month: 1 });
+    const second = await createGoal(context, { title: "乙目标", month: 2 });
+    const listed = await context.request({ method: "GET", url: "/api/v1/monthly-goals?year=2026&includeArchived=true" });
+
+    const response = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: {
+        year: 2026,
+        baseline: listed.json<Array<{ id: string; version: number }>>().map(({ id, version }) => ({ id, version })),
+        rows: [
+          { originalTitle: "甲目标", title: "乙目标", activeMonths: [1] },
+          { originalTitle: "乙目标", title: "甲目标", activeMonths: [2] },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ updatedCount: number }>().updatedCount).toBe(2);
+    expect(response.json<{ goals: Array<{ id: string; title: string }> }>().goals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: first.id, title: "乙目标" }),
+      expect.objectContaining({ id: second.id, title: "甲目标" }),
+    ]));
+  });
+
+  it("keeps a mixed active and archived cell unchanged when its state is unchanged", async () => {
+    const context = await createContext();
+    const active = await createGoal(context, { title: "混合状态目标", month: 2 });
+    const archived = await createGoal(context, { title: "混合状态目标", month: 2 });
+    const archivedResult = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${archived.id}`,
+      payload: { archived: true, version: archived.version },
+    });
+    expect(archivedResult.statusCode).toBe(200);
+
+    const listed = await context.request({ method: "GET", url: "/api/v1/monthly-goals?year=2026&includeArchived=true" });
+    const baseline = listed.json<Array<{ id: string; version: number }>>().map(({ id, version }) => ({ id, version }));
+    const response = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: { year: 2026, baseline, rows: [{ originalTitle: "混合状态目标", title: "混合状态目标", activeMonths: [2] }] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ updatedCount: number }>().updatedCount).toBe(0);
+    expect(response.json<{ goals: Array<{ id: string; version: number; archivedAt: string | null }> }>().goals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: active.id, version: active.version, archivedAt: null }),
+      expect.objectContaining({ id: archived.id, version: archived.version + 1, archivedAt: expect.any(String) }),
+    ]));
+  });
+
+  it("rejects a stale complete baseline without partially applying the draft", async () => {
+    const context = await createContext();
+    const first = await createGoal(context, { title: "冲突目标", month: 1 });
+    const second = await createGoal(context, { title: "冲突目标", month: 2 });
+    const listed = await context.request({ method: "GET", url: "/api/v1/monthly-goals?year=2026&includeArchived=true" });
+    const baseline = listed.json<Array<{ id: string; version: number }>>().map(({ id, version }) => ({ id, version }));
+    const changed = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${first.id}`,
+      payload: { description: "并发修改", version: first.version },
+    });
+    expect(changed.statusCode).toBe(200);
+
+    const response = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: { year: 2026, baseline, rows: [{ originalTitle: "冲突目标", title: "冲突目标-新", activeMonths: [] }] },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe("VERSION_CONFLICT");
+    expect((await context.request({ method: "GET", url: `/api/v1/monthly-goals/${first.id}` })).json<{ title: string; description: string }>()).toMatchObject({ title: "冲突目标", description: "并发修改" });
+    expect((await context.request({ method: "GET", url: `/api/v1/monthly-goals/${second.id}` })).json<{ title: string }>().title).toBe("冲突目标");
+  });
+
+  it("rejects baseline membership changes caused by an added or deleted goal", async () => {
+    const context = await createContext();
+    const original = await createGoal(context, { title: "成员目标", month: 1 });
+    const beforeAdd = await context.request({ method: "GET", url: "/api/v1/monthly-goals?year=2026&includeArchived=true" });
+    const baselineBeforeAdd = beforeAdd.json<Array<{ id: string; version: number }>>().map(({ id, version }) => ({ id, version }));
+    const added = await createGoal(context, { title: "新增目标", month: 2 });
+
+    const addConflict = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: { year: 2026, baseline: baselineBeforeAdd, rows: [{ originalTitle: "成员目标", title: "成员目标-改名", activeMonths: [1] }] },
+    });
+    expect(addConflict.statusCode).toBe(409);
+    expect((await context.request({ method: "GET", url: `/api/v1/monthly-goals/${original.id}` })).json<{ title: string }>().title).toBe("成员目标");
+
+    const beforeDelete = await context.request({ method: "GET", url: "/api/v1/monthly-goals?year=2026&includeArchived=true" });
+    const baselineBeforeDelete = beforeDelete.json<Array<{ id: string; version: number }>>().map(({ id, version }) => ({ id, version }));
+    const deleted = await context.request({ method: "DELETE", url: `/api/v1/monthly-goals/${added.id}?version=${added.version}` });
+    expect(deleted.statusCode).toBe(204);
+    const deleteConflict = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: {
+        year: 2026,
+        baseline: baselineBeforeDelete,
+        rows: [
+          { originalTitle: "成员目标", title: "成员目标-改名", activeMonths: [1] },
+          { originalTitle: "新增目标", title: "新增目标", activeMonths: [2] },
+        ],
+      },
+    });
+    expect(deleteConflict.statusCode).toBe(409);
+    expect((await context.request({ method: "GET", url: `/api/v1/monthly-goals/${original.id}` })).json<{ title: string }>().title).toBe("成员目标");
+  });
+});
+
 describe("derived goal status", () => {
   it("derives status from the linked plan at read time, respecting manual overrides", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });

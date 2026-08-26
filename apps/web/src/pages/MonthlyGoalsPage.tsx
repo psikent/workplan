@@ -10,7 +10,8 @@ import type {
   MonthlyGoalSeriesFrequency,
   WorkPlan,
 } from "@workplan/contracts";
-import { Archive, Pencil, Plus, Repeat2, RotateCcw, Search, Target, Trash2, Unlink2, X } from "lucide-react";
+import { Archive, Pencil, Plus, Repeat2, RotateCcw, Search, Table2, Target, Trash2, Unlink2, X } from "lucide-react";
+import MonthlyGoalQuickEditDialog from "../components/MonthlyGoalQuickEditDialog";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import { type ApiError, api, jsonBody } from "../lib/api";
@@ -82,6 +83,7 @@ export default function MonthlyGoalsPage() {
   const [planSearch, setPlanSearch] = useState("");
   const [linkError, setLinkError] = useState("");
   const [managingSeries, setManagingSeries] = useState<{ seriesId: string; keepGoalId: string } | null>(null);
+  const [quickEditing, setQuickEditing] = useState(false);
 
   const goalsQuery = useQuery({
     queryKey: ["monthly-goals", year, month],
@@ -302,6 +304,7 @@ export default function MonthlyGoalsPage() {
       <header className="page-header">
         <div><h1>月目标</h1><p>每月为工作安排一组随月份变化的目标，并自动跟随关联计划完成。</p></div>
         <div className="header-actions">
+          <button className="secondary-button" type="button" onClick={() => setQuickEditing(true)} aria-label="快速编辑月目标"><Table2 />快速编辑</button>
           <label className={`secondary-button compact-check ${showArchived ? "selected" : ""}`}><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /><span>显示已归档</span></label>
           <button className="primary-button" type="button" onClick={openCreate}><Plus />新建月目标</button>
         </div>
@@ -340,6 +343,8 @@ export default function MonthlyGoalsPage() {
           <div className="empty-state"><Target /><h3>这个月还没有配置月目标</h3><p>点击「新建月目标」为 {year} 年 {month} 月安排一份工作目标。</p></div>
         ) : null}
       </div>
+
+      {quickEditing ? <MonthlyGoalQuickEditDialog initialYear={year} onClose={() => setQuickEditing(false)} onSaved={(savedYear) => { setYear(savedYear); setQuickEditing(false); }} /> : null}
 
       {editing ? (
         <div className="modal-layer">
