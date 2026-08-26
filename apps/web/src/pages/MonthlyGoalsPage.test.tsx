@@ -221,6 +221,22 @@ function mockStatefulApi(
       storedGoals = storedGoals.filter((goal) => goal.id !== id);
       return undefined;
     }
+    if (cleanPath === "/monthly-goals/quick-edit" && init?.method === "PUT") {
+      const input = JSON.parse(String(init.body)) as {
+        year: number;
+        rows: Array<{ originalTitle: string | null; title: string; activeMonths: number[] }>;
+      };
+      const created = input.rows.flatMap((row) => row.originalTitle === null
+        ? row.activeMonths.map((month, index) => goalFixture({
+            id: `90000000-0000-4000-8000-${String(storedGoals.length + index).padStart(12, "0")}`,
+            title: row.title,
+            year: input.year,
+            month,
+          }))
+        : []);
+      storedGoals = [...storedGoals, ...created];
+      return { createdCount: created.length, updatedCount: 0, goals: storedGoals.filter((goal) => goal.year === input.year) };
+    }
     if (cleanPath === "/monthly-goals") {
       const params = new URLSearchParams(query);
       const year = Number(params.get("year"));
@@ -289,6 +305,25 @@ describe("MonthlyGoalsPage", () => {
     await within(dialog).findByLabelText("完成官网改版，目标名称");
     expect(within(dialog).getByLabelText("完成官网改版，8 月")).toBeChecked();
     await waitFor(() => expect(apiMock.mock.calls.some(([path]) => path === "/monthly-goals?year=2026&includeArchived=true")).toBe(true));
+    view.unmount();
+  });
+
+  it("updates the parent year after saving and keeps the selected month", async () => {
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("button", { name: "快速编辑月目标" }));
+    const dialog = await screen.findByRole("dialog", { name: "年度快速编辑" });
+    fireEvent.change(within(dialog).getByRole("combobox"), { target: { value: "2027" } });
+    await within(dialog).findByLabelText("第 1 行，目标名称");
+    fireEvent.change(within(dialog).getByLabelText("第 1 行，目标名称"), { target: { value: "切年保存验证" } });
+    fireEvent.click(within(dialog).getByLabelText("切年保存验证，2 月"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "年度快速编辑" })).toBeNull());
+    expect(toolbarSelects(view.container)[0]?.value).toBe("2027");
+    expect(toolbarSelects(view.container)[1]?.value).toBe("8");
+    expect(latestToast()).toHaveTextContent("年度月目标已保存");
     view.unmount();
   });
 

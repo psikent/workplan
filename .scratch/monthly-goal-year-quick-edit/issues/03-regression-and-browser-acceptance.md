@@ -1,6 +1,6 @@
 # 03 — 年度快速编辑回归与浏览器验收
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01, 02
 Spec: ../spec.md
 Scope: apps/server/test/monthly-goals.test.ts、apps/web/src/pages/MonthlyGoalsPage.test.tsx、apps/web/src/components/MonthlyGoalQuickEditDialog.test.tsx、apps/web/src/styles.css、全仓验证
@@ -47,3 +47,13 @@ Scope: apps/server/test/monthly-goals.test.ts、apps/web/src/pages/MonthlyGoalsP
 ## Comments
 
 - 本票只收口测试和验收，不扩展到说明、关联、重复规则、永久删除、导入导出或数据库迁移。
+
+## Answer
+
+已补齐年度快速编辑边界回归：非法年份/名称/月份、混合归档单元格保持原状、切年保存、脏数据切年确认和普通保存错误保留草稿。服务端专项测试 89/89，Web 专项测试 181/181。
+
+真实浏览器验收通过：从 2026 年月目标页打开入口，新增“浏览器验收-A/B”跨月目标并保存，重开后完成归档、恢复和整行改名；另以一次性数据验证说明、Goal-Plan Link、Goal Recurrence 标识和系列模板保持。桌面及 390×844 窄屏均验证全屏弹窗、横向/纵向滚动、sticky 名称列、表头和底部操作区，控制台无警告或错误。
+
+一次性验收库清理前包含 7 个年度月目标、1 个工作计划和 1 个目标系列；已删除临时目录 `C:\Users\lxjsi\AppData\Local\Temp\workplan-annual-quick-edit-20260826`，目录确认不存在，3002/5173 端口已释放。
+
+全部验证通过：`corepack pnpm --filter @workplan/contracts build`、服务端/Web 专项测试、`corepack pnpm typecheck`、`corepack pnpm test`、`corepack pnpm build`、`git diff --check`。

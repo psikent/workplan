@@ -640,8 +640,8 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .dissolve-preview > .field-dialog-footer { margin: 0 -22px; }
 
 /* ===== Annual monthly-goal quick edit ===== */
-.annual-quick-edit-layer { padding: 12px; }
-.annual-quick-edit-dialog { position: relative; z-index: 110; width: min(1180px, 100%); height: min(900px, calc(100vh - 24px)); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden; border-radius: 10px; background: var(--surface); box-shadow: 0 22px 70px rgb(18 32 60 / 24%); }
+.annual-quick-edit-layer { padding: 0; }
+.annual-quick-edit-dialog { position: relative; z-index: 110; width: 100%; height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden; border-radius: 0; background: var(--surface); box-shadow: 0 22px 70px rgb(18 32 60 / 24%); }
 .annual-quick-edit-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 24px 15px; border-bottom: 1px solid var(--line); }
 .annual-quick-edit-dialog h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 18px; }.annual-quick-edit-dialog h2 svg { width: 18px; color: var(--accent); }.annual-quick-edit-dialog p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
 .annual-quick-edit-toolbar { display: flex; align-items: end; gap: 14px; padding: 14px 24px; border-bottom: 1px solid var(--line); }.annual-quick-edit-toolbar .month-selector select { min-width: 112px; }.annual-quick-edit-hint { margin-bottom: 10px; color: var(--muted); font-size: 11px; }.annual-quick-edit-toolbar > .compact-button { margin-left: auto; }

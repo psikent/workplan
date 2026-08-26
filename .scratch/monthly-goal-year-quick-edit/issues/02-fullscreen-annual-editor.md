@@ -1,6 +1,6 @@
 # 02 — 月目标全屏年度快速编辑器
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/web/src/pages/MonthlyGoalsPage.tsx、apps/web/src/pages/MonthlyGoalsPage.test.tsx、apps/web/src/components/MonthlyGoalQuickEditDialog.tsx（新增）、apps/web/src/components/MonthlyGoalQuickEditDialog.test.tsx（新增）、apps/web/src/styles.css
@@ -41,3 +41,7 @@ Scope: apps/web/src/pages/MonthlyGoalsPage.tsx、apps/web/src/pages/MonthlyGoals
 ## Comments
 
 - 详细说明、Goal-Plan Link 与 Goal Recurrence 规则不在该表格中编辑。
+
+## Answer
+
+已完成并验收月目标页入口、年度全屏快速编辑器、年度查询、分组聚合、归档/恢复/改名草稿、校验、冲突恢复和父页面年份同步。补充回归后，Web 专项测试 181/181、全仓类型检查、全仓测试和生产构建均通过；真实浏览器已验证桌面与 390×844 窄屏的全屏弹窗、横向滚动、sticky 名称列、纵向溢出和底部操作区。

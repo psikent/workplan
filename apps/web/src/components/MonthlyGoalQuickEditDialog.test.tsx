@@ -134,4 +134,35 @@ describe("MonthlyGoalQuickEditDialog", () => {
     expect(confirm).toHaveBeenCalled();
     expect(within(dialog).getByDisplayValue("改名")).toBeTruthy();
   });
+
+  it("confirms dirty year changes and keeps the editor when cancelled", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderDialog();
+    const dialog = await screen.findByRole("dialog", { name: "年度快速编辑" });
+    const name = await within(dialog).findByLabelText("第 1 行，目标名称");
+    fireEvent.change(name, { target: { value: "未保存目标" } });
+    fireEvent.change(within(dialog).getByRole("combobox"), { target: { value: "2027" } });
+    expect(confirm).toHaveBeenCalledWith("切换年份将放弃未保存修改，确定继续吗？");
+    expect(within(dialog).getByRole("combobox")).toHaveValue("2026");
+    expect(within(dialog).getByDisplayValue("未保存目标")).toBeTruthy();
+  });
+
+  it("keeps the draft and reports ordinary save errors", async () => {
+    storedGoals = [goal("50000000-0000-4000-8000-000000000001")];
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.startsWith("/monthly-goals?year=")) return storedGoals;
+      if (path === "/monthly-goals/quick-edit" && init?.method === "PUT") throw new Error("保存失败");
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+    renderDialog();
+    const dialog = await screen.findByRole("dialog", { name: "年度快速编辑" });
+    const name = await within(dialog).findByLabelText("年度目标，目标名称");
+    fireEvent.change(name, { target: { value: "保存失败草稿" } });
+    fireEvent.click(within(dialog).getByLabelText("保存失败草稿，2 月"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("保存失败");
+    expect(within(dialog).getByDisplayValue("保存失败草稿")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "保存" })).toBeEnabled();
+  });
 });

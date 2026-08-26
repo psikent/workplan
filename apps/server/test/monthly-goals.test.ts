@@ -244,6 +244,25 @@ describe("monthly goal annual quick edit", () => {
     expect(response.json<{ code: string }>().code).toBe("VALIDATION_ERROR");
   });
 
+  it("rejects invalid years, names and month ranges", async () => {
+    const context = await createContext();
+    const invalidPayloads = [
+      { year: 1999, baseline: [], rows: [{ originalTitle: null, title: "非法年份", activeMonths: [1] }] },
+      { year: 2026, baseline: [], rows: [{ originalTitle: null, title: "   ", activeMonths: [1] }] },
+      { year: 2026, baseline: [], rows: [
+        { originalTitle: null, title: "同名", activeMonths: [1] },
+        { originalTitle: null, title: " 同名 ", activeMonths: [2] },
+      ] },
+      { year: 2026, baseline: [], rows: [{ originalTitle: null, title: "越界月份", activeMonths: [13] }] },
+    ];
+
+    for (const payload of invalidPayloads) {
+      const response = await context.request({ method: "PUT", url: "/api/v1/monthly-goals/quick-edit", payload });
+      expect(response.statusCode).toBe(422);
+      expect(response.json<{ code: string }>().code).toBe("VALIDATION_ERROR");
+    }
+  });
+
   it("rejects a fabricated original title and duplicate baseline IDs", async () => {
     const context = await createContext();
     const goal = await createGoal(context, { title: "真实目标", month: 1 });
@@ -351,6 +370,33 @@ describe("monthly goal annual quick edit", () => {
     expect(response.json<{ goals: Array<{ id: string; title: string }> }>().goals).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: first.id, title: "乙目标" }),
       expect.objectContaining({ id: second.id, title: "甲目标" }),
+    ]));
+  });
+
+  it("keeps a mixed active and archived cell unchanged when its state is unchanged", async () => {
+    const context = await createContext();
+    const active = await createGoal(context, { title: "混合状态目标", month: 2 });
+    const archived = await createGoal(context, { title: "混合状态目标", month: 2 });
+    const archivedResult = await context.request({
+      method: "PATCH",
+      url: `/api/v1/monthly-goals/${archived.id}`,
+      payload: { archived: true, version: archived.version },
+    });
+    expect(archivedResult.statusCode).toBe(200);
+
+    const listed = await context.request({ method: "GET", url: "/api/v1/monthly-goals?year=2026&includeArchived=true" });
+    const baseline = listed.json<Array<{ id: string; version: number }>>().map(({ id, version }) => ({ id, version }));
+    const response = await context.request({
+      method: "PUT",
+      url: "/api/v1/monthly-goals/quick-edit",
+      payload: { year: 2026, baseline, rows: [{ originalTitle: "混合状态目标", title: "混合状态目标", activeMonths: [2] }] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ updatedCount: number }>().updatedCount).toBe(0);
+    expect(response.json<{ goals: Array<{ id: string; version: number; archivedAt: string | null }> }>().goals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: active.id, version: active.version, archivedAt: null }),
+      expect.objectContaining({ id: archived.id, version: archived.version + 1, archivedAt: expect.any(String) }),
     ]));
   });
 
