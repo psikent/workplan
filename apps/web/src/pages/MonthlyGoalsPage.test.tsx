@@ -224,8 +224,9 @@ function mockStatefulApi(
     if (cleanPath === "/monthly-goals") {
       const params = new URLSearchParams(query);
       const year = Number(params.get("year"));
-      const month = Number(params.get("month"));
-      return storedGoals.filter((goal) => goal.year === year && goal.month === month);
+      const monthValue = params.get("month");
+      const month = monthValue === null ? null : Number(monthValue);
+      return storedGoals.filter((goal) => goal.year === year && (month === null || goal.month === month));
     }
     if (cleanPath === "/work-plans" && query === "limit=500") return storedPlans;
     throw new Error(`Unexpected API path: ${path}`);
@@ -278,6 +279,19 @@ function latestToast() {
 }
 
 describe("MonthlyGoalsPage", () => {
+  it("opens the annual quick editor with the current year", async () => {
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("button", { name: "快速编辑月目标" }));
+    const dialog = await screen.findByRole("dialog", { name: "年度快速编辑" });
+    expect(within(dialog).getByRole("combobox")).toHaveValue("2026");
+    await within(dialog).findByLabelText("完成官网改版，目标名称");
+    expect(within(dialog).getByLabelText("完成官网改版，8 月")).toBeChecked();
+    await waitFor(() => expect(apiMock.mock.calls.some(([path]) => path === "/monthly-goals?year=2026&includeArchived=true")).toBe(true));
+    view.unmount();
+  });
+
   it("renders the month's goals, derived badges and the summary copy", async () => {
     const view = renderPage();
     await screen.findByText("完成官网改版");
