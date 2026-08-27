@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MonthlyGoal, MonthlyGoalQuickEdit, MonthlyGoalQuickEditResult } from "@workplan/contracts";
-import { Minus, Plus, Table2, X } from "lucide-react";
+import { Copy, Minus, Plus, Table2, X } from "lucide-react";
 import { useToast } from "./ToastProvider";
 import { type ApiError, api, jsonBody } from "../lib/api";
 
@@ -59,6 +59,60 @@ function aggregateGoals(goals: MonthlyGoal[], makeNewRowId: () => string): { row
   };
 }
 
+type PreviousYearRow = Pick<QuickEditRow, "title" | "activeMonths"> & { createdAt: number };
+
+function aggregatePreviousYearGoals(goals: MonthlyGoal[]): PreviousYearRow[] {
+  const groups = new Map<string, { activeMonths: Set<number>; createdAt: number }>();
+  for (const goal of goals) {
+    if (goal.archivedAt) continue;
+    const title = goal.title.trim();
+    const group = groups.get(title);
+    if (group) {
+      group.activeMonths.add(goal.month);
+      group.createdAt = Math.min(group.createdAt, Date.parse(goal.createdAt));
+    } else {
+      groups.set(title, { activeMonths: new Set([goal.month]), createdAt: Date.parse(goal.createdAt) });
+    }
+  }
+
+  return [...groups.entries()]
+    .map(([title, group]) => ({
+      title,
+      activeMonths: [...group.activeMonths].sort((left, right) => left - right),
+      createdAt: group.createdAt,
+    }))
+    .sort((left, right) => left.createdAt - right.createdAt || left.title.localeCompare(right.title));
+}
+
+function copyPreviousYearDraft(
+  currentGoals: MonthlyGoal[],
+  previousGoals: MonthlyGoal[],
+  makeNewRowId: () => string,
+): { rows: QuickEditRow[]; baseline: Array<{ id: string; version: number }> } | null {
+  const previousRows = aggregatePreviousYearGoals(previousGoals);
+  if (previousRows.length === 0) return null;
+
+  const currentSnapshot = aggregateGoals(currentGoals, makeNewRowId);
+  const currentRows = currentSnapshot.rows.filter((row) => row.originalTitle !== null);
+  const currentByTitle = new Map(currentRows.map((row) => [row.originalTitle!, row]));
+  const copiedTitles = new Set(previousRows.map((row) => row.title));
+  const copiedRows = previousRows.map((source) => {
+    const current = currentByTitle.get(source.title);
+    return current
+      ? { ...current, title: source.title, activeMonths: source.activeMonths }
+      : {
+          ...newRow(makeNewRowId()),
+          title: source.title,
+          activeMonths: source.activeMonths,
+        };
+  });
+
+  for (const current of currentRows) {
+    if (!copiedTitles.has(current.originalTitle!)) copiedRows.push({ ...current, activeMonths: [] });
+  }
+  return { rows: copiedRows, baseline: currentSnapshot.baseline };
+}
+
 function meaningfulRows(rows: QuickEditRow[]): QuickEditRow[] {
   return rows.filter((row) => row.originalTitle !== null || row.title.trim() !== "" || row.activeMonths.length > 0);
 }
@@ -110,6 +164,7 @@ export default function MonthlyGoalQuickEditDialog({ initialYear, onClose, onSav
   const [loadedYear, setLoadedYear] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
 
   const goalsQuery = useQuery({
     queryKey: ["monthly-goals", "quick-edit", year],
@@ -128,6 +183,7 @@ export default function MonthlyGoalQuickEditDialog({ initialYear, onClose, onSav
     setLoadedYear(snapshotYear);
     setError("");
     setConflict(false);
+    setCopyStatus("");
   }
 
   useEffect(() => {
@@ -167,9 +223,13 @@ export default function MonthlyGoalQuickEditDialog({ initialYear, onClose, onSav
     },
   });
 
+  const copyMutation = useMutation({
+    mutationFn: (sourceYear: number) => api<MonthlyGoal[]>(`/monthly-goals?year=${sourceYear}&includeArchived=true`),
+  });
+
   const validationErrors = useMemo(() => validateRows(rows), [rows]);
   const dirty = loadedYear === year && rowsAreDirty(rows);
-  const canSave = loadedYear === year && !goalsQuery.isLoading && !goalsQuery.isFetching && !saveMutation.isPending && dirty && validationErrors.size === 0;
+  const canSave = loadedYear === year && !goalsQuery.isLoading && !goalsQuery.isFetching && !saveMutation.isPending && !copyMutation.isPending && dirty && validationErrors.size === 0;
 
   function requestClose() {
     if (!dirty || window.confirm("有未保存的年度快速编辑修改，确定放弃吗？")) onClose();
@@ -184,6 +244,7 @@ export default function MonthlyGoalQuickEditDialog({ initialYear, onClose, onSav
     setLoadedYear(null);
     setError("");
     setConflict(false);
+    setCopyStatus("");
   }
 
   function updateRow(rowId: string, update: (row: QuickEditRow) => QuickEditRow) {
@@ -217,6 +278,33 @@ export default function MonthlyGoalQuickEditDialog({ initialYear, onClose, onSav
     if (result.data) applySnapshot(result.data, year);
   }
 
+  async function copyPreviousYear() {
+    if (year <= yearRange[0]! || loadedYear !== year || goalsQuery.isFetching || saveMutation.isPending || copyMutation.isPending) return;
+    if (dirty && !window.confirm("复制去年将放弃当前未保存修改，确定继续吗？")) return;
+
+    const sourceYear = year - 1;
+    setError("");
+    setConflict(false);
+    setCopyStatus("");
+    try {
+      const previousGoals = await copyMutation.mutateAsync(sourceYear);
+      const copied = copyPreviousYearDraft(goalsQuery.data ?? [], previousGoals, makeNewRowId);
+      if (!copied) {
+        setCopyStatus(`${sourceYear} 年没有可复制的月目标`);
+        return;
+      }
+
+      setRows(copied.rows);
+      setBaseline(copied.baseline);
+      setLoadedYear(year);
+      setCopyStatus(rowsAreDirty(copied.rows)
+        ? `已复制 ${sourceYear} 年月目标，请确认后保存`
+        : `${sourceYear} 年月目标与当前年度结构一致`);
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : `读取 ${sourceYear} 年月目标失败`);
+    }
+  }
+
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!canSave) return;
@@ -237,9 +325,20 @@ export default function MonthlyGoalQuickEditDialog({ initialYear, onClose, onSav
         </header>
 
         <div className="annual-quick-edit-toolbar">
-          <label className="month-selector"><span>年份</span><select value={year} onChange={(event) => changeYear(Number(event.target.value))} disabled={saveMutation.isPending}>{yearRange.map((option) => <option key={option} value={option}>{option} 年</option>)}</select></label>
+          <label className="month-selector"><span>年份</span><select value={year} onChange={(event) => changeYear(Number(event.target.value))} disabled={saveMutation.isPending || copyMutation.isPending}>{yearRange.map((option) => <option key={option} value={option}>{option} 年</option>)}</select></label>
           <span className="annual-quick-edit-hint">勾选表示该月存在至少一个未归档目标</span>
-          <button className="secondary-button compact-button" type="button" onClick={addRow} disabled={isLoading || saveMutation.isPending}><Plus />新增一行</button>
+          <div className="annual-quick-edit-actions">
+            <button
+              className="secondary-button compact-button"
+              type="button"
+              aria-label={year > yearRange[0]! ? `复制 ${year - 1} 年月目标` : "复制去年月目标"}
+              title={year > yearRange[0]! ? `复制 ${year - 1} 年月目标` : "已到可选年份下限"}
+              onClick={() => void copyPreviousYear()}
+              disabled={isLoading || goalsQuery.isFetching || saveMutation.isPending || copyMutation.isPending || year <= yearRange[0]!}
+            ><Copy />{copyMutation.isPending ? "复制中…" : "复制去年"}</button>
+            <button className="secondary-button compact-button" type="button" onClick={addRow} disabled={isLoading || saveMutation.isPending || copyMutation.isPending}><Plus />新增一行</button>
+          </div>
+          {copyStatus ? <div className="annual-quick-edit-copy-status" role="status">{copyStatus}</div> : null}
         </div>
 
         {queryError && !goalsQuery.data ? (
@@ -257,11 +356,11 @@ export default function MonthlyGoalQuickEditDialog({ initialYear, onClose, onSav
                   return (
                     <tr key={row.id}>
                       <th scope="row" className="annual-quick-edit-name-cell">
-                        <input value={row.title} maxLength={200} aria-label={`${displayTitle}，目标名称`} onChange={(event) => updateRow(row.id, (current) => ({ ...current, title: event.target.value }))} />
+                        <input value={row.title} maxLength={200} aria-label={`${displayTitle}，目标名称`} disabled={saveMutation.isPending || copyMutation.isPending} onChange={(event) => updateRow(row.id, (current) => ({ ...current, title: event.target.value }))} />
                         {rowError ? <small className="annual-quick-edit-row-error" role="alert">{rowError}</small> : null}
                       </th>
-                      {months.map((month) => <td key={month}><input type="checkbox" checked={row.activeMonths.includes(month)} aria-label={`${displayTitle}，${month} 月`} onChange={() => toggleMonth(row.id, month)} /></td>)}
-                      <td className="annual-quick-edit-row-actions">{row.originalTitle === null ? <button className="icon-button" type="button" aria-label={`移除 ${displayTitle}`} onClick={() => removeRow(row.id)} disabled={saveMutation.isPending}><Minus /></button> : null}</td>
+                      {months.map((month) => <td key={month}><input type="checkbox" checked={row.activeMonths.includes(month)} aria-label={`${displayTitle}，${month} 月`} disabled={saveMutation.isPending || copyMutation.isPending} onChange={() => toggleMonth(row.id, month)} /></td>)}
+                      <td className="annual-quick-edit-row-actions">{row.originalTitle === null ? <button className="icon-button" type="button" aria-label={`移除 ${displayTitle}`} onClick={() => removeRow(row.id)} disabled={saveMutation.isPending || copyMutation.isPending}><Minus /></button> : null}</td>
                     </tr>
                   );
                 })}

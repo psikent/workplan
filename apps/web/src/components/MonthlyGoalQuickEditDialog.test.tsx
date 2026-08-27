@@ -35,17 +35,19 @@ function goal(id: string, overrides: Partial<MonthlyGoal> = {}): MonthlyGoal {
 }
 
 let storedGoals: MonthlyGoal[] = [];
+let previousYearGoals: MonthlyGoal[] = [];
 
-function renderDialog(onClose = vi.fn(), onSaved = vi.fn()) {
+function renderDialog(onClose = vi.fn(), onSaved = vi.fn(), initialYear = 2026) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return { onClose, onSaved, ...render(<QueryClientProvider client={client}><ToastProvider><MonthlyGoalQuickEditDialog initialYear={2026} onClose={onClose} onSaved={onSaved} /></ToastProvider></QueryClientProvider>) };
+  return { onClose, onSaved, ...render(<QueryClientProvider client={client}><ToastProvider><MonthlyGoalQuickEditDialog initialYear={initialYear} onClose={onClose} onSaved={onSaved} /></ToastProvider></QueryClientProvider>) };
 }
 
 beforeEach(() => {
   storedGoals = [];
+  previousYearGoals = [];
   apiMock.mockReset();
   apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path.startsWith("/monthly-goals?year=")) return storedGoals;
+    if (path.startsWith("/monthly-goals?year=")) return path.includes("year=2025") ? previousYearGoals : storedGoals;
     if (path === "/monthly-goals/quick-edit" && init?.method === "PUT") return { createdCount: 0, updatedCount: 1, goals: storedGoals };
     throw new Error(`Unexpected API path: ${path}`);
   });
@@ -164,5 +166,122 @@ describe("MonthlyGoalQuickEditDialog", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("保存失败");
     expect(within(dialog).getByDisplayValue("保存失败草稿")).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "保存" })).toBeEnabled();
+  });
+
+  it("copies the previous active title-month matrix into the current-year draft", async () => {
+    storedGoals = [
+      goal("60000000-0000-4000-8000-000000000001", { title: "同名目标", month: 1, version: 3 }),
+      goal("60000000-0000-4000-8000-000000000002", { title: "同名目标", month: 4, archivedAt: "2026-04-02T00:00:00.000Z", version: 2 }),
+      goal("60000000-0000-4000-8000-000000000003", { title: "本年独有", month: 3, createdAt: "2026-01-03T00:00:00.000Z" }),
+    ];
+    previousYearGoals = [
+      goal("61000000-0000-4000-8000-000000000001", { title: " 同名目标 ", year: 2025, month: 2, createdAt: "2025-01-01T00:00:00.000Z" }),
+      goal("61000000-0000-4000-8000-000000000002", { title: "同名目标", year: 2025, month: 5, archivedAt: "2025-05-02T00:00:00.000Z" }),
+      goal("61000000-0000-4000-8000-000000000003", { title: "去年独有", year: 2025, month: 6, createdAt: "2025-01-02T00:00:00.000Z" }),
+      goal("61000000-0000-4000-8000-000000000004", { title: "仅归档来源", year: 2025, month: 7, archivedAt: "2025-07-02T00:00:00.000Z" }),
+    ];
+
+    renderDialog();
+    const dialog = await screen.findByRole("dialog", { name: "年度快速编辑" });
+    const copy = await within(dialog).findByRole("button", { name: "复制 2025 年月目标" });
+    const add = within(dialog).getByRole("button", { name: "新增一行" });
+    expect(Boolean(copy.compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    fireEvent.click(copy);
+
+    expect(await within(dialog).findByText("已复制 2025 年月目标，请确认后保存")).toBeTruthy();
+    expect(within(dialog).getByLabelText("同名目标，1 月")).not.toBeChecked();
+    expect(within(dialog).getByLabelText("同名目标，2 月")).toBeChecked();
+    expect(within(dialog).getByLabelText("同名目标，5 月")).not.toBeChecked();
+    expect(within(dialog).getByLabelText("去年独有，6 月")).toBeChecked();
+    expect(within(dialog).getByLabelText("本年独有，3 月")).not.toBeChecked();
+    expect(within(dialog).queryByDisplayValue("仅归档来源")).toBeNull();
+    expect(apiMock.mock.calls.some(([path]) => path === "/monthly-goals?year=2025&includeArchived=true")).toBe(true);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(apiMock.mock.calls.some(([path, init]) => path === "/monthly-goals/quick-edit" && init?.method === "PUT")).toBe(true));
+    const [, init] = apiMock.mock.calls.find(([path, request]) => path === "/monthly-goals/quick-edit" && request?.method === "PUT")!;
+    expect(JSON.parse(String(init.body))).toEqual({
+      year: 2026,
+      baseline: [
+        { id: "60000000-0000-4000-8000-000000000001", version: 3 },
+        { id: "60000000-0000-4000-8000-000000000002", version: 2 },
+        { id: "60000000-0000-4000-8000-000000000003", version: 1 },
+      ],
+      rows: [
+        { originalTitle: "同名目标", title: "同名目标", activeMonths: [2] },
+        { originalTitle: null, title: "去年独有", activeMonths: [6] },
+        { originalTitle: "本年独有", title: "本年独有", activeMonths: [] },
+      ],
+    });
+  });
+
+  it("protects a dirty draft before copying and rebuilds from the server snapshot after confirmation", async () => {
+    storedGoals = [goal("70000000-0000-4000-8000-000000000001", { title: "本年目标" })];
+    previousYearGoals = [goal("71000000-0000-4000-8000-000000000001", { title: "去年目标", year: 2025, month: 8 })];
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderDialog();
+    const dialog = await screen.findByRole("dialog", { name: "年度快速编辑" });
+    const name = await within(dialog).findByLabelText("本年目标，目标名称");
+    fireEvent.change(name, { target: { value: "未保存改名" } });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "复制 2025 年月目标" }));
+    expect(confirm).toHaveBeenCalledWith("复制去年将放弃当前未保存修改，确定继续吗？");
+    expect(within(dialog).getByDisplayValue("未保存改名")).toBeTruthy();
+    expect(apiMock.mock.calls.some(([path]) => path === "/monthly-goals?year=2025&includeArchived=true")).toBe(false);
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(within(dialog).getByRole("button", { name: "复制 2025 年月目标" }));
+    expect(await within(dialog).findByDisplayValue("去年目标")).toBeTruthy();
+    expect(within(dialog).queryByDisplayValue("未保存改名")).toBeNull();
+    expect(within(dialog).getByDisplayValue("本年目标")).toBeTruthy();
+  });
+
+  it("preserves the current draft when the previous year is empty or fails to load", async () => {
+    let previousRequests = 0;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.includes("year=2025")) {
+        previousRequests += 1;
+        if (previousRequests === 1) return [];
+        if (previousRequests === 2) throw new Error("读取失败");
+        return [goal("81000000-0000-4000-8000-000000000001", { title: "重试成功", year: 2025, month: 9 })];
+      }
+      if (path.startsWith("/monthly-goals?year=")) return storedGoals;
+      if (path === "/monthly-goals/quick-edit" && init?.method === "PUT") return { createdCount: 0, updatedCount: 1, goals: storedGoals };
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+    renderDialog();
+    const dialog = await screen.findByRole("dialog", { name: "年度快速编辑" });
+    const name = await within(dialog).findByLabelText("第 1 行，目标名称");
+    fireEvent.change(name, { target: { value: "保留草稿" } });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "复制 2025 年月目标" }));
+    expect(await within(dialog).findByText("2025 年没有可复制的月目标")).toBeTruthy();
+    expect(within(dialog).getByDisplayValue("保留草稿")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "复制 2025 年月目标" }));
+    expect(await within(dialog).findByText("读取失败")).toHaveAttribute("role", "alert");
+    expect(within(dialog).getByDisplayValue("保留草稿")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "复制 2025 年月目标" }));
+    expect(await within(dialog).findByDisplayValue("重试成功")).toBeTruthy();
+    expect(confirm).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps save disabled when the previous year structure is identical", async () => {
+    storedGoals = [goal("90000000-0000-4000-8000-000000000001", { title: "相同目标", month: 2 })];
+    previousYearGoals = [goal("91000000-0000-4000-8000-000000000001", { title: "相同目标", year: 2025, month: 2 })];
+    renderDialog();
+    const dialog = await screen.findByRole("dialog", { name: "年度快速编辑" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "复制 2025 年月目标" }));
+    expect(await within(dialog).findByText("2025 年月目标与当前年度结构一致")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "保存" })).toBeDisabled();
+  });
+
+  it("disables copying when the selected year has no supported previous year", async () => {
+    renderDialog(vi.fn(), vi.fn(), 2000);
+    const dialog = await screen.findByRole("dialog", { name: "年度快速编辑" });
+    expect(await within(dialog).findByRole("button", { name: "复制去年月目标" })).toBeDisabled();
+    expect(apiMock.mock.calls.some(([path]) => path.includes("year=1999"))).toBe(false);
   });
 });
