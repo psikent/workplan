@@ -945,6 +945,33 @@ export function makeRealSystemdIO({ platform = process.platform } = {}) {
   };
 }
 
+async function waitForSystemdReady(spec, runCommand, commands, fetchJson, timeoutMs = 20_000) {
+  const unit = systemdUnitSpec(spec);
+  const deadline = Date.now() + timeoutMs;
+  let lastState = "服务尚未启动";
+  while (Date.now() < deadline) {
+    const isActive = runCommand(...commands.isActive);
+    const listenerResult = runCommand("lsof", ["-nP", `-iTCP:${unit.port}`, "-sTCP:LISTEN", "-Fpcn"]);
+    const listeners = [...groupListenersByPid(parseLsofListenerDetails(listenerResult.stdout))];
+    if (isActive.status === 0 && listeners.length >= 1) {
+      try {
+        const response = await fetchJson(`http://${systemdHost}:${unit.port}/health/ready`);
+        const health = parseHealthReady(response.text);
+        if (response.ok && health.status === "ready" && health.database === "ok") {
+          return listeners[0].pid;
+        }
+        lastState = `listener=${listeners.map((l) => l.pid).join(",")}，health=${health.status ?? "无"}/${health.database ?? "无"}`;
+      } catch {
+        lastState = `listener=${listeners.map((l) => l.pid).join(",")}，health 请求失败`;
+      }
+    } else {
+      lastState = `active=${isActive.status === 0 ? "是" : "否"}，listener=${listeners.length ? listeners.map((l) => l.pid).join(",") : "无"}`;
+    }
+    sleepSync(200);
+  }
+  throw new Error(`systemd 服务 ${unit.name} 未能就绪（${timeoutMs}ms 超时）：${lastState}`);
+}
+
 export async function runSystemdRelease({
   workspaceRoot = sourceRoot,
   targetRoot = defaultTargetRoot,
@@ -1099,8 +1126,12 @@ export async function runSystemdRelease({
     await beforeStep("start");
     requireSuccess(`systemctl start ${unit.name}`, ioRun(...commands.start));
 
-    // ---- R8: verify readiness and identity ----
+    // ---- R8: readiness gate - wait for boot/bind/health before the
+    // acceptance check. This closes the race where an app that takes ~2s to
+    // start is inspected immediately and falsely reported as failed, which
+    // previously triggered an automatic rollback. ----
     await beforeStep("verify");
+    await waitForSystemdReady(unit, ioRun, commands, io.fetchJson);
     const evidence = await gatherSystemdEvidence(unit, ioRun, commands, io.fetchJson);
     const verdict = evaluateSystemdReleaseEvidence(evidence, unit);
     if (!verdict.ok) {
@@ -1152,6 +1183,7 @@ export async function runSystemdRelease({
       if (previousExisted || previousUnitExisted) {
         await rollbackStep("启动并验证上一版本", async () => {
           requireSuccess("启动上一版本：systemctl start", ioRun(...commands.start));
+          await waitForSystemdReady(unit, ioRun, commands, io.fetchJson);
           const evidence = await gatherSystemdEvidence(unit, ioRun, commands, io.fetchJson);
           const verdict = evaluateSystemdReleaseEvidence(evidence, unit);
           if (!verdict.ok) {
