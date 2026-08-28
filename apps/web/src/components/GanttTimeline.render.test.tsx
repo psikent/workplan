@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, waitFor } from "@testing-library/react";
-import type { WorkPlan } from "@workplan/contracts";
+import type { ReminderDay, WorkPlan } from "@workplan/contracts";
 import type { ComponentProps, ComponentType, RefObject } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import GanttTimeline, { alignCrossMonthUpperLabel, alignCurrentDateMarker, ensureCurrentDateMarker, timelineDateAtPosition } from "./GanttTimeline";
@@ -56,6 +56,8 @@ const plan: WorkPlan = {
   updatedAt: "2026-08-01T00:00:00.000Z",
 };
 
+const trailingPlanId = "cd230f99-29ae-4d04-82fc-2eb710b5c861";
+
 function mouseEventWithOffset(type: string, offsetX: number, clientX = offsetX) {
   const event = new MouseEvent(type, { bubbles: true, clientX });
   Object.defineProperty(event, "offsetX", { value: offsetX });
@@ -94,6 +96,27 @@ describe("GanttTimeline rendered grid", () => {
     alignCrossMonthUpperLabel(mount, controls);
 
     expect(nextMonth.style.marginLeft).toBe("20px");
+  });
+
+  it("pulls the next month label left when its natural position leaves a wider gap than the previous month", () => {
+    const mount = document.createElement("div");
+    const upperHeader = document.createElement("div");
+    upperHeader.className = "upper-header";
+    const previousMonth = document.createElement("div");
+    previousMonth.className = "upper-text";
+    const nextMonth = document.createElement("div");
+    nextMonth.className = "upper-text";
+    upperHeader.append(previousMonth, nextMonth);
+    mount.append(upperHeader);
+    const controls = document.createElement("div");
+
+    vi.spyOn(previousMonth, "getBoundingClientRect").mockReturnValue({ left: 40, right: 60, top: 0, bottom: 20, width: 20, height: 20, x: 40, y: 0, toJSON: () => ({}) });
+    vi.spyOn(controls, "getBoundingClientRect").mockReturnValue({ left: 80, right: 210, top: 0, bottom: 32, width: 130, height: 32, x: 80, y: 0, toJSON: () => ({}) });
+    vi.spyOn(nextMonth, "getBoundingClientRect").mockReturnValue({ left: 260, right: 280, top: 0, bottom: 20, width: 20, height: 20, x: 260, y: 0, toJSON: () => ({}) });
+
+    alignCrossMonthUpperLabel(mount, controls);
+
+    expect(nextMonth.style.marginLeft).toBe("-30px");
   });
 
   it("maps adaptive week positions to the first, middle and final local dates", () => {
@@ -1076,5 +1099,182 @@ describe("GanttTimeline rendered grid", () => {
 
     expect(line.style.left).toBe("99.5px");
     expect(ball.style.left).toBe("87px");
+  });
+});
+
+describe("timeline reminder bells", () => {
+  const rangeStart = new Date(2026, 7, 3);
+  const rangeEnd = new Date(2026, 7, 10);
+
+  function bellIn(container: HTMLElement, date: string) {
+    return container.querySelector<HTMLButtonElement>(`.lower-text.date_${date} .timeline-reminder-bell`);
+  }
+
+  it("injects a bell under the date number for each reminder day", async () => {
+    const reminderDays: ReminderDay[] = [{
+      date: "2026-08-05",
+      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] }],
+    }];
+    const { container } = render(
+      <GanttTimeline plans={[plan]} reminders={reminderDays} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+
+    await waitFor(() => expect(bellIn(container, "2026-08-05")).not.toBeNull());
+    expect(container.querySelectorAll(".timeline-reminder-bell")).toHaveLength(1);
+    expect(bellIn(container, "2026-08-06")).toBeNull();
+  });
+
+  it("merges same-day reminders into one bell and shows both groups on hover", async () => {
+    const reminderDays: ReminderDay[] = [{
+      date: "2026-08-05",
+      reminders: [
+        { type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] },
+        { type: "plan-submission", date: "2026-08-05", originalDate: null, plans: [{ id: trailingPlanId, title: "下周计划", startAt: localIso(2026, 8, 13), risk: "高" }] },
+      ],
+    }];
+    const { container } = render(
+      <GanttTimeline plans={[plan]} reminders={reminderDays} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+
+    const bell = await waitFor(() => {
+      const element = bellIn(container, "2026-08-05");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(container.querySelectorAll(".timeline-reminder-bell")).toHaveLength(1);
+
+    fireEvent.mouseEnter(bell);
+    const tooltip = container.querySelector<HTMLElement>(".timeline-reminder-tooltip")!;
+    expect(tooltip.classList.contains("visible")).toBe(true);
+    expect(tooltip.textContent).toContain("起检修单提醒");
+    expect(tooltip.textContent).toContain("下周有中风险作业，今天提交作业计划");
+    expect(tooltip.textContent).toContain("下周计划");
+    fireEvent.mouseLeave(bell);
+    expect(tooltip.classList.contains("visible")).toBe(false);
+  });
+
+  it("shows the plan title and start date for a work-order reminder", async () => {
+    const reminderDays: ReminderDay[] = [{
+      date: "2026-08-05",
+      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: "设计评审", startAt: localIso(2026, 8, 12), risk: null }] }],
+    }];
+    const { container } = render(
+      <GanttTimeline plans={[plan]} reminders={reminderDays} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+
+    const bell = await waitFor(() => {
+      const element = bellIn(container, "2026-08-05");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    fireEvent.mouseEnter(bell);
+    const tooltip = container.querySelector<HTMLElement>(".timeline-reminder-tooltip")!;
+    expect(tooltip.textContent).toContain("起检修单提醒");
+    expect(tooltip.textContent).toContain("设计评审");
+    expect(tooltip.textContent).toContain("8月12日");
+  });
+
+  it("lists every triggered plan for a plan-submission reminder", async () => {
+    const reminderDays: ReminderDay[] = [{
+      date: "2026-08-05",
+      reminders: [{
+        type: "plan-submission",
+        date: "2026-08-05",
+        originalDate: null,
+        plans: [
+          { id: plan.id, title: "设计评审", startAt: localIso(2026, 8, 12), risk: "高" },
+          { id: trailingPlanId, title: "下周计划", startAt: localIso(2026, 8, 13), risk: "中" },
+        ],
+      }],
+    }];
+    const { container } = render(
+      <GanttTimeline plans={[plan]} reminders={reminderDays} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+
+    const bell = await waitFor(() => {
+      const element = bellIn(container, "2026-08-05");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    fireEvent.mouseEnter(bell);
+    const tooltip = container.querySelector<HTMLElement>(".timeline-reminder-tooltip")!;
+    expect(tooltip.textContent).toContain("下周有中风险作业，今天提交作业计划");
+    expect(tooltip.textContent).toContain("设计评审");
+    expect(tooltip.textContent).toContain("下周计划");
+    expect(tooltip.textContent).toContain("8月12日");
+    expect(tooltip.textContent).toContain("8月13日");
+  });
+
+  it("opens the drawer for a single-plan reminder and ignores multi-plan bells", async () => {
+    const onSelect = vi.fn();
+    const single: ReminderDay[] = [{
+      date: "2026-08-05",
+      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] }],
+    }];
+    const { container, unmount } = render(
+      <GanttTimeline plans={[plan]} reminders={single} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={onSelect} />,
+    );
+
+    const bell = await waitFor(() => {
+      const element = bellIn(container, "2026-08-05");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(bell.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(bell);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith(plan);
+    unmount();
+
+    const multi: ReminderDay[] = [{
+      date: "2026-08-05",
+      reminders: [{
+        type: "plan-submission",
+        date: "2026-08-05",
+        originalDate: null,
+        plans: [
+          { id: plan.id, title: "设计评审", startAt: localIso(2026, 8, 12), risk: "高" },
+          { id: trailingPlanId, title: "下周计划", startAt: localIso(2026, 8, 13), risk: "中" },
+        ],
+      }],
+    }];
+    const multiSelect = vi.fn();
+    const secondView = render(
+      <GanttTimeline plans={[plan]} reminders={multi} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={multiSelect} />,
+    );
+    const multiBell = await waitFor(() => {
+      const element = bellIn(secondView.container, "2026-08-05");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(multiBell.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(multiBell);
+    expect(multiSelect).not.toHaveBeenCalled();
+  });
+
+  it("replays bells after the range changes and skips reminder days outside the range", async () => {
+    const firstDays: ReminderDay[] = [{
+      date: "2026-08-05",
+      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] }],
+    }];
+    const { container, rerender } = render(
+      <GanttTimeline plans={[plan]} reminders={firstDays} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+    await waitFor(() => expect(bellIn(container, "2026-08-05")).not.toBeNull());
+
+    const secondDays: ReminderDay[] = [{
+      date: "2026-08-12",
+      reminders: [{ type: "work-order", date: "2026-08-12", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: localIso(2026, 8, 19), risk: null }] }],
+    }];
+    rerender(
+      <GanttTimeline plans={[plan]} reminders={secondDays} view="week" rangeStart={new Date(2026, 7, 10)} rangeEnd={new Date(2026, 7, 17)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+    await waitFor(() => expect(bellIn(container, "2026-08-12")).not.toBeNull());
+    expect(bellIn(container, "2026-08-05")).toBeNull();
+
+    rerender(
+      <GanttTimeline plans={[plan]} reminders={[{ date: "2026-08-20", reminders: [{ type: "work-order", date: "2026-08-20", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] }] }]} view="week" rangeStart={new Date(2026, 7, 10)} rangeEnd={new Date(2026, 7, 17)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+    await waitFor(() => expect(container.querySelectorAll(".timeline-reminder-bell")).toHaveLength(0));
   });
 });

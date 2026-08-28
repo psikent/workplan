@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** done
+Status: resolved
 
 - [x] 周视图和月视图中，双击日期网格背景只打开一次新建工作计划抽屉，并准确映射范围首日、中间日期和末日。
 - [x] 开始、结束时间预填为目标浏览器本地日期的 08:30–18:00；过去、今天、未来和周末日期均可使用。

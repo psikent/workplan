@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { downloadEnvConfig, downloadWorkPlansXlsCustom, setCsrfToken } from "./api";
+import { downloadEnvConfig, downloadWorkPlansXlsCustom, fetchReminders, setCsrfToken } from "./api";
 
 describe("downloadEnvConfig", () => {
   afterEach(() => {
@@ -38,6 +38,34 @@ describe("downloadEnvConfig", () => {
 
     await expect(downloadEnvConfig()).rejects.toThrow("环境配置下载失败");
     expect(createObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+describe("fetchReminders", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("requests the reminders for the visible date range", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ days: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })));
+
+    const response = await fetchReminders("2026-08-03", "2026-08-09");
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/reminders?from=2026-08-03&to=2026-08-09", expect.objectContaining({ credentials: "include" }));
+    expect(response).toEqual({ days: [] });
+  });
+
+  it("surfaces a failed reminder request as an ApiError", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: 422, code: "VALIDATION", detail: "日期范围无效" }), {
+      status: 422,
+      headers: { "Content-Type": "application/json" },
+    })));
+
+    await expect(fetchReminders("2026-08-10", "2026-08-09")).rejects.toThrow("日期范围无效");
   });
 });
 

@@ -1,4 +1,4 @@
-import type { ExportTemplateColumn } from "@workplan/contracts";
+import type { ExportTemplateColumn, ListRemindersResponse } from "@workplan/contracts";
 
 export type ApiProblem = {
   status: number;
@@ -34,6 +34,11 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const jsonBody = (value: unknown): Pick<RequestInit, "body"> => ({ body: JSON.stringify(value) });
+
+export async function fetchReminders(from: string, to: string): Promise<ListRemindersResponse> {
+  const query = new URLSearchParams({ from, to });
+  return api<ListRemindersResponse>(`/reminders?${query.toString()}`);
+}
 
 export async function downloadExport() {
   const response = await fetch("/api/v1/export", { credentials: "include" });

@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import type { CustomFieldDefinition, WorkPlan } from "@workplan/contracts";
+import type { CustomFieldDefinition, Reminder, ReminderDay, WorkPlan } from "@workplan/contracts";
 import { loadGantt } from "../lib/gantt";
 import { formatCustomFieldValue, statusLabels } from "../lib/format";
 
@@ -9,6 +9,7 @@ export type GanttDisplayProperty =
 
 type Props = {
   plans: WorkPlan[];
+  reminders?: ReminderDay[];
   displayProperties?: GanttDisplayProperty[];
   tooltipProperties?: GanttDisplayProperty[];
   view: "week" | "month";
@@ -17,6 +18,7 @@ type Props = {
   verticalScrollPeerRef?: RefObject<HTMLElement | null>;
   onScheduleChange: (plan: WorkPlan, startAt: string, endAt: string) => void;
   onSelect: (plan: WorkPlan) => void;
+  onReminderSelect?: (planId: string) => void;
   onCreateAt?: (date: Date) => void;
 };
 
@@ -29,11 +31,15 @@ type RangedGantt = {
 };
 
 const MIN_DAY_COLUMN_WIDTH = 32;
+// Lucide "Bell" outline path, injected as a small inline SVG so the header
+// buttons match the app's 18px rounded-outline icon baseline.
+const REMINDER_BELL_ICON = '<svg class="reminder-bell-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
 const EMPTY_DISPLAY_PROPERTIES: GanttDisplayProperty[] = [];
+const EMPTY_REMINDER_DAYS: ReminderDay[] = [];
 const EMPTY_TIMELINE_TASK_ID = "__empty-timeline__";
 const BAR_DOUBLE_CLICK_WINDOW_MS = 500;
 
-function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, view, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect, onCreateAt }: Props) {
+function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, view, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect, onReminderSelect, onCreateAt }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
@@ -41,6 +47,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
   const tooltipPropertiesRef = useRef(tooltipProperties);
   const onScheduleChangeRef = useRef(onScheduleChange);
   const onSelectRef = useRef(onSelect);
+  const onReminderSelectRef = useRef(onReminderSelect);
   const onCreateAtRef = useRef(onCreateAt);
   const rangeStartTime = rangeStart.getTime();
   const rangeEndTime = rangeEnd.getTime();
@@ -53,11 +60,13 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
     plan.status,
     formatGanttLabel(plan, displayProperties),
   ])), [displayProperties, plans]);
+  const remindersSignature = useMemo(() => JSON.stringify(reminders), [reminders]);
 
   plansByIdRef.current = plansById;
   tooltipPropertiesRef.current = tooltipProperties;
   onScheduleChangeRef.current = onScheduleChange;
   onSelectRef.current = onSelect;
+  onReminderSelectRef.current = onReminderSelect;
   onCreateAtRef.current = onCreateAt;
 
   useEffect(() => {
@@ -87,6 +96,7 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
     let cleanupPopupFollow = () => {};
     let cleanupDateCellCreation = () => {};
     let cleanupDateCellAffordance = () => {};
+    let cleanupReminderBells = () => {};
     const container = containerRef.current;
     if (!container) return;
     if (columnWidth <= 0) return;
@@ -211,6 +221,13 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
         columnWidth,
         onCreateAt: (date) => onCreateAtRef.current?.(date),
       });
+      cleanupReminderBells = injectReminderBells(containerRef.current, reminders, {
+        onSelectReminder: (planId) => {
+          const plan = plansByIdRef.current.get(planId);
+          if (plan) onSelectRef.current(plan);
+          else onReminderSelectRef.current?.(planId);
+        },
+      });
     });
     return () => {
       disposed = true;
@@ -222,8 +239,9 @@ function GanttTimeline({ plans, displayProperties = EMPTY_DISPLAY_PROPERTIES, to
       cleanupScheduleInteraction();
        cleanupDateCellCreation();
        cleanupDateCellAffordance();
+       cleanupReminderBells();
     };
-  }, [columnWidth, ganttInputSignature, rangeEndTime, rangeStartTime, verticalScrollPeerRef]);
+  }, [columnWidth, ganttInputSignature, remindersSignature, rangeEndTime, rangeStartTime, verticalScrollPeerRef]);
 
   return (
     <div className="gantt-shell">
@@ -411,6 +429,126 @@ export function formatGanttTooltip(plan: WorkPlan, properties: GanttDisplayPrope
   return `<div class="title">${escapeHtml(plan.title)}</div><div class="details">${lines.join("<br/>")}</div>`;
 }
 
+/**
+ * 在时间轴表头日期数字下方注入提醒铃铛（规格 R3）。
+ * - 日期在可见范围内即渲染（含未来提醒日；过期规则由服务端派生自然消失）。
+ * - 一个日期最多一个铃铛：同一天的多条提醒合并展示。
+ * - 单计划铃铛绑定点击打开对应 Work Plan；多计划铃铛仅展示（不绑定点击）。
+ * 铃铛随 gantt 重渲染重建（容器 replaceChildren），本轮只负责本次注入的监听器与 tooltip 清理。
+ */
+export function injectReminderBells(
+  mount: HTMLElement,
+  reminders: ReminderDay[],
+  options: { onSelectReminder: (planId: string) => void },
+) {
+  const remindersByDate = new Map<string, Reminder[]>();
+  for (const day of reminders) {
+    for (const reminder of day.reminders) {
+      const list = remindersByDate.get(reminder.date) ?? [];
+      list.push(reminder);
+      remindersByDate.set(reminder.date, list);
+    }
+  }
+  if (remindersByDate.size === 0) return () => {};
+
+  const container = mount.querySelector<HTMLElement>(".gantt-container");
+  const tooltip = document.createElement("div");
+  tooltip.className = "timeline-reminder-tooltip";
+  tooltip.setAttribute("aria-hidden", "true");
+  container?.append(tooltip);
+  const hideTooltip = () => tooltip.classList.remove("visible");
+  const showTooltip = (bell: HTMLElement, content: string) => {
+    if (!container) return;
+    tooltip.innerHTML = content;
+    positionReminderTooltip(tooltip, bell, container);
+    tooltip.classList.add("visible");
+  };
+
+  const cleanups: Array<() => void> = [];
+  for (const lowerText of mount.querySelectorAll<HTMLElement>(".lower-text")) {
+    const dateClass = Array.from(lowerText.classList).find((name) => /^date_\d{4}-\d{2}-\d{2}$/.test(name));
+    if (!dateClass) continue;
+    const dayReminders = remindersByDate.get(dateClass.slice("date_".length));
+    if (!dayReminders || dayReminders.length === 0) continue;
+
+    const plans = dayReminders.flatMap((reminder) => reminder.plans);
+    const content = formatReminderTooltip(dayReminders);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "timeline-reminder-bell";
+    button.dataset.reminderDate = dateClass.slice("date_".length);
+    button.innerHTML = REMINDER_BELL_ICON;
+    const label = plans.length === 1
+      ? "提醒：" + plans[0]!.title
+      : "提醒：" + plans.length + " 个工作计划";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+
+    const show = () => showTooltip(button, content);
+    const hide = () => hideTooltip();
+    button.addEventListener("mouseenter", show);
+    button.addEventListener("mouseleave", hide);
+    button.addEventListener("focus", show);
+    button.addEventListener("blur", hide);
+    cleanups.push(() => {
+      button.removeEventListener("mouseenter", show);
+      button.removeEventListener("mouseleave", hide);
+      button.removeEventListener("focus", show);
+      button.removeEventListener("blur", hide);
+    });
+
+    if (plans.length === 1) {
+      const click = (event: MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        hideTooltip();
+        options.onSelectReminder(plans[0]!.id);
+      };
+      button.addEventListener("click", click);
+      cleanups.push(() => button.removeEventListener("click", click));
+    } else {
+      button.setAttribute("aria-disabled", "true");
+    }
+
+    lowerText.append(button);
+  }
+
+  const hideOnScroll = () => hideTooltip();
+  container?.addEventListener("scroll", hideOnScroll, { passive: true });
+  return () => {
+    cleanups.forEach((cleanup) => cleanup());
+    container?.removeEventListener("scroll", hideOnScroll);
+    tooltip.remove();
+  };
+}
+
+function positionReminderTooltip(tooltip: HTMLElement, bell: HTMLElement, container: HTMLElement) {
+  const bellRect = bell.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  const width = tooltip.offsetWidth > 0 ? tooltip.offsetWidth : 220;
+  const targetLeft = bellRect.left - containerRect.left + container.scrollLeft + bellRect.width / 2 - width / 2;
+  const maxLeft = Math.max(8, container.clientWidth - width - 8);
+  tooltip.style.left = `${Math.max(8, Math.min(targetLeft, maxLeft))}px`;
+  tooltip.style.top = `${bellRect.bottom - containerRect.top + container.scrollTop + 6}px`;
+}
+
+export function formatReminderTooltip(reminders: Reminder[]): string {
+  return reminders
+    .map((reminder) => {
+      const title = reminder.type === "work-order"
+        ? "起检修单提醒"
+        : "下周有中风险作业，今天提交作业计划";
+      const reminderDate = new Date(reminder.date + "T00:00:00");
+      const lines = reminder.plans.map((plan) => {
+        const start = new Date(plan.startAt);
+        const withYear = start.getFullYear() !== reminderDate.getFullYear();
+        return escapeHtml(plan.title) + " · 开始 " + chineseDayLabel(start, withYear);
+      });
+      return '<div class="title">' + title + '</div><div class="details">' + lines.join("<br/>") + "</div>";
+    })
+    .join("");
+}
+
 function chineseDayLabel(date: Date, withYear: boolean) {
   const month = date.getMonth() + 1;
   const day = date.getDate();
@@ -502,7 +640,7 @@ export function alignCrossMonthUpperLabel(mount: HTMLElement, controls: HTMLElem
   const leadingGap = controlsRect.left - firstLabelRect.right;
   const targetLeft = controlsRect.right + leadingGap;
   const shift = Math.round(targetLeft - nextLabelRect.left);
-  if (shift > 0) nextLabel.style.marginLeft = `${shift}px`;
+  if (shift !== 0) nextLabel.style.marginLeft = `${shift}px`;
 }
 
 function rangeSpansCalendarMonth(start: Date, exclusiveEnd: Date) {

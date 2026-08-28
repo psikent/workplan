@@ -10,7 +10,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import WorkPlanDrawer from "../components/WorkPlanDrawer";
 import { useSession } from "../App";
-import { api, downloadWorkPlansXlsCustom, fileToBase64, jsonBody } from "../lib/api";
+import { api, downloadWorkPlansXlsCustom, fetchReminders, fileToBase64, jsonBody } from "../lib/api";
 import { endOfMonth, endOfWeek, formatCustomFieldValue, formatDate, startOfMonth, startOfWeek, statusLabels } from "../lib/format";
 
 type BuiltInColumnId = "status" | "startAt" | "endAt";
@@ -158,6 +158,13 @@ function matchesVisibleWorkPlan(
   return Date.parse(plan.endAt) >= range[0].getTime() && Date.parse(plan.startAt) <= range[1].getTime();
 }
 
+function toLocalDateString(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function initialTimelineView(value: string | null): "week" | "month" {
   return value === "month" ? "month" : "week";
 }
@@ -254,6 +261,16 @@ export default function WorkPlansPage() {
     "--plan-grid-min-width": `${180 + visibleColumns.reduce((total, column) => total + column.width, 0)}px`,
   }) as CSSProperties, [visibleColumns]);
   const range = useMemo(() => view === "week" ? [startOfWeek(anchor), endOfWeek(anchor)] : [startOfMonth(anchor), endOfMonth(anchor)], [anchor, view]);
+  const remindersRange = useMemo(() => {
+    const lastVisibleDay = new Date(range[1]!);
+    lastVisibleDay.setDate(lastVisibleDay.getDate() - 1);
+    return { from: toLocalDateString(range[0]!), to: toLocalDateString(lastVisibleDay) };
+  }, [range]);
+  const remindersQuery = useQuery({
+    queryKey: ["reminders", remindersRange.from, remindersRange.to],
+    queryFn: () => fetchReminders(remindersRange.from, remindersRange.to),
+    refetchInterval: 30_000,
+  });
   const templates = templatesQuery.data ?? [];
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null;
   const selectedTemplateCanImport = selectedTemplate
@@ -453,6 +470,10 @@ export default function WorkPlansPage() {
     setSelected(plan);
     setDrawerOpen(true);
   }, []);
+  const handleReminderSelect = useCallback((planId: string) => {
+    const plan = plans.find((item) => item.id === planId);
+    if (plan) handleSelect(plan);
+  }, [handleSelect, plans]);
   const handleCreateAt = useCallback((date: Date) => {
     setSelected(null);
     setNewPlanDate(date);
@@ -778,7 +799,7 @@ export default function WorkPlansPage() {
             <button className={`icon-button column-settings-button ${showGanttSettings ? "selected" : ""}`} type="button" aria-label="甘特条属性" aria-expanded={showGanttSettings} title="甘特图显示设置" onClick={() => setShowGanttSettings((value) => !value)}><ListFilter /></button>
             {showGanttSettings ? <GanttPropertySettings properties={availableGanttProperties} visibleIds={ganttDisplayIds} onToggle={toggleGanttProperty} onMove={moveGanttProperty} onReset={() => setGanttDisplayIds(defaultGanttDisplayIds)} tooltipVisibleIds={tooltipDisplayIds} onToggleTooltip={toggleTooltipProperty} onMoveTooltip={moveTooltipProperty} onResetTooltip={() => setTooltipDisplayIds(defaultTooltipDisplayIds)} /> : null}
           </div>
-          <GanttTimeline plans={visiblePlans} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onCreateAt={handleCreateAt} />
+          <GanttTimeline plans={visiblePlans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} />
         </div>
       </div>
 

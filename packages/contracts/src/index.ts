@@ -143,6 +143,42 @@ export const searchWorkPlansSchema = z.object({
   offset: z.number().int().min(0).default(0),
 });
 
+export const reminderTypes = ["work-order", "plan-submission"] as const;
+export const reminderTypeSchema = z.enum(reminderTypes);
+
+export const reminderPlanSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  startAt: isoDateTimeSchema,
+  risk: z.string().nullable(),
+});
+
+export const reminderSchema = z.object({
+  type: reminderTypeSchema,
+  date: isoDateSchema,
+  originalDate: isoDateSchema.nullable(),
+  plans: z.array(reminderPlanSchema),
+});
+
+export const reminderDaySchema = z.object({
+  date: isoDateSchema,
+  reminders: z.array(reminderSchema),
+});
+
+export const listRemindersQuerySchema = z
+  .object({
+    from: isoDateSchema,
+    to: isoDateSchema,
+  })
+  .refine((value) => value.from <= value.to, {
+    message: "结束日期不能早于开始日期",
+    path: ["to"],
+  });
+
+export const listRemindersResponseSchema = z.object({
+  days: z.array(reminderDaySchema),
+});
+
 export const monthlyGoalSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -766,6 +802,12 @@ export type UpdateOwnerAccountMapping = z.infer<typeof updateOwnerAccountMapping
 export type CustomFieldType = z.infer<typeof customFieldTypeSchema>;
 export type CustomFieldDefinition = z.infer<typeof customFieldDefinitionSchema>;
 export type WorkPlanSearch = z.infer<typeof searchWorkPlansSchema>;
+export type ReminderType = z.infer<typeof reminderTypeSchema>;
+export type ReminderPlan = z.infer<typeof reminderPlanSchema>;
+export type Reminder = z.infer<typeof reminderSchema>;
+export type ReminderDay = z.infer<typeof reminderDaySchema>;
+export type ListRemindersQuery = z.infer<typeof listRemindersQuerySchema>;
+export type ListRemindersResponse = z.infer<typeof listRemindersResponseSchema>;
 export type RecurrenceRule = z.infer<typeof recurrenceRuleSchema>;
 export type WorkPlanSeries = z.infer<typeof workPlanSeriesSchema>;
 export type ExportTemplate = z.infer<typeof exportTemplateSchema>;

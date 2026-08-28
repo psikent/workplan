@@ -23,6 +23,7 @@ import { MonthlyGoalService } from "./modules/monthly-goals.js";
 import { MonthlyGoalSeriesService } from "./modules/monthly-goal-series.js";
 import { OwnerAccountService } from "./modules/owner-accounts.js";
 import { RecurrenceService } from "./modules/recurrence.js";
+import { ReminderService } from "./modules/reminders.js";
 import { TransferService } from "./modules/transfer.js";
 import { SpreadsheetTransferService } from "./modules/spreadsheet-transfer.js";
 import { WorkPlanService } from "./modules/work-plans.js";
@@ -33,6 +34,7 @@ import { registerMonthlyGoalRoutes } from "./routes/monthly-goals.js";
 import { registerMonthlyGoalSeriesRoutes } from "./routes/monthly-goal-series.js";
 import { registerOwnerAccountRoutes } from "./routes/owner-accounts.js";
 import { registerRecurrenceRoutes } from "./routes/recurrence.js";
+import { registerReminderRoutes } from "./routes/reminders.js";
 import { registerTransferRoutes } from "./routes/transfer.js";
 import { registerSpreadsheetTransferRoutes } from "./routes/spreadsheet-transfer.js";
 import { registerWorkPlanRoutes } from "./routes/work-plans.js";
@@ -111,6 +113,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const monthlyGoals = new MonthlyGoalService(database);
   const monthlyGoalSeries = new MonthlyGoalSeriesService(database, monthlyGoals);
   const workPlans = new WorkPlanService(database, customFields, ownerAccounts, monthlyGoals);
+  const reminders = new ReminderService(database, customFields, config.timeZone);
   const recurrence = new RecurrenceService(database, workPlans);
   const transfer = new TransferService(database);
   const spreadsheetTransfer = new SpreadsheetTransferService(database, customFields, workPlans);
@@ -189,6 +192,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
   await registerAuthRoutes(app, auth);
   await registerWorkPlanRoutes(app, workPlans);
+  await registerReminderRoutes(app, reminders);
   await registerMonthlyGoalRoutes(app, monthlyGoals);
   await registerMonthlyGoalSeriesRoutes(app, monthlyGoalSeries);
   await registerCustomFieldRoutes(app, customFields);
@@ -275,7 +279,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   return {
     app,
     config,
-    services: { auth, customFields, ownerAccounts, monthlyGoals, monthlyGoalSeries, workPlans, recurrence, transfer, spreadsheetTransfer, envConfig },
+    services: { auth, customFields, ownerAccounts, monthlyGoals, monthlyGoalSeries, workPlans, reminders, recurrence, transfer, spreadsheetTransfer, envConfig },
     database,
   };
 }

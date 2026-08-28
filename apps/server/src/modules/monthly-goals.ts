@@ -44,7 +44,7 @@ export class MonthlyGoalService {
     }
     if (!query.includeArchived) where.push("archived_at IS NULL");
     const rows = this.database.sqlite
-      .prepare(`SELECT * FROM monthly_goals ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY year DESC, month DESC, created_at ASC`)
+      .prepare(`SELECT * FROM monthly_goals ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY year DESC, month DESC, created_at ASC, rowid ASC`)
       .all(...values) as MonthlyGoalRow[];
     return this.serializeMany(rows, Date.now());
   }
@@ -162,7 +162,7 @@ export class MonthlyGoalService {
       }
 
       const saved = this.database.sqlite
-        .prepare("SELECT * FROM monthly_goals WHERE year = ? ORDER BY year DESC, month DESC, created_at ASC")
+        .prepare("SELECT * FROM monthly_goals WHERE year = ? ORDER BY year DESC, month DESC, created_at ASC, rowid ASC")
         .all(input.year) as MonthlyGoalRow[];
       return {
         createdCount,

@@ -8,6 +8,7 @@ import { ToastProvider } from "../components/ToastProvider";
 import WorkPlansPage from "./WorkPlansPage";
 
 const apiMock = vi.hoisted(() => vi.fn());
+const fetchRemindersMock = vi.hoisted(() => vi.fn());
 const downloadWorkPlansXlsCustomMock = vi.hoisted(() => vi.fn());
 const fileToBase64Mock = vi.hoisted(() => vi.fn());
 const drawerPropsMock = vi.hoisted(() => vi.fn());
@@ -23,6 +24,7 @@ vi.mock("../App", () => ({
 vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),
   api: apiMock,
+  fetchReminders: fetchRemindersMock,
   downloadWorkPlansXlsCustom: downloadWorkPlansXlsCustomMock,
   fileToBase64: fileToBase64Mock,
 }));
@@ -138,6 +140,8 @@ beforeEach(() => {
     if (path.startsWith("/custom-fields")) return [ownerField, effortField];
     throw new Error(`Unexpected API path: ${path}`);
   });
+  fetchRemindersMock.mockClear();
+  fetchRemindersMock.mockResolvedValue({ days: [] });
   drawerPropsMock.mockClear();
   ganttPropsMock.mockClear();
   downloadWorkPlansXlsCustomMock.mockResolvedValue(undefined);
@@ -919,6 +923,53 @@ describe("work plan cycle saving", () => {
       `/work-plans/${plan.id}/series`,
       expect.objectContaining({ method: "POST" }),
     );
+    view.unmount();
+  });
+});
+
+describe("timeline reminder bells", () => {
+  it("fetches reminders for the visible range and forwards them to the timeline", async () => {
+    const reminderDays = [{
+      date: "2026-08-05",
+      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] }],
+    }];
+    fetchRemindersMock.mockResolvedValue({ days: reminderDays });
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    await waitFor(() => expect(fetchRemindersMock).toHaveBeenCalledWith("2026-08-03", "2026-08-09"));
+    await waitFor(() => {
+      const props = ganttPropsMock.mock.calls.at(-1)?.[0] as { reminders?: unknown; onReminderSelect?: (planId: string) => void };
+      expect(props.reminders).toEqual(reminderDays);
+      expect(props.onReminderSelect).toBeTypeOf("function");
+    });
+    view.unmount();
+  });
+
+  it("opens the matching work plan drawer through the timeline reminder callback", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    await waitFor(() => {
+      const props = ganttPropsMock.mock.calls.at(-1)?.[0] as { onReminderSelect?: (planId: string) => void };
+      expect(props.onReminderSelect).toBeTypeOf("function");
+    });
+    const props = ganttPropsMock.mock.calls.at(-1)?.[0] as { onReminderSelect: (planId: string) => void };
+    await act(async () => {
+      props.onReminderSelect(plan.id);
+    });
+
+    await waitFor(() => expect(drawerPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plan: { id: plan.id }, open: true }));
+    view.unmount();
+  });
+
+  it("updates the reminder range when shifting to the next week", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    await waitFor(() => expect(fetchRemindersMock).toHaveBeenCalledWith("2026-08-03", "2026-08-09"));
+
+    fireEvent.click(screen.getByRole("button", { name: "下一时间范围" }));
+    await waitFor(() => expect(fetchRemindersMock).toHaveBeenCalledWith("2026-08-10", "2026-08-16"));
     view.unmount();
   });
 });

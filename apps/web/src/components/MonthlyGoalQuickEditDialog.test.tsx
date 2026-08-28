@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+
+// 全量并行 CI 下 CPU 争用会让异步 UI 更新超过默认 1s 的 waitFor 超时；放宽到 5s 消除负载型 flaky。
+configure({ asyncUtilTimeout: 5000 });
+// 并行负载下单个用例（含并发 import/transform）可能超过 vitest 默认 5s 的 testTimeout。
+vi.setConfig({ testTimeout: 15000 });
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { MonthlyGoal } from "@workplan/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
