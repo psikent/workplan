@@ -12,3 +12,9 @@ data/
 logs/
 playwright-report/
 test-results/
+
+# local dev log
+dev.log
+
+# timestamped editor backups
+*.bak-*
