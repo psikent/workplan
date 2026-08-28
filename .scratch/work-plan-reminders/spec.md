@@ -1,6 +1,6 @@
 # Spec: 时间轴提醒（Work Plan Reminders）
 
-> Status: **已实现** — 票据 01–04 全部 resolved；legacy 404/422 回归保持、全仓 typecheck/test 连续多轮全绿（2026-08-28 核实）。
+> Status: **已提交** — 票据 01–04 全部 resolved；实现与文档已随 `2ab7396 feat: add work plan reminders (work-order & plan submission)` 提交并推送 origin/main。legacy 404/422 回归保持、全仓 typecheck/test 连续多轮全绿（2026-08-28 核实）。
 
 ## Goal
 
