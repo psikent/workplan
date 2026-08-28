@@ -1,5 +1,15 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+
+// Formal systemd topology: these values are fixed by the ADR and are not
+// overridable through the command line.
+export const systemdHost = "127.0.0.1";
+export const systemdPort = "3000";
+
+export function createRandomSecret() {
+  return crypto.randomBytes(48).toString("base64url");
+}
 
 export function parseEnv(text) {
   const entries = new Map();
@@ -50,6 +60,25 @@ export function normalizeProductionEnv(existing, createSecret) {
   const oldBaseUrl = entries.get("APP_BASE_URL");
   if (!oldBaseUrl) {
     entries.set("APP_BASE_URL", `http://localhost:${entries.get("PORT")}`);
+  }
+
+  const secret = entries.get("APP_SECRET") ?? "";
+  if (secret.length < 32 || secret.startsWith("replace-with-")) entries.set("APP_SECRET", createSecret());
+  return entries;
+}
+
+export function normalizeSystemdEnv(existing, createSecret = createRandomSecret) {
+  const entries = new Map(existing);
+  entries.set("NODE_ENV", "production");
+  // Systemd mode fixes the loopback host and the formal port while preserving
+  // every unrelated entry and a valid secret.
+  entries.set("HOST", systemdHost);
+  entries.set("PORT", systemdPort);
+  entries.set("DATA_DIR", entries.get("DATA_DIR") || "./data");
+  entries.set("TZ", entries.get("TZ") || "Asia/Shanghai");
+  entries.set("SESSION_DAYS", entries.get("SESSION_DAYS") || "30");
+  if (!entries.has("APP_BASE_URL")) {
+    entries.set("APP_BASE_URL", `http://${systemdHost}:${systemdPort}`);
   }
 
   const secret = entries.get("APP_SECRET") ?? "";

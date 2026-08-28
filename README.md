@@ -4,30 +4,72 @@
 
 ## 正式环境
 
-正式环境使用 Node.js 22 或更高版本，固定发布到源码目录同级的 `workplan-release` 目录。服务在端口 `3000` 同时提供 Web UI、API 和健康检查。
+生产平台行为按宿主系统分为两类：
 
-从源码目录执行一键构建和发布：
+- **Linux（systemd）**：唯一受支持的生产形式。应用进程永远以非 root 的 `workplan:workplan` 账户运行，由 `/etc/systemd/system/workplan.service` 监管；发布脚本只负责部署文件与控制 systemd，绝不启动脱离 systemd 的进程。
+- **macOS（launchd）与自定义隔离目录**：沿用原有的 launchd / 手动管理器行为，不受 systemd 影响。
 
-```powershell
-node scripts/release.mjs
+正式环境使用 Node.js 22 或更高版本，固定发布到源码目录同级的 `workplan-release` 目录（Linux 生产路径约定为 `/var/opt/workplan-release`）。服务在 `127.0.0.1:3000` 提供 Web UI、API 和健康检查，公网 HTTPS 由 Caddy 提供。
+
+### 首次安装（Linux，需要 root）
+
+```bash
+sudo node scripts/release.mjs --install-systemd
 ```
 
-发布脚本会构建源码、安装生产依赖、停止旧进程、替换程序并重新启动。发布目录中的 `.env`、`data/` 和 `logs/` 不会被覆盖；新版本启动失败时会恢复上一版本。
+`--install-systemd` 仅在 Linux、默认正式发布目录、root 身份下有效（非法组合会在构建任何东西之前失败）。Linux 正式发布本身也不支持 `--no-start`（systemd 路径必须启动服务并完成验收），`--no-start` 仅用于自定义 `--target` 的隔离发布。它会：幂等创建 `workplan` 系统组与无登录 shell、无家目录的系统账户；生成并校验 `workplan.service`（`User=`/`Group=workplan`，绝对路径，直接监督 `apps/server/dist/index.js`，文件日志、重启策略、超时、`UMask=0077` 与 `NoNewPrivileges`/`PrivateTmp`/`ProtectSystem`/`ProtectHome` 加固基线）；备份并原子替换已有 unit；执行 `daemon-reload` 并在 `multi-user.target` 启用服务——然后才构建、发布并启动。
 
-在发布目录管理服务：
+### 常规发布（Linux，需要 root）
 
-```powershell
-node workplan.mjs setup
-node workplan.mjs start
-node workplan.mjs stop
-node workplan.mjs restart
-node workplan.mjs status
-node workplan.mjs logs 100
+```bash
+sudo node scripts/release.mjs
 ```
 
-`setup` 会在配置缺失时生成随机 `APP_SECRET`，已有有效密钥会始终保留。正式数据库固定为 `workplan-release\data\workplan.db`。
+发布顺序固定为：预检（Linux、root、`systemctl`/`systemd-analyze`、运行中的 systemd 管理器、现有 unit 安全）→ 构建 → 准备暂存 → `systemctl stop` → 提升程序文件 → 安装生产依赖 → 初始化生产配置 → 应用所有权权限 → 启动 → 验收。
 
-首次安装时打开 `http://localhost:3000`，使用日志中的一次性令牌初始化管理员。已有数据库包含管理员时不会重新初始化。
+- 常规发布**必须**存在且安全的 `workplan.service`；缺失或不安全时发布会中止并提示先运行 `--install-systemd`，**绝不会**回退到 `node workplan.mjs start`。
+- 验收项：`systemd-analyze verify` 通过、`is-enabled`/`is-active` 成功、MainPID 为正且用户/组为 `workplan:workplan`、可执行文件与工作目录为正式路径、仅 `127.0.0.1:3000` 一个监听（无通配/公网绑定）、`/health/ready` 返回 `status=ready` 且 `database=ok`。
+- 发布目录中的 `.env`、`data/` 和 `logs/` 不会被覆盖；任何阶段失败都会恢复上一版本程序文件、`.env` 与被替换的 unit，重启并验证上一版本。原始失败保留为发布失败，回滚问题单独报告。
+- 上一版本程序备份保留在源码目录同级的 `workplan-release.previous-release`（仅一份），程序文件与依赖 root 所有、服务账户不可写。
+
+### 服务生命周期（Linux）
+
+```bash
+sudo systemctl status workplan
+sudo systemctl start workplan
+sudo systemctl stop workplan
+sudo systemctl restart workplan
+sudo systemctl enable workplan
+```
+
+诊断：
+
+```bash
+sudo journalctl -u workplan -n 100 --no-pager
+tail -n 100 workplan-release/logs/workplan.log
+tail -n 100 workplan-release/logs/workplan.err.log
+```
+
+应用日志写入 `workplan-release/logs/workplan.log` 与 `workplan-release/logs/workplan.err.log`（服务账户私有）；journal 用于 systemd 生命周期与故障诊断。
+
+### 非 root 保证与安全边界（Linux）
+
+- 部署（sudo）与运行（`workplan`）角色分离：root 只部署文件和控制 systemd，应用进程永不继承 root 身份；每次发布后都会验证 MainPID 的用户/组。
+- `.env` 仅 root 可读（0600），由 systemd 在降权前读取；`data/`、`logs/`、`.runtime/` 归 `workplan:workplan` 私有，程序文件与生产依赖 root 所有且服务账户不可写；日志文件预先以私有权限创建。
+- Linux 正式环境**不要**使用 `node workplan.mjs start|stop|restart`——那会绕过 unit 与固定服务身份。检测到 `workplan.service` 时，管理器会直接拒绝这些命令。手动管理器（`setup`/`start`/`stop`/`restart`/`status`/`logs`）仅用于 macOS launchd 与自定义 `--target --no-start` 隔离目录等非 systemd 工作流（`workplan.mjs setup` 会生成随机 `APP_SECRET`，已有有效密钥保留；正式数据库为 `workplan-release/data/workplan.db`）。
+- 发布脚本不会连接或修改生产 VPS；对 VPS 的操作需要单独明确授权。
+
+### 本地验证边界与已授权的 VPS 检查
+
+本地仓库只能验证：构建、测试、unit 渲染/校验逻辑、发布流程的故障注入。发布到 VPS 后，由操作员在服务器上执行以下检查（需要另行授权）：
+
+1. `sudo systemctl is-enabled workplan && sudo systemctl is-active workplan`
+2. `sudo systemctl show workplan -p MainPID --value`，再 `ps -o user=,group= -p <PID>` 确认输出为 `workplan workplan`
+3. 确认仅 `127.0.0.1:3000` 有监听（`sudo ss -ltnp 'sport = :3000'`，不得出现 `*:3000`/`0.0.0.0`）
+4. `curl -fsS http://127.0.0.1:3000/health/ready` 返回 `{"status":"ready","database":"ok"}`
+5. 公网 HTTPS 由 Caddy 提供：`curl -fsS https://<域名>/health/ready`
+
+首次安装完成后打开 `http://127.0.0.1:3000`，使用日志中的一次性令牌初始化管理员。已有数据库包含管理员时不会重新初始化。
 
 ## 本地开发
 

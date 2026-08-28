@@ -8,6 +8,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { normalizeProductionEnv, parseEnv, resolveRuntimeDataDir, serializeEnv } from "./runtime-core.mjs";
+import { manualManagerAllowed, systemdManagedUnitPath } from "./workplan.mjs";
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 const managerPath = path.join(scriptsDir, "workplan.mjs");
@@ -48,6 +49,23 @@ test("normalizes production configuration without replacing a valid secret", () 
   assert.equal(normalized.get("APP_BASE_URL"), "http://localhost:3000");
   assert.equal(normalized.get("APP_SECRET"), "abcdefghijklmnopqrstuvwxyz-1234567890");
   assert.equal(parseEnv(serializeEnv(normalized)).get("DATA_DIR"), "./data");
+});
+
+test("manual manager stays available off-Linux and on non-systemd Linux hosts", () => {
+  assert.equal(systemdManagedUnitPath("linux"), "/etc/systemd/system/workplan.service");
+  assert.equal(manualManagerAllowed("darwin", "/etc/systemd/system/workplan.service"), true);
+  assert.equal(manualManagerAllowed("win32", "/etc/systemd/system/workplan.service"), true);
+  assert.equal(manualManagerAllowed("linux", "/nonexistent/workplan.service"), true);
+});
+
+test("manual manager is blocked when the systemd unit exists on Linux", () => {
+  const unitPath = path.join(os.tmpdir(), `wp-unit-${process.pid}`);
+  fs.writeFileSync(unitPath, "[Service]\n");
+  try {
+    assert.equal(manualManagerAllowed("linux", unitPath), false);
+  } finally {
+    fs.rmSync(unitPath, { force: true });
+  }
 });
 
 test("resolves runtime data relative to the runtime root", () => {

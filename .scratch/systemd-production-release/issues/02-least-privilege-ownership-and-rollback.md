@@ -1,6 +1,6 @@
 # 02 â€” Least-privilege ownership and complete rollback
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: scripts/release.mjs, scripts/runtime-core.mjs, scripts/workplan.mjs, script tests
@@ -25,4 +25,15 @@ Complete the Linux release transaction and filesystem boundary described by R5â€
 - Verification rejects root/wrong-user PIDs, wrong executable or cwd, multiple listeners, wildcard binds, wrong ports, unhealthy HTTP responses, and incomplete ready payloads.
 - Existing manual-manager and runtime configuration tests remain green.
 
-## Comments
+## Answer
+
+Implemented across `scripts/release.mjs`, `scripts/runtime-core.mjs`, `scripts/workplan.mjs`:
+
+- `normalizeSystemdEnv` (runtime-core) + `setupSystemdRelease`: systemd-only setup forces `HOST=127.0.0.1` (and the formal `PORT=3000`), preserves every unrelated `.env` entry and any valid `APP_SECRET`, writes `.env` as root-private `0600`, and pre-creates private log files.
+- `buildSystemdOwnershipPlan` + `applyOwnershipPlan`: program files, dependencies and `${target}.previous-release` stay root-owned (`u=rwX,go=rX`); `.env` is root `0600`; `data/`, `logs/`, `.runtime/` become `workplan:workplan` (`u=rwX,go=`); backups of `.env` stay root `0600`.
+- Previous program backup relocated from service-writable `.runtime` to the root-managed sibling `${targetRoot}.previous-release` (`previousReleaseRoot`/`promoteStaging`/`restorePreviousRelease`; legacy launchd path uses the same location).
+- Transactional lifecycle with injected-command IO (`runSystemdRelease` + `hooks.beforeStep`): dependency install, setup, ownership, unit replacement, start and full R8 verification are one recoverable transaction. On failure: stop, restore program files/.env/unit (or remove the just-installed unit when none existed), `daemon-reload`, re-apply ownership, start and verify the previous version; the original error is preserved and `error.rollbackErrors` reports rollback problems separately (never printing `.env` or log contents). First-install failure leaves the service stopped with `error.recoveryNotice`.
+- Account handling: idempotent `groupadd --system` / `useradd --system --no-create-home --user-group --shell <nologin>`; preflight rejects existing-but-incompatible identities (UID 0, missing group, non-member) before any change; post-creation state is validated.
+- `workplan.mjs` refuses `start|stop|restart` on Linux hosts where `workplan.service` exists (`manualManagerAllowed`), keeping manual management for non-systemd workflows; its regression tests still pass.
+
+Tests prove: setup replaces only HOST and preserves secrets/unrelated entries with private `.env`; ownership plan keeps program/rollback paths root and runtime paths service-owned; failure injection at promote/install/setup/ownership/unit/start/verify and verify-stage identity failures restore all recoverable state; first-install failure removes the unit and stops; rollback failures are reported separately; verification rejects root/wrong-user PIDs, wrong executable/cwd, multiple listeners, wildcard binds, wrong ports, unhealthy HTTP and incomplete ready payloads.

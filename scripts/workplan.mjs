@@ -28,6 +28,19 @@ function randomSecret() {
   return crypto.randomBytes(48).toString("base64url");
 }
 
+export function systemdManagedUnitPath(platform = process.platform) {
+  return "/etc/systemd/system/workplan.service";
+}
+
+// On Linux hosts where the production unit exists, the process belongs to
+// systemd; using the detached manager would bypass the unit and its service
+// identity. The manual manager remains available on other platforms and on
+// isolated/non-systemd workflows.
+export function manualManagerAllowed(platform = process.platform, unitPath = systemdManagedUnitPath()) {
+  if (platform !== "linux") return true;
+  return !fs.existsSync(unitPath);
+}
+
 export function setup() {
   fs.mkdirSync(runtimeRoot, { recursive: true });
   const existingText = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
@@ -175,6 +188,13 @@ export function logs() {
 
 async function main() {
   const command = process.argv[2] ?? "status";
+  if (!manualManagerAllowed()) {
+    const unitPath = systemdManagedUnitPath();
+    throw new Error(
+      `检测到系统级 ${unitPath}：Linux 正式环境的进程由 systemd 监管，`
+      + `请使用 systemctl start|stop|restart workplan，不要直接运行本管理器`,
+    );
+  }
   if (command === "setup") setup();
   else if (command === "start") await start();
   else if (command === "stop") await stop();
