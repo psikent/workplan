@@ -14,6 +14,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    allowedHosts: ["wp-test.lxj.ink"],
     proxy: {
       "/api": "http://localhost:3002",
       "/health": "http://localhost:3002",
