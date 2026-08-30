@@ -1,6 +1,6 @@
 # 01 — 领域契约与认证迁移
 Type: task
-Status: ready-for-agent
+Status: resolved
 Spec: ../spec.md
 Scope: CONTEXT.md、docs/adr/、packages/contracts/src/index.ts、apps/server/src/db/、apps/server/test/migrate.test.ts
 
@@ -26,3 +26,15 @@ Scope: CONTEXT.md、docs/adr/、packages/contracts/src/index.ts、apps/server/sr
 
 ## Comments
 
+- 后续发现（08-30）：迁移 9 的 `foreign_key_check` 曾做全库检查，会被与本迁移无关的历史脏数据（如指向已删除计划的 custom_field_values 遗留行，开发库 v8 阶段即存在）卡死，阻塞升级。已改为只校验重建的 users/sessions/access_tokens 三表（`verifyTables`）；migrate.test.ts 新增「历史悬挂引用不阻断迁移」回归用例。
+
+## Answer
+
+- `packages/contracts/src/index.ts`：`userRoles` 扩展为 `admin | editor | viewer`，新增 `manageableUserRoles`/`manageableUserRoleSchema`/`ManageableUserRole`；创建契约由 Editor-only 泛化为 `createManagedUserSchema`（`createPasswordManagedUserSchema` + `createTokenOnlyManagedUserSchema`），角色接受 `editor | viewer`、必须显式传入、拒绝 `admin`，密码/Token 校验规则不变；未新增角色更新 schema。`CreateManagedUser` 类型已导出。
+- `apps/server/src/db/migrate.ts`：新增迁移 09 `viewer_role_support`。因事务内 `PRAGMA foreign_keys` 是空操作，迁移运行器新增 `requiresForeignKeysOff` 分支：开启事务前读并关闭外键，事务内执行重建并在提交前运行 `PRAGMA foreign_key_check`（有悬挂引用则回滚），finally 恢复原状态。SQL 按 SQLite 官方流程重建 `users`/`sessions`/`access_tokens`（新建 → 复制全字段 → 删旧 → 改名 → 恢复三个索引），CHECK 扩展为接受 `viewer`；不改哈希、版本号、启停状态和角色。
+- `apps/server/test/migrate.test.ts`：版本号断言更新为 9；新增用例从 v8 数据库构造 Administrator、Editor、有效会话、有效 Token，逐字段断言升级后一致、凭据 JOIN 仍可关联、可插入 Viewer、拒绝 `guest` 角色、`foreign_key_check` 为空且外键开关恢复；v4/v5 fixture 补齐真实 v1+ 库一直存在的 `sessions`/`users` 表。
+- `apps/server/src/routes/auth.ts` 仅将导入改用 `createManagedUserSchema`（编译修正）；创建/密码/Token 生命周期逻辑归票据 02。
+- 新增 `packages/contracts/test/contracts.test.mjs`（node --test 直接从 src 导入）验证构建源包含 Viewer：密码/Token-only Viewer 可解析、Editor 请求仍有效、`admin`/未知角色被拒、无默认角色。
+- 验证：`corepack pnpm typecheck` 全绿；contracts 测试 5/5、server 测试 104/104 通过。
+
+CONTEXT.md 与 ADR-0003 在规格阶段已记录 Viewer 词汇与按路由能力授权的决定，本票无需再改。

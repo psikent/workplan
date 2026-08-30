@@ -120,10 +120,12 @@ describe("AppShell navigation", () => {
     view.unmount();
   });
 
-  it("gives administrators a dedicated account management entry", () => {
+  it("gives administrators a single settings entry without separate admin pages", () => {
     const view = renderShell();
 
-    expect(screen.getByRole("link", { name: "账户管理" }).getAttribute("href")).toBe("/accounts");
+    expect(screen.getByRole("link", { name: "设置" }).getAttribute("href")).toBe("/settings");
+    expect(screen.queryByRole("link", { name: "自定义字段" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "账户管理" })).toBeNull();
     view.unmount();
   });
 

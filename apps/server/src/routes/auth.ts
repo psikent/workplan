@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { createAccessTokenSchema, createEditorUserSchema, loginSchema, setEditorPasswordSchema, setupSchema, updateUserStatusSchema } from "@workplan/contracts";
+import { createAccessTokenSchema, createManagedUserSchema, loginSchema, setManagedUserPasswordSchema, setupSchema, updateUserStatusSchema } from "@workplan/contracts";
 import { z } from "zod";
 import type { AuthService } from "../modules/auth.js";
 
@@ -54,13 +54,14 @@ export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService
 
   app.post(
     "/api/v1/users",
-    { schema: { body: createEditorUserSchema }, config: { authorization: "admin" } },
+    { schema: { body: createManagedUserSchema }, config: { authorization: "admin" } },
     async (request, reply) => {
-      const body = createEditorUserSchema.parse(request.body);
+      const body = createManagedUserSchema.parse(request.body);
       const created = body.loginMode === "password"
-        ? await auth.createPasswordEditor({ username: body.username, password: body.password })
-        : await auth.createTokenOnlyEditor({
+        ? await auth.createPasswordUser({ username: body.username, role: body.role, password: body.password })
+        : await auth.createTokenOnlyUser({
             username: body.username,
+            role: body.role,
             tokenName: body.tokenName,
             tokenExpiresAt: body.tokenExpiresAt,
           });
@@ -71,11 +72,11 @@ export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService
 
   app.put(
     "/api/v1/users/:id/password",
-    { schema: { params: idParams, body: setEditorPasswordSchema }, config: { authorization: "admin" } },
+    { schema: { params: idParams, body: setManagedUserPasswordSchema }, config: { authorization: "admin" } },
     async (request) => {
       const { id } = request.params as { id: string };
-      const body = setEditorPasswordSchema.parse(request.body);
-      return auth.setEditorPassword(id, body.password, body.version);
+      const body = setManagedUserPasswordSchema.parse(request.body);
+      return auth.setUserPassword(id, body.password, body.version);
     },
   );
 
@@ -107,6 +108,20 @@ export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService
       const { id } = request.params as { id: string };
       const body = updateUserStatusSchema.parse(request.body);
       return auth.setUserDisabled(id, body.disabled, body.version);
+    },
+  );
+
+  app.delete(
+    "/api/v1/users/:id",
+    {
+      schema: { params: idParams, querystring: z.object({ version: z.coerce.number().int().positive() }) },
+      config: { authorization: "admin" },
+    },
+    async (request) => {
+      const { id } = request.params as { id: string };
+      const { version } = request.query as { version: number };
+      auth.deleteManagedUser(id, version, request.auth!.userId);
+      return { deleted: true };
     },
   );
 

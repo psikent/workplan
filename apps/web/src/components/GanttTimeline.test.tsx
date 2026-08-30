@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, waitFor } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import type { CustomFieldDefinition, WorkPlan } from "@workplan/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import GanttTimeline, { formatGanttTooltip, type GanttDisplayProperty } from "./GanttTimeline";
@@ -9,6 +9,8 @@ const ganttMock = vi.hoisted(() => ({
   tasks: [] as Array<{ id: string; name: string; start: Date; end: Date }>,
   range: null as { start: Date; end: Date } | null,
   renderCount: 0,
+  element: null as HTMLElement | null,
+  injectInteractiveDom: false,
 }));
 
 vi.mock("../lib/gantt", () => ({
@@ -19,6 +21,7 @@ vi.mock("../lib/gantt", () => ({
     constructor(_element: HTMLElement, tasks: Array<{ id: string; name: string; start: Date; end: Date }>, options: Record<string, unknown>) {
       ganttMock.tasks = tasks;
       ganttMock.options = options;
+      ganttMock.element = _element;
     }
 
     setup_date_values() {
@@ -27,6 +30,25 @@ vi.mock("../lib/gantt", () => ({
 
     render() {
       ganttMock.renderCount += 1;
+      // 可选注入最小甘特 DOM（条形与网格行），用于驱动真实的拖拽与双击回调测试。
+      if (!ganttMock.injectInteractiveDom || !ganttMock.element) return;
+      const ganttContainer = document.createElement("div");
+      ganttContainer.className = "gantt-container";
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "gantt");
+      const barWrapper = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      barWrapper.setAttribute("class", "bar-wrapper");
+      barWrapper.setAttribute("data-id", plan.id);
+      const bar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      bar.setAttribute("class", "bar");
+      bar.setAttribute("x", "0");
+      bar.setAttribute("width", "100");
+      barWrapper.append(bar);
+      const gridRow = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      gridRow.setAttribute("class", "grid-row");
+      svg.append(barWrapper, gridRow);
+      ganttContainer.append(svg);
+      ganttMock.element.append(ganttContainer);
     }
   }),
 }));
@@ -78,6 +100,8 @@ beforeEach(() => {
   ganttMock.tasks = [];
   ganttMock.range = null;
   ganttMock.renderCount = 0;
+  ganttMock.element = null;
+  ganttMock.injectInteractiveDom = false;
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(700);
 });
 
@@ -263,6 +287,94 @@ describe("GanttTimeline adapter", () => {
     const html = popup!({ task: { id: plan.id } });
     expect(html).toContain("设计评审");
     expect(html).toContain("待开始");
+  });
+});
+
+describe("read-only timeline", () => {
+  beforeEach(() => {
+    ganttMock.injectInteractiveDom = true;
+  });
+
+  it("does not fire creation or schedule mutations from double-click or dragging", async () => {
+    const onScheduleChange = vi.fn();
+    const onCreateAt = vi.fn();
+    const view = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={onScheduleChange}
+        onSelect={vi.fn()}
+        onCreateAt={onCreateAt}
+        readOnly
+      />,
+    );
+
+    await waitFor(() => expect(ganttMock.options).not.toBeNull());
+    const mount = view.container.querySelector<HTMLElement>(".gantt-mount")!;
+    expect(mount).toBeTruthy();
+    expect(mount.querySelector(".handle-group")).toBeNull();
+
+    fireEvent.dblClick(mount.querySelector(".grid-row")!);
+    fireEvent.mouseDown(mount.querySelector(".bar")!, { button: 0, clientX: 0 });
+    fireEvent.mouseMove(document, { clientX: 150 });
+    fireEvent.mouseUp(document, { clientX: 150 });
+
+    expect(onCreateAt).not.toHaveBeenCalled();
+    expect(onScheduleChange).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it("keeps bar selection working in read-only mode", async () => {
+    const onSelect = vi.fn();
+    const view = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={onSelect}
+        readOnly
+      />,
+    );
+
+    await waitFor(() => expect(ganttMock.options).not.toBeNull());
+    const onClick = ganttMock.options?.on_click as ((task: { id: string }) => void) | undefined;
+    expect(typeof onClick).toBe("function");
+    onClick!({ id: plan.id });
+    expect(onSelect).toHaveBeenCalledWith(plan);
+    view.unmount();
+  });
+
+  it("still fires creation and schedule callbacks when writable", async () => {
+    const onScheduleChange = vi.fn();
+    const onCreateAt = vi.fn();
+    const view = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={onScheduleChange}
+        onSelect={vi.fn()}
+        onCreateAt={onCreateAt}
+      />,
+    );
+
+    await waitFor(() => expect(ganttMock.options).not.toBeNull());
+    const mount = view.container.querySelector<HTMLElement>(".gantt-mount")!;
+    expect(mount.querySelector(".handle-group")).not.toBeNull();
+
+    fireEvent.dblClick(mount.querySelector(".grid-row")!);
+    expect(onCreateAt).toHaveBeenCalled();
+
+    fireEvent.mouseDown(mount.querySelector(".bar")!, { button: 0, clientX: 0 });
+    fireEvent.mouseMove(document, { clientX: 150 });
+    fireEvent.mouseUp(document, { clientX: 150 });
+    await waitFor(() => expect(onScheduleChange).toHaveBeenCalled());
+    view.unmount();
   });
 });
 

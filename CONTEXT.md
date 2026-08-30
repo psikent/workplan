@@ -65,6 +65,13 @@ _Avoid_: Read-only Editor, Reader, Observer, Query Account
 A kind of Editor or Viewer that authenticates external API requests with an issued access Token and has no password login or Web workbench access.
 _Avoid_: API user, service account
 
+**Account Deletion (账户删除)**:
+The irreversible removal of an Editor or Viewer account record by an Administrator, which revokes every session and access Token of that account via cascade. It complements Disabled Account (reversible). Only non-admin accounts can be deleted, and an account can never delete itself.
+_Avoid_: remove user, 注销账户, 清理账户
+
+**Disabled Account (停用账户)**:
+An Editor or Viewer account that cannot authenticate but keeps its record, Tokens, and audit history, so it can be re-enabled later. _Avoid_: deleted account, blocked account
+
 **Environment Configuration Package**:
 A versioned JSON document that bundles the global, environment-specific definitions — Custom Field definitions, Work Owner Account mappings, and XLS export templates — so they can be moved between environments or restored into a fresh one.
 _Avoid_: 配置快照, 迁移包, 模板包
@@ -115,3 +122,7 @@ _Avoid_: Needs-ticket flag
 **Risk Level (风险等级)**:
 The single_select Custom Field (key `risk`) on a Work Plan rating the riskiness of the work; values 可接受, 低, 中, 高; defaults to 低.
 _Avoid_: Priority, severity
+
+**Bark Push (Bark 推送)**:
+The output channel that repeats a Work Order Reminder to the single Bark device configured by the Administrator. One push is sent daily at 09:30 Asia/Shanghai, starting on the Reminder Date and ending the day before the Work Plan starts; pushing stops immediately when the plan is cancelled or manually completed. An empty device key disables pushing. The push is text-only (no deep link).
+_Avoid_: 推送通知, notification, push notification

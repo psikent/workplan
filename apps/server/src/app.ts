@@ -17,6 +17,8 @@ import { loadConfig, type AppConfig } from "./config.js";
 import { openDatabase } from "./db/index.js";
 import { AppError } from "./errors.js";
 import { AuthService } from "./modules/auth.js";
+import { BarkConfigService } from "./modules/bark-config.js";
+import { runDailyBarkPush } from "./modules/bark-push.js";
 import { CustomFieldService } from "./modules/custom-fields.js";
 import { EnvConfigService } from "./modules/env-config.js";
 import { MonthlyGoalService } from "./modules/monthly-goals.js";
@@ -28,6 +30,7 @@ import { TransferService } from "./modules/transfer.js";
 import { SpreadsheetTransferService } from "./modules/spreadsheet-transfer.js";
 import { WorkPlanService } from "./modules/work-plans.js";
 import { registerAuthRoutes, cookieName } from "./routes/auth.js";
+import { registerBarkSettingsRoutes } from "./routes/settings.js";
 import { registerCustomFieldRoutes } from "./routes/custom-fields.js";
 import { registerEnvConfigRoutes } from "./routes/env-config.js";
 import { registerMonthlyGoalRoutes } from "./routes/monthly-goals.js";
@@ -118,6 +121,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const transfer = new TransferService(database);
   const spreadsheetTransfer = new SpreadsheetTransferService(database, customFields, workPlans);
   const envConfig = new EnvConfigService(database, customFields, ownerAccounts, spreadsheetTransfer);
+  const barkConfig = new BarkConfigService(database);
 
   const envConfigSeedPath = path.join(config.dataDir, "env-config.seed.json");
   if (!config.isProduction) {
@@ -168,7 +172,10 @@ export async function buildApp(options: BuildAppOptions = {}) {
     if (!context) throw new AppError(401, "AUTHENTICATION_REQUIRED", "请先登录");
     request.auth = context;
 
-    if (request.routeOptions.config.authorization === "admin" && context.role !== "admin") {
+    // 授权按路由能力分类：默认为已认证查询能力，write 为业务写入，admin 为访问管理
+    // 与全局定义管理。高级搜索和自定义 XLS 导出虽用 POST，但不标记能力，Viewer 可用。
+    const requiredCapability = request.routeOptions.config.authorization;
+    if (requiredCapability && !(context.role === "admin" || (requiredCapability === "write" && context.role === "editor"))) {
       throw new AppError(403, "INSUFFICIENT_PERMISSION", "当前账户没有执行此操作的权限");
     }
 
@@ -201,6 +208,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await registerTransferRoutes(app, transfer);
   await registerSpreadsheetTransferRoutes(app, spreadsheetTransfer);
   await registerEnvConfigRoutes(app, envConfig);
+  await registerBarkSettingsRoutes(app, barkConfig);
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof AppError) {
@@ -244,6 +252,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
       } catch (error) {
         app.log.error(error, "scheduler tick failed");
       }
+      void runDailyBarkPush({ database, reminders, log: app.log }).catch((error) =>
+        app.log.error({ err: error }, "bark push tick failed"),
+      );
     };
     tick();
     scheduler = setInterval(tick, 60_000);
@@ -279,7 +290,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   return {
     app,
     config,
-    services: { auth, customFields, ownerAccounts, monthlyGoals, monthlyGoalSeries, workPlans, reminders, recurrence, transfer, spreadsheetTransfer, envConfig },
+    services: { auth, customFields, ownerAccounts, monthlyGoals, monthlyGoalSeries, workPlans, reminders, recurrence, transfer, spreadsheetTransfer, envConfig, barkConfig },
     database,
   };
 }

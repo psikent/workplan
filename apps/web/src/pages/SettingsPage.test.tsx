@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import type { CustomFieldDefinition, EnvConfigImportResult, EnvConfigPackage, EnvConfigPlan, ExportTemplate, OwnerAccountMapping } from "@workplan/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../components/ToastProvider";
-import AccountManagementPage from "./AccountManagementPage";
+import { settingsTabs } from "./settings/tabs";
 import SettingsPage from "./SettingsPage";
 
 const apiMock = vi.hoisted(() => vi.fn());
@@ -94,6 +95,7 @@ const envConfigImportResult: EnvConfigImportResult = {
 
 let template: ExportTemplate;
 let ownerMappings: OwnerAccountMapping[];
+let barkConfig: { serverUrl: string; deviceKey: string | null };
 let users: Array<{
   id: string;
   username: string;
@@ -132,6 +134,7 @@ beforeEach(() => {
     { ownerName: "冯铭倩", account: "fengmingqian@zh.gd.csg.cn" },
     { ownerName: "罗智凌", account: "luozhiling@zh.gd.csg.cn" },
   ];
+  barkConfig = { serverUrl: "https://api.day.app", deviceKey: null };
   users = [{
     id: "0d433d19-78a1-4587-80c6-4058748d6f15",
     username: "lxj",
@@ -203,6 +206,7 @@ beforeEach(() => {
     }
     if (path === "/users") return users;
     if (path === "/tokens") return [];
+    if (path === "/custom-fields?includeArchived=true") return [ownerField];
     if (path === "/custom-fields") return [ownerField];
     if (path === "/owner-account-mappings" && init?.method === "POST") {
       const input = JSON.parse(String(init.body)) as OwnerAccountMapping;
@@ -222,6 +226,13 @@ beforeEach(() => {
       return undefined;
     }
     if (path === "/owner-account-mappings") return ownerMappings;
+    if (path === "/settings/bark" && init?.method === "PUT") {
+      const input = JSON.parse(String(init.body)) as { serverUrl: string; deviceKey: string };
+      barkConfig = { serverUrl: input.serverUrl, deviceKey: input.deviceKey || null };
+      return barkConfig;
+    }
+    if (path === "/settings/bark/test" && init?.method === "POST") return { success: true, message: "测试推送成功" };
+    if (path === "/settings/bark") return barkConfig;
     if (path === "/env-config") return envConfigPackage;
     if (path === "/env-config/validate" && init?.method === "POST") {
       const input = JSON.parse(String(init.body)) as { mode: "additive" | "sync" };
@@ -238,14 +249,17 @@ beforeEach(() => {
   });
 });
 
-function renderPage() {
+function renderSettings(initialEntry = "/settings") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><ToastProvider><SettingsPage /></ToastProvider></QueryClientProvider>);
-}
-
-function renderAccountManagementPage() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><ToastProvider><AccountManagementPage /></ToastProvider></QueryClientProvider>);
+  const router = createMemoryRouter([{ path: "/settings", element: <SettingsPage /> }], { initialEntries: [initialEntry] });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <ToastProvider>
+        <RouterProvider router={router} />
+      </ToastProvider>
+    </QueryClientProvider>,
+  );
+  return { router, unmount: () => view.unmount() };
 }
 
 function createDeferred<T>() {
@@ -256,9 +270,153 @@ function createDeferred<T>() {
   return { promise, resolve };
 }
 
+describe("settings tab shell", () => {
+  it("renders the five tabs in the spec order with ARIA wiring and one visible panel", async () => {
+    const view = renderSettings();
+    const tablist = await screen.findByRole("tablist", { name: "设置分区" });
+    const tabs = within(tablist).getAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(settingsTabs.map((tab) => tab.label));
+
+    const active = screen.getByRole("tab", { name: "环境配置" });
+    expect(active.getAttribute("aria-selected")).toBe("true");
+    expect(active.getAttribute("aria-controls")).toBe("settings-panel-environment");
+    expect(active.getAttribute("tabindex")).toBe("0");
+    for (const tab of tabs.filter((tab) => tab !== active)) {
+      expect(tab.getAttribute("aria-selected")).toBe("false");
+      expect(tab.getAttribute("tabindex")).toBe("-1");
+    }
+
+    const panel = screen.getByRole("tabpanel", { name: "环境配置" });
+    expect(panel.getAttribute("aria-labelledby")).toBe("settings-tab-environment");
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    view.unmount();
+  });
+
+  it("normalizes /settings without a tab parameter to the environment tab via replace", async () => {
+    const { router, unmount } = renderSettings();
+    await screen.findByRole("tabpanel");
+    await waitFor(() => expect(router.state.location.search).toBe("?tab=environment"));
+    await waitFor(() => expect(router.state.historyAction).toBe("REPLACE"));
+    unmount();
+  });
+
+  it("falls back to the environment tab for an unknown tab value via replace", async () => {
+    const { router, unmount } = renderSettings("/settings?tab=nonsense");
+    await screen.findByRole("tabpanel");
+    await waitFor(() => expect(router.state.location.search).toBe("?tab=environment"));
+    await waitFor(() => expect(router.state.historyAction).toBe("REPLACE"));
+    expect(screen.getByRole("tab", { name: "环境配置" }).getAttribute("aria-selected")).toBe("true");
+    unmount();
+  });
+
+  it("selects the tab for a valid query parameter without redirecting", async () => {
+    const { router, unmount } = renderSettings("/settings?tab=accounts");
+    await screen.findByText("账户与访问 Token");
+    expect(router.state.location.search).toBe("?tab=accounts");
+    expect(router.state.historyAction).toBe("POP");
+    expect(screen.getByRole("tab", { name: "账户管理" }).getAttribute("aria-selected")).toBe("true");
+    unmount();
+  });
+
+  it("pushes history on tab clicks and restores tabs on back and forward", async () => {
+    const { router, unmount } = renderSettings("/settings?tab=push");
+    await screen.findByText("Bark 推送");
+
+    fireEvent.click(screen.getByRole("tab", { name: "环境配置" }));
+    expect(router.state.location.search).toBe("?tab=environment");
+    expect(router.state.historyAction).toBe("PUSH");
+
+    act(() => {
+      router.navigate(-1);
+    });
+    expect(screen.getByRole("tab", { name: "推送配置" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tabpanel", { name: "推送配置" })).toBeTruthy();
+
+    act(() => {
+      router.navigate(1);
+    });
+    expect(screen.getByRole("tab", { name: "环境配置" }).getAttribute("aria-selected")).toBe("true");
+    unmount();
+  });
+
+  it("moves tab focus with keyboard without changing the active tab until activation", async () => {
+    const { unmount } = renderSettings();
+    await screen.findByRole("tabpanel");
+    const tabs = screen.getAllByRole("tab");
+    const second = tabs[1]!;
+
+    fireEvent.keyDown(tabs[0]!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(second);
+    expect(second.getAttribute("aria-selected")).toBe("false");
+
+    fireEvent.keyDown(second, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(tabs[0]!);
+    fireEvent.keyDown(tabs[0]!, { key: "End" });
+    expect(document.activeElement).toBe(tabs[4]!);
+    fireEvent.keyDown(tabs[4]!, { key: "Home" });
+    expect(document.activeElement).toBe(tabs[0]!);
+    fireEvent.keyDown(tabs[0]!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(tabs[4]!);
+    expect(screen.getByRole("tab", { name: "环境配置" }).getAttribute("aria-selected")).toBe("true");
+
+    // Enter/Space activate buttons natively in browsers; clicking models that activation.
+    fireEvent.click(tabs[4]!);
+    expect(tabs[4]!.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tabs[4]!);
+    unmount();
+  });
+
+  it("keeps visited panels mounted but hidden and inert while other tabs are active", async () => {
+    const { unmount } = renderSettings("/settings?tab=push");
+    await screen.findByText("Bark 推送");
+
+    fireEvent.click(screen.getByRole("tab", { name: "环境配置" }));
+    await screen.findByText("工作负责人账号映射");
+
+    const pushPanel = document.getElementById("settings-panel-push");
+    expect(pushPanel?.hidden).toBe(true);
+    expect(screen.queryByRole("tabpanel", { name: "推送配置" })).toBeNull();
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("tab", { name: "推送配置" }));
+    expect(screen.getByRole("tabpanel", { name: "推送配置" })).toBeTruthy();
+    expect(document.getElementById("settings-panel-environment")?.hidden).toBe(true);
+    unmount();
+  });
+
+  it("keeps an environment draft and validation preview across tab switches", async () => {
+    const { unmount } = renderSettings("/settings?tab=environment");
+    const textarea = screen.getByLabelText("粘贴环境配置 JSON") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: JSON.stringify(envConfigPackage) } });
+
+    fireEvent.click(screen.getByRole("tab", { name: "推送配置" }));
+    await screen.findByText("Bark 推送");
+    expect(textarea.value).toBe(JSON.stringify(envConfigPackage));
+
+    fireEvent.click(screen.getByRole("tab", { name: "环境配置" }));
+    expect((screen.getByLabelText("粘贴环境配置 JSON") as HTMLTextAreaElement).value).toBe(JSON.stringify(envConfigPackage));
+    unmount();
+  });
+
+  it("keeps a revealed one-time token across tab switches", async () => {
+    const { unmount } = renderSettings("/settings?tab=accounts");
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "测试" } });
+    fireEvent.change(screen.getByLabelText("登录方式"), { target: { value: "token" } });
+    fireEvent.change(screen.getByLabelText("初始 Token 名称"), { target: { value: "查询 Token" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建编辑者" }));
+    expect(await screen.findByText("wp_one-time-secret")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "环境配置" }));
+    await screen.findByText("工作负责人账号映射");
+    fireEvent.click(screen.getByRole("tab", { name: "账户管理" }));
+    expect(screen.getByText("wp_one-time-secret")).toBeTruthy();
+    unmount();
+  });
+});
+
 describe("environment configuration settings", () => {
   it("copies a pretty-printed Environment Configuration Package and shows success", async () => {
-    const view = renderPage();
+    const view = renderSettings();
 
     fireEvent.click(screen.getByRole("button", { name: "复制配置" }));
 
@@ -274,7 +432,7 @@ describe("environment configuration settings", () => {
   });
 
   it("downloads the Environment Configuration Package file and shows success", async () => {
-    const view = renderPage();
+    const view = renderSettings();
 
     fireEvent.click(screen.getByRole("button", { name: "下载配置文件" }));
 
@@ -284,7 +442,7 @@ describe("environment configuration settings", () => {
   });
 
   it("loads an uploaded Environment Configuration Package into the shared validation flow", async () => {
-    const view = renderPage();
+    const view = renderSettings();
     const file = new File([JSON.stringify(envConfigPackage)], "env-config.json", { type: "application/json" });
 
     fireEvent.change(screen.getByLabelText("上传环境配置文件"), { target: { files: [file] } });
@@ -318,7 +476,7 @@ describe("environment configuration settings", () => {
       }
     }
     vi.stubGlobal("FileReader", DeferredFileReader);
-    const view = renderPage();
+    const view = renderSettings();
     try {
       const input = screen.getByLabelText("粘贴环境配置 JSON") as HTMLTextAreaElement;
       const file = new File([JSON.stringify(envConfigPackage)], "env-config.json", { type: "application/json" });
@@ -355,7 +513,7 @@ describe("environment configuration settings", () => {
       }
       return defaultApi(path, init);
     });
-    const view = renderPage();
+    const view = renderSettings();
     const mode = screen.getByLabelText("导入模式") as HTMLSelectElement;
     expect(mode.value).toBe("additive");
 
@@ -392,7 +550,7 @@ describe("environment configuration settings", () => {
         ? validation.promise
         : defaultApi(path, init)
     ));
-    const view = renderPage();
+    const view = renderSettings();
     const input = screen.getByLabelText("粘贴环境配置 JSON") as HTMLTextAreaElement;
 
     fireEvent.change(input, { target: { value: JSON.stringify(envConfigPackage) } });
@@ -413,7 +571,7 @@ describe("environment configuration settings", () => {
   });
 
   it("requires confirmation before a Sync Import with a destructive nested option", async () => {
-    const view = renderPage();
+    const view = renderSettings();
     fireEvent.change(screen.getByLabelText("粘贴环境配置 JSON"), { target: { value: JSON.stringify(envConfigPackage) } });
     fireEvent.change(screen.getByLabelText("导入模式"), { target: { value: "sync" } });
     fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
@@ -430,7 +588,7 @@ describe("environment configuration settings", () => {
   });
 
   it("does not require destructive confirmation when the destructive section is not selected", async () => {
-    const view = renderPage();
+    const view = renderSettings();
     fireEvent.change(screen.getByLabelText("粘贴环境配置 JSON"), { target: { value: JSON.stringify(envConfigPackage) } });
     fireEvent.change(screen.getByLabelText("导入模式"), { target: { value: "sync" } });
     fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
@@ -457,7 +615,7 @@ describe("environment configuration settings", () => {
   });
 
   it("imports only selected sections and shows the result", async () => {
-    const view = renderPage();
+    const view = renderSettings();
     fireEvent.change(screen.getByLabelText("粘贴环境配置 JSON"), { target: { value: JSON.stringify(envConfigPackage) } });
     fireEvent.change(screen.getByLabelText("导入模式"), { target: { value: "sync" } });
     fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
@@ -493,7 +651,7 @@ describe("environment configuration settings", () => {
         ? importRequest.promise
         : defaultApi(path, init)
     ));
-    const view = renderPage();
+    const view = renderSettings();
 
     fireEvent.change(screen.getByLabelText("粘贴环境配置 JSON"), { target: { value: JSON.stringify(envConfigPackage) } });
     fireEvent.click(screen.getByRole("button", { name: "校验并预览" }));
@@ -519,9 +677,63 @@ describe("environment configuration settings", () => {
   });
 });
 
+describe("bark push settings", () => {
+  it("loads the saved config and saves edits including an empty device key as disabled", async () => {
+    barkConfig = { serverUrl: "https://self-hosted.example.com", deviceKey: "device-key-1" };
+    const view = renderSettings("/settings?tab=push");
+
+    await waitFor(() => expect((screen.getByLabelText("Bark 服务器 URL") as HTMLInputElement).value).toBe("https://self-hosted.example.com"));
+    expect((screen.getByLabelText("Bark 设备 Key") as HTMLInputElement).value).toBe("device-key-1");
+
+    fireEvent.change(screen.getByLabelText("Bark 服务器 URL"), { target: { value: "https://new.example.com" } });
+    fireEvent.change(screen.getByLabelText("Bark 设备 Key"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      "/settings/bark",
+      expect.objectContaining({ method: "PUT" }),
+    ));
+    const saveCall = apiMock.mock.calls.find(([path, init]) => path === "/settings/bark" && init?.method === "PUT");
+    expect(JSON.parse(String(saveCall?.[1]?.body))).toEqual({ serverUrl: "https://new.example.com", deviceKey: "" });
+    expect(screen.getByText("Bark 配置已保存")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("sends a test push and shows the returned summary", async () => {
+    barkConfig = { serverUrl: "https://api.day.app", deviceKey: "device-key-1" };
+    const view = renderSettings("/settings?tab=push");
+    await waitFor(() => expect((screen.getByLabelText("Bark 设备 Key") as HTMLInputElement).value).toBe("device-key-1"));
+
+    fireEvent.click(screen.getByRole("button", { name: "发送测试推送" }));
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      "/settings/bark/test",
+      expect.objectContaining({ method: "POST" }),
+    ));
+    expect(await screen.findByText("测试推送成功")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("shows the failure summary when the test push reports an error", async () => {
+    barkConfig = { serverUrl: "https://api.day.app", deviceKey: "broken-key" };
+    const defaultApi = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((path: string, init?: RequestInit) => (
+      path === "/settings/bark/test" && init?.method === "POST"
+        ? { success: false, message: "测试推送失败：Bark 服务器返回 500" }
+        : defaultApi(path, init)
+    ));
+    const view = renderSettings("/settings?tab=push");
+    await waitFor(() => expect((screen.getByLabelText("Bark 设备 Key") as HTMLInputElement).value).toBe("broken-key"));
+
+    fireEvent.click(screen.getByRole("button", { name: "发送测试推送" }));
+    expect(await screen.findByText(/测试推送失败：Bark 服务器返回 500/)).toBeTruthy();
+    view.unmount();
+  });
+});
+
 describe("Excel template settings", () => {
   it("edits template metadata, custom-field columns, headers and order", async () => {
-    const view = renderPage();
+    const view = renderSettings("/settings?tab=transfer");
     await screen.findByRole("option", { name: "标准工作计划" });
 
     fireEvent.change(screen.getByLabelText("模板名称"), { target: { value: "现场模板" } });
@@ -546,7 +758,7 @@ describe("Excel template settings", () => {
   });
 
   it("saves the owner account as an ordered hidden export column without changing template defaults", async () => {
-    const view = renderPage();
+    const view = renderSettings("/settings?tab=transfer");
     await screen.findByRole("option", { name: "标准工作计划" });
     expect((screen.getByRole("checkbox", { name: "导出 工作负责人账号" }) as HTMLInputElement).checked).toBe(false);
 
@@ -573,7 +785,7 @@ describe("Excel template settings", () => {
 describe("owner account mapping settings", () => {
   it("shows coverage and lets an administrator create, edit and delete a mapping", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    const view = renderPage();
+    const view = renderSettings("/settings?tab=environment");
     expect(await screen.findByText("fengmingqian@zh.gd.csg.cn")).toBeTruthy();
     expect(screen.getByText("当前无对应选项")).toBeTruthy();
     expect(screen.getByRole("button", { name: "为 林雅茜 配置" })).toBeTruthy();
@@ -605,100 +817,5 @@ describe("owner account mapping settings", () => {
     expect(await screen.findByRole("button", { name: "为 林雅茜 配置" })).toBeTruthy();
     view.unmount();
     confirm.mockRestore();
-  });
-});
-
-describe("account access settings", () => {
-  it("creates a password editor that can use the Web login", async () => {
-    const view = renderAccountManagementPage();
-    expect(screen.getByRole("heading", { name: "账户管理" })).toBeTruthy();
-    await screen.findByText("lxj");
-
-    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "Web 编辑者" } });
-    fireEvent.change(screen.getByLabelText("初始密码"), { target: { value: "very-secure-editor-password" } });
-    fireEvent.click(screen.getByRole("button", { name: "创建编辑者" }));
-
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith("/users", expect.objectContaining({ method: "POST" })));
-    const createCall = apiMock.mock.calls.find(([path, init]) => path === "/users" && init?.method === "POST");
-    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
-      username: "Web 编辑者",
-      role: "editor",
-      loginMode: "password",
-      password: "very-secure-editor-password",
-    });
-    expect(await screen.findByText("Web 编辑者")).toBeTruthy();
-    expect(screen.getByText("编辑者 · 密码登录")).toBeTruthy();
-    expect(screen.queryByText("wp_one-time-secret")).toBeNull();
-    view.unmount();
-  });
-
-  it("creates a 90-day token-only editor and reveals the token once", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-08-09T04:00:00.000Z"));
-    const view = renderAccountManagementPage();
-    await screen.findByText("lxj");
-
-    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "测试" } });
-    fireEvent.change(screen.getByLabelText("登录方式"), { target: { value: "token" } });
-    fireEvent.change(screen.getByLabelText("初始 Token 名称"), { target: { value: "测试账户初始 Token" } });
-    fireEvent.click(screen.getByRole("button", { name: "创建编辑者" }));
-
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith("/users", expect.objectContaining({ method: "POST" })));
-    const createCall = apiMock.mock.calls.find(([path, init]) => path === "/users" && init?.method === "POST");
-    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
-      username: "测试",
-      role: "editor",
-      loginMode: "token",
-      tokenName: "测试账户初始 Token",
-      tokenExpiresAt: "2026-11-07T04:00:00.000Z",
-    });
-    expect(await screen.findByText("wp_one-time-secret")).toBeTruthy();
-    expect(screen.getByText("测试")).toBeTruthy();
-    view.unmount();
-    vi.useRealTimers();
-  });
-
-  it("disables, re-enables, issues and revokes editor tokens", async () => {
-    users.push({
-      id: "7a55df50-0af4-4f3b-ad63-b6e7db1aab32",
-      username: "测试",
-      role: "editor",
-      loginMode: "token",
-      disabledAt: null,
-      version: 1,
-      createdAt: "2026-08-09T00:00:00.000Z",
-      tokens: [{ id: "4f1adba1-e070-4d42-9099-b59fc5c897de", name: "初始 Token", expiresAt: "2026-11-07T04:00:00.000Z", lastUsedAt: null, createdAt: "2026-08-09T00:00:00.000Z", version: 1 }],
-    });
-    const view = renderAccountManagementPage();
-    await screen.findByText("测试");
-
-    fireEvent.click(screen.getByRole("button", { name: "停用 测试" }));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
-      "/users/7a55df50-0af4-4f3b-ad63-b6e7db1aab32",
-      expect.objectContaining({ method: "PATCH" }),
-    ));
-    expect(await screen.findByText("已停用")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "启用 测试" }));
-    await waitFor(() => expect(screen.getAllByText("已启用")).toHaveLength(2));
-
-    fireEvent.change(screen.getByLabelText("测试 新 Token 名称"), { target: { value: "轮换 Token" } });
-    fireEvent.click(screen.getByRole("button", { name: "为 测试 签发 Token" }));
-    expect(await screen.findByText("wp_replacement-secret")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "撤销 测试 的 轮换 Token" }));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
-      "/users/7a55df50-0af4-4f3b-ad63-b6e7db1aab32/tokens/56a9da65-b8ef-4f20-938b-889abdbb13ab?version=1",
-      expect.objectContaining({ method: "DELETE" }),
-    ));
-
-    fireEvent.change(screen.getByLabelText("测试 设置登录密码"), { target: { value: "converted-editor-password" } });
-    fireEvent.click(screen.getByRole("button", { name: "启用密码登录" }));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
-      "/users/7a55df50-0af4-4f3b-ad63-b6e7db1aab32/password",
-      expect.objectContaining({ method: "PUT" }),
-    ));
-    expect(await screen.findByText("编辑者 · 密码登录")).toBeTruthy();
-    view.unmount();
   });
 });

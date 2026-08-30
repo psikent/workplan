@@ -1,0 +1,5 @@
+# Bark push channel with push-log idempotency
+
+Work Plan Reminders were deliberately pure read-only derivation with zero storage. Adding daily Bark pushes (repeating the Work Order Reminder at 09:30 Asia/Shanghai until the day before the plan starts) requires knowing "already pushed today, for this plan" so that server restarts and the 60-second scheduler tick cannot double-push. We accept the one break of the zero-storage principle: a small push-log table keyed by (push date, reminder type, plan id), written only on successful delivery — a failed attempt leaves no row and is naturally retried on the next tick. We considered accepting duplicate pushes (no state) and a single-file `last_push_date` (cannot express per-plan same-day pushes); both were rejected.
+
+The Bark configuration (server URL + device key) is a single global setting maintained by the Administrator, not per-account: pushes are just another output channel of the globally stateless bell. It is stored in this environment's database only and is deliberately excluded from the Environment Configuration Package — it is an environment-bound credential, and exporting it would widen the leak surface.

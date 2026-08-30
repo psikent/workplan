@@ -14,7 +14,7 @@ const fileToBase64Mock = vi.hoisted(() => vi.fn());
 const drawerPropsMock = vi.hoisted(() => vi.fn());
 const ganttPropsMock = vi.hoisted(() => vi.fn());
 const sessionMock = vi.hoisted(() => ({
-  user: { username: "lxj", role: "admin" as "admin" | "editor", loginMode: "password" as "password" | "token" },
+  user: { username: "lxj", role: "admin" as "admin" | "editor" | "viewer", loginMode: "password" as "password" | "token" },
 }));
 
 vi.mock("../App", () => ({
@@ -209,6 +209,48 @@ describe("editor permissions", () => {
     fireEvent.click(screen.getByRole("button", { name: /导出 XLS/ }));
     expect(screen.queryByLabelText("另存为模板名称")).toBeNull();
     expect(screen.getByRole("button", { name: "导出" })).toBeTruthy();
+    view.unmount();
+  });
+});
+
+describe("viewer read-only workbench", () => {
+  it("hides write entries, shows the read-only hint and keeps search and export usable", async () => {
+    sessionMock.user = { username: "审计", role: "viewer", loginMode: "password" };
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    expect(screen.queryByRole("button", { name: "新建工作计划" })).toBeNull();
+    expect(screen.queryByText("导入 XLS")).toBeNull();
+    expect(screen.getByText(/只读账户/)).toBeTruthy();
+    expect(screen.getByText(/不能新建或修改工作计划/)).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "不匹配" } });
+    expect(await screen.findByText("这个时间范围还没有工作计划")).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "" } });
+    await screen.findByText("示例计划");
+
+    const exportButton = screen.getByRole("button", { name: "导出 XLS" }) as HTMLButtonElement;
+    await waitFor(() => expect(exportButton.disabled).toBe(false));
+    fireEvent.click(exportButton);
+    fireEvent.click(await screen.findByRole("button", { name: "导出" }));
+    await waitFor(() => expect(downloadWorkPlansXlsCustomMock).toHaveBeenCalled());
+
+    const ganttProps = ganttPropsMock.mock.calls.at(-1)![0] as { readOnly?: boolean };
+    expect(ganttProps.readOnly).toBe(true);
+    view.unmount();
+  });
+
+  it("opens the plan drawer in read-only mode without mutation callbacks", async () => {
+    sessionMock.user = { username: "审计", role: "viewer", loginMode: "password" };
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    fireEvent.click(screen.getByRole("button", { name: "示例计划" }));
+    await waitFor(() => expect(drawerPropsMock).toHaveBeenCalled());
+    const drawerProps = drawerPropsMock.mock.calls.at(-1)![0] as { readOnly?: boolean; onDuplicate?: unknown; onDelete?: unknown };
+    expect(drawerProps.readOnly).toBe(true);
+    expect(drawerProps.onDuplicate).toBeUndefined();
+    expect(drawerProps.onDelete).toBeUndefined();
     view.unmount();
   });
 });

@@ -1,6 +1,6 @@
 # 03 — 管理员账户管理界面支持 Viewer
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01, 02
 Spec: ../spec.md
 Scope: apps/web/src/pages/AccountManagementPage.tsx、apps/web/src/pages/AccountManagementPage.test.tsx、相关账户样式与类型
@@ -27,3 +27,12 @@ Scope: apps/web/src/pages/AccountManagementPage.tsx、apps/web/src/pages/Account
 
 ## Comments
 
+## Answer
+
+- `apps/web/src/pages/AccountManagementPage.tsx`：
+  - `ManagedUser.role` 改用共享 `UserRole`（含 `viewer`），`loginMode` 改用 `LoginMode`；新增 `roleLabels`/`accountTypeLabels` 映射与 `accountCardLabel`。
+  - 创建表单新增「账户类型」选择（编辑者/只读账户），默认编辑者；创建按钮与成功提示按所选类型输出「创建编辑者/创建只读账户」「编辑者已创建/只读账户已创建」；POST payload 携带所选 `role`，登录方式字段不变。
+  - 账户卡片标签：管理员/编辑者/只读账户 + 密码登录/仅 API Token；停用/启用、密码表单、Token 签发与撤销的可见性由 `user.role === "editor"` 改为 `user.role !== "admin"`，Viewer 与 Editor 获得相同生命周期控件；Administrator 卡片限制不变；未新增任何角色编辑/转换控件。
+  - 页面与区块说明文案更新为覆盖只读账户；本地 mutation 重命名 `setEditorPassword`→`setUserPassword`。
+- 测试：新建 `apps/web/src/pages/AccountManagementPage.test.tsx`（原 SettingsPage.test.tsx 中的 3 个账户用例迁入并保持通过），新增 4 个用例——密码 Viewer 创建 payload（`role: "viewer"`）与文案、Token-only Viewer payload + 一次性 Token + 生命周期控件存在、Viewer 停用/启用 payload、账户卡片无角色转换入口（卡片内无 combobox/转换按钮）；含编辑者默认值断言。`SettingsPage.test.tsx` 移除迁出的账户用例与辅助函数。
+- 验证：`corepack pnpm typecheck` 全绿；web 测试 206/206 通过。

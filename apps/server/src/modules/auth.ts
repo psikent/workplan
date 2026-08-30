@@ -1,5 +1,5 @@
 import argon2 from "argon2";
-import type { LoginMode, UserRole } from "@workplan/contracts";
+import type { LoginMode, ManageableUserRole, UserRole } from "@workplan/contracts";
 import type { DatabaseBundle } from "../db/index.js";
 import type { AppConfig } from "../config.js";
 import { AppError, versionConflict } from "../errors.js";
@@ -118,32 +118,32 @@ export class AuthService {
     return user ? this.toUser(user) : undefined;
   }
 
-  async createPasswordEditor(input: { username: string; password: string }) {
+  async createPasswordUser(input: { username: string; role: ManageableUserRole; password: string }) {
     const id = newId();
     const createdAt = nowIso();
     const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
     try {
       this.database.sqlite
-        .prepare("INSERT INTO users(id, username, password_hash, role, login_mode, disabled_at, version, created_at) VALUES (?, ?, ?, 'editor', 'password', NULL, 1, ?)")
-        .run(id, input.username, passwordHash, createdAt);
+        .prepare("INSERT INTO users(id, username, password_hash, role, login_mode, disabled_at, version, created_at) VALUES (?, ?, ?, ?, 'password', NULL, 1, ?)")
+        .run(id, input.username, passwordHash, input.role, createdAt);
     } catch (error) {
       if (String(error).includes("UNIQUE")) throw new AppError(409, "USERNAME_EXISTS", "用户名已经存在");
       throw error;
     }
     return {
-      user: { id, username: input.username, role: "editor" as const, loginMode: "password" as const, disabledAt: null, version: 1, createdAt },
+      user: { id, username: input.username, role: input.role, loginMode: "password" as const, disabledAt: null, version: 1, createdAt },
     };
   }
 
-  async createTokenOnlyEditor(input: { username: string; tokenName: string; tokenExpiresAt: string }) {
+  async createTokenOnlyUser(input: { username: string; role: ManageableUserRole; tokenName: string; tokenExpiresAt: string }) {
     const id = newId();
     const createdAt = nowIso();
     const passwordHash = await argon2.hash(randomToken(), { type: argon2.argon2id });
     const create = this.database.sqlite.transaction(() => {
       try {
         this.database.sqlite
-          .prepare("INSERT INTO users(id, username, password_hash, role, login_mode, disabled_at, version, created_at) VALUES (?, ?, ?, 'editor', 'token', NULL, 1, ?)")
-          .run(id, input.username, passwordHash, createdAt);
+          .prepare("INSERT INTO users(id, username, password_hash, role, login_mode, disabled_at, version, created_at) VALUES (?, ?, ?, ?, 'token', NULL, 1, ?)")
+          .run(id, input.username, passwordHash, input.role, createdAt);
       } catch (error) {
         if (String(error).includes("UNIQUE")) throw new AppError(409, "USERNAME_EXISTS", "用户名已经存在");
         throw error;
@@ -152,19 +152,19 @@ export class AuthService {
     });
     const accessToken = create();
     return {
-      user: { id, username: input.username, role: "editor" as const, loginMode: "token" as const, disabledAt: null, version: 1, createdAt },
+      user: { id, username: input.username, role: input.role, loginMode: "token" as const, disabledAt: null, version: 1, createdAt },
       accessToken,
     };
   }
 
-  async setEditorPassword(userId: string, password: string, version: number) {
+  async setUserPassword(userId: string, password: string, version: number) {
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
     const update = this.database.sqlite.transaction(() => {
       const user = this.database.sqlite
         .prepare("SELECT role FROM users WHERE id = ?")
         .get(userId) as { role: UserRole } | undefined;
       if (!user) throw new AppError(404, "NOT_FOUND", "用户不存在");
-      if (user.role !== "editor") throw new AppError(422, "ADMIN_PASSWORD_IMMUTABLE", "不能在这里修改管理员密码");
+      if (user.role === "admin") throw new AppError(422, "ADMIN_PASSWORD_IMMUTABLE", "不能在这里修改管理员密码");
 
       const result = this.database.sqlite
         .prepare("UPDATE users SET password_hash = ?, login_mode = 'password', version = version + 1 WHERE id = ? AND version = ?")
@@ -238,6 +238,20 @@ export class AuthService {
       return this.listUsers().find((item) => item.id === userId)!;
     });
     return update();
+  }
+
+  /** 硬删除非管理员账户（D1/D2）：sessions/access_tokens 由 ON DELETE CASCADE 级联撤销。 */
+  deleteManagedUser(userId: string, version: number, actorId: string): void {
+    const user = this.database.sqlite
+      .prepare("SELECT role FROM users WHERE id = ?")
+      .get(userId) as { role: UserRole } | undefined;
+    if (!user) throw new AppError(404, "NOT_FOUND", "用户不存在");
+    if (user.role === "admin") throw new AppError(400, "ACCOUNT_DELETE_FORBIDDEN", "管理员账户不能删除");
+    if (userId === actorId) throw new AppError(400, "ACCOUNT_DELETE_FORBIDDEN", "不能删除当前登录账户");
+    const result = this.database.sqlite
+      .prepare("DELETE FROM users WHERE id = ? AND version = ?")
+      .run(userId, version);
+    if (result.changes === 0) throw versionConflict();
   }
 
   logout(sessionId: string | undefined): void {

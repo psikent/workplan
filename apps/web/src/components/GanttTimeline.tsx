@@ -20,6 +20,7 @@ type Props = {
   onSelect: (plan: WorkPlan) => void;
   onReminderSelect?: (planId: string) => void;
   onCreateAt?: (date: Date) => void;
+  readOnly?: boolean;
 };
 
 type RangedGantt = {
@@ -39,7 +40,7 @@ const EMPTY_REMINDER_DAYS: ReminderDay[] = [];
 const EMPTY_TIMELINE_TASK_ID = "__empty-timeline__";
 const BAR_DOUBLE_CLICK_WINDOW_MS = 500;
 
-function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, view, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect, onReminderSelect, onCreateAt }: Props) {
+function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, view, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect, onReminderSelect, onCreateAt, readOnly = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
@@ -205,22 +206,25 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
       );
       cleanupPlanRowHover = synchronizePlanRowHover(containerRef.current, verticalScrollPeerRef?.current ?? null, plans);
       cleanupPopupFollow = configurePopupFollow(containerRef.current);
-      cleanupScheduleInteraction = configureScheduleInteraction(containerRef.current, {
-        columnWidth,
-        getPlanById: (planId) => plansByIdRef.current.get(planId),
-        onScheduleChange: (plan, startAt, endAt) => onScheduleChangeRef.current(plan, startAt, endAt),
-      });
-      cleanupDateCellAffordance = configureDateCellAffordance(containerRef.current, {
-         rangeStart: exactRangeStart,
-         dayCount,
-         columnWidth,
-       });
-       cleanupDateCellCreation = configureDateCellCreation(containerRef.current, {
-        rangeStart: exactRangeStart,
-        dayCount,
-        columnWidth,
-        onCreateAt: (date) => onCreateAtRef.current?.(date),
-      });
+      // 只读模式不挂接拖拽/缩放与双击新建，也不会渲染新建提示；选择与浮动提示保持可用。
+      if (!readOnly) {
+        cleanupScheduleInteraction = configureScheduleInteraction(containerRef.current, {
+          columnWidth,
+          getPlanById: (planId) => plansByIdRef.current.get(planId),
+          onScheduleChange: (plan, startAt, endAt) => onScheduleChangeRef.current(plan, startAt, endAt),
+        });
+        cleanupDateCellAffordance = configureDateCellAffordance(containerRef.current, {
+          rangeStart: exactRangeStart,
+          dayCount,
+          columnWidth,
+        });
+        cleanupDateCellCreation = configureDateCellCreation(containerRef.current, {
+          rangeStart: exactRangeStart,
+          dayCount,
+          columnWidth,
+          onCreateAt: (date) => onCreateAtRef.current?.(date),
+        });
+      }
       cleanupReminderBells = injectReminderBells(containerRef.current, reminders, {
         onSelectReminder: (planId) => {
           const plan = plansByIdRef.current.get(planId);
@@ -241,7 +245,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
        cleanupDateCellAffordance();
        cleanupReminderBells();
     };
-  }, [columnWidth, ganttInputSignature, remindersSignature, rangeEndTime, rangeStartTime, verticalScrollPeerRef]);
+  }, [columnWidth, ganttInputSignature, remindersSignature, rangeEndTime, rangeStartTime, readOnly, verticalScrollPeerRef]);
 
   return (
     <div className="gantt-shell">

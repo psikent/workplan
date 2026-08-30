@@ -1231,3 +1231,52 @@ describe("transfer compatibility", () => {
 function rowCount(context: TestContext, table: string): number {
   return (context.database.sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count;
 }
+
+describe("recurring series and monthly goal links", () => {
+  it("links a monthly goal only to the first unoccupied occurrence and re-links after the owner is deleted", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2027-08-08T00:00:00.000Z"));
+    const context = await createContext();
+    const goal = await createGoal(context, { title: "设备月度定检", year: 2027, month: 8 });
+
+    const created = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plan-series",
+      payload: {
+        workPlan: automaticPlanInput({
+          title: "主调设备月度定检",
+          startAt: "2027-08-09T02:00:00.000Z",
+          endAt: "2027-08-09T03:00:00.000Z",
+          monthlyGoalIds: [goal.id],
+        }),
+        recurrence: { frequency: "daily", interval: 1, count: 3, timeZone: "Asia/Shanghai" },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const result = created.json<{
+      generated: Array<{ id: string; version: number; monthlyGoalIds: string[] }>;
+      series: { id: string; version: number };
+    }>();
+    expect(result.generated).toHaveLength(3);
+    // 月目标是一对一关联：只有首个成员（未被占用）获得链接，后续成员不抢占。
+    expect(result.generated[0]!.monthlyGoalIds).toEqual([goal.id]);
+    expect(result.generated[1]!.monthlyGoalIds).toEqual([]);
+    expect(result.generated[2]!.monthlyGoalIds).toEqual([]);
+
+    // 删除首期 → 月目标释放（ON DELETE SET NULL）；更新系列触发重新生成 → 新首期自动重新关联。
+    const removed = await context.request({
+      method: "DELETE",
+      url: `/api/v1/work-plans/${result.generated[0]!.id}?version=${result.generated[0]!.version}`,
+    });
+    expect(removed.statusCode).toBe(204);
+    const rescheduled = await context.request({
+      method: "PATCH",
+      url: `/api/v1/work-plan-series/${result.series.id}`,
+      payload: { version: result.series.version },
+    });
+    expect(rescheduled.statusCode).toBe(200);
+    const plans = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
+    const firstAgain = plans.json<Array<{ startAt: string; monthlyGoalIds: string[] }>>()[0];
+    expect(firstAgain.monthlyGoalIds).toEqual([goal.id]);
+  });
+});

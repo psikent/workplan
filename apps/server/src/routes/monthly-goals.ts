@@ -27,7 +27,7 @@ export async function registerMonthlyGoalRoutes(app: FastifyInstance, monthlyGoa
 
   app.put(
     "/api/v1/monthly-goals/quick-edit",
-    { schema: { body: monthlyGoalQuickEditSchema } },
+    { schema: { body: monthlyGoalQuickEditSchema }, config: { authorization: "write" } },
     async (request) => monthlyGoals.quickEdit(monthlyGoalQuickEditSchema.parse(request.body)),
   );
 
@@ -39,7 +39,7 @@ export async function registerMonthlyGoalRoutes(app: FastifyInstance, monthlyGoa
 
   app.post(
     "/api/v1/monthly-goals",
-    { schema: { body: createMonthlyGoalSchema } },
+    { schema: { body: createMonthlyGoalSchema }, config: { authorization: "write" } },
     async (request, reply) => {
       const created = monthlyGoals.create(createMonthlyGoalSchema.parse(request.body));
       reply.code(201);
@@ -49,13 +49,13 @@ export async function registerMonthlyGoalRoutes(app: FastifyInstance, monthlyGoa
 
   app.patch(
     "/api/v1/monthly-goals/:id",
-    { schema: { params: idParams, body: updateMonthlyGoalSchema } },
+    { schema: { params: idParams, body: updateMonthlyGoalSchema }, config: { authorization: "write" } },
     async (request) => monthlyGoals.update((request.params as { id: string }).id, updateMonthlyGoalSchema.parse(request.body)),
   );
 
   app.delete(
     "/api/v1/monthly-goals/:id",
-    { schema: { params: idParams, querystring: deleteMonthlyGoalQuerySchema } },
+    { schema: { params: idParams, querystring: deleteMonthlyGoalQuerySchema }, config: { authorization: "write" } },
     async (request, reply) => {
       monthlyGoals.delete((request.params as { id: string }).id, (request.query as { version: number }).version);
       reply.code(204).send();

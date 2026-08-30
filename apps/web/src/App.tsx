@@ -1,23 +1,23 @@
 import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import type { LoginMode, UserRole } from "@workplan/contracts";
 import { api, setCsrfToken } from "./lib/api";
 import { applyTheme, useSystemTheme } from "./lib/theme";
 import AppShell from "./components/AppShell";
 import AuthPage from "./pages/AuthPage";
 import BrandMark from "./components/BrandMark";
+import { settingsPath } from "./pages/settings/tabs";
 
 const WorkPlansPage = lazy(() => import("./pages/WorkPlansPage"));
 const OverviewPage = lazy(() => import("./pages/OverviewPage"));
 const MonthlyGoalsPage = lazy(() => import("./pages/MonthlyGoalsPage"));
-const CustomFieldsPage = lazy(() => import("./pages/CustomFieldsPage"));
-const AccountManagementPage = lazy(() => import("./pages/AccountManagementPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 
 export type User = {
   id: string;
   username: string;
-  role: "admin" | "editor";
-  loginMode: "password" | "token";
+  role: UserRole;
+  loginMode: LoginMode;
   disabledAt: string | null;
   version: number;
   createdAt: string;
@@ -33,6 +33,24 @@ export function useSession() {
   const value = useContext(SessionContext);
   if (!value) throw new Error("Session context is unavailable");
   return value;
+}
+
+export function AuthenticatedRoutes({ role }: { role: UserRole }) {
+  const isAdmin = role === "admin";
+  return (
+    <Suspense fallback={<div className="page-loading">正在载入…</div>}>
+      <Routes>
+        <Route path="/" element={<Navigate to="/work-plans" replace />} />
+        <Route path="/overview" element={<OverviewPage />} />
+        <Route path="/work-plans" element={<WorkPlansPage />} />
+        <Route path="/monthly-goals" element={<MonthlyGoalsPage />} />
+        <Route path="/custom-fields" element={isAdmin ? <Navigate to={settingsPath("environment")} replace /> : <Navigate to="/work-plans" replace />} />
+        <Route path="/accounts" element={isAdmin ? <Navigate to={settingsPath("accounts")} replace /> : <Navigate to="/work-plans" replace />} />
+        <Route path="/settings" element={isAdmin ? <SettingsPage /> : <Navigate to="/work-plans" replace />} />
+        <Route path="*" element={<Navigate to="/work-plans" replace />} />
+      </Routes>
+    </Suspense>
+  );
 }
 
 type BootstrapState =
@@ -105,18 +123,7 @@ export default function App() {
     return (
       <SessionContext.Provider value={session}>
         <AppShell>
-          <Suspense fallback={<div className="page-loading">正在载入…</div>}>
-            <Routes>
-              <Route path="/" element={<Navigate to="/work-plans" replace />} />
-              <Route path="/overview" element={<OverviewPage />} />
-              <Route path="/work-plans" element={<WorkPlansPage />} />
-              <Route path="/monthly-goals" element={<MonthlyGoalsPage />} />
-              <Route path="/custom-fields" element={state.user.role === "admin" ? <CustomFieldsPage /> : <Navigate to="/work-plans" replace />} />
-              <Route path="/accounts" element={state.user.role === "admin" ? <AccountManagementPage /> : <Navigate to="/work-plans" replace />} />
-              <Route path="/settings" element={state.user.role === "admin" ? <SettingsPage /> : <Navigate to="/work-plans" replace />} />
-              <Route path="*" element={<Navigate to="/work-plans" replace />} />
-            </Routes>
-          </Suspense>
+          <AuthenticatedRoutes role={state.user.role} />
         </AppShell>
       </SessionContext.Provider>
     );

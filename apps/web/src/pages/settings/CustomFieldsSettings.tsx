@@ -5,8 +5,8 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import type { CustomFieldDefinition, CustomFieldType } from "@workplan/contracts";
 import { Archive, ArrowDown, ArrowUp, GripVertical, Pencil, Plus, RotateCcw, SlidersHorizontal, X } from "lucide-react";
-import { useToast } from "../components/ToastProvider";
-import { api, jsonBody } from "../lib/api";
+import { useToast } from "../../components/ToastProvider";
+import { api, jsonBody } from "../../lib/api";
 
 const typeLabels: Record<CustomFieldType, string> = {
   short_text: "短文本",
@@ -44,7 +44,7 @@ function emptyDraft(): FieldDraft {
   return { key: "", label: "", description: "", type: "short_text", required: false, defaultValue: "", options: [] };
 }
 
-export default function CustomFieldsPage() {
+export default function CustomFieldsSettings() {
   const queryClient = useQueryClient();
   const { showSuccess } = useToast();
   const [editingField, setEditingField] = useState<CustomFieldDefinition | null | "new">(null);
@@ -203,14 +203,12 @@ export default function CustomFieldsPage() {
   const saving = createMutation.isPending || editMutation.isPending;
 
   return (
-    <section className="content-page">
-      <header className="page-header">
-        <div><h1>自定义字段</h1><p>为所有工作计划扩展统一、可查询的属性。</p></div>
-        <button className="primary-button" type="button" onClick={openCreate}><Plus />新建字段</button>
-      </header>
-
+    <>
       <div className="settings-panel">
-        <div className="settings-panel-header"><div><SlidersHorizontal /><strong>字段定义</strong></div><span>{reorderMutation.isPending ? "正在保存顺序…" : `${fields.data?.length ?? 0} 个字段`}</span></div>
+        <div className="settings-panel-header">
+          <div><SlidersHorizontal /><strong>字段定义</strong></div>
+          <span className="settings-panel-header-actions"><span>{reorderMutation.isPending ? "正在保存顺序…" : `${fields.data?.length ?? 0} 个字段`}</span><button className="primary-button" type="button" onClick={openCreate}><Plus />新建字段</button></span>
+        </div>
         <div className="fields-table table-head"><span /><span>字段名称</span><span>稳定键</span><span>字段类型</span><span>必填</span><span>默认值</span><span /></div>
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext items={(fields.data ?? []).map((field) => field.id)} strategy={verticalListSortingStrategy}>
@@ -249,7 +247,7 @@ export default function CustomFieldsPage() {
           </form>
         </div>
       ) : null}
-    </section>
+    </>
   );
 }
 

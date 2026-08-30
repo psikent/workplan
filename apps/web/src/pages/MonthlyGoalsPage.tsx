@@ -14,7 +14,9 @@ import { Archive, Pencil, Plus, Repeat2, RotateCcw, Search, Table2, Target, Tras
 import MonthlyGoalQuickEditDialog from "../components/MonthlyGoalQuickEditDialog";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
+import { useSession } from "../App";
 import { type ApiError, api, jsonBody } from "../lib/api";
+import { canWriteBusinessData } from "../lib/permissions";
 import { rangeOverlapsMonth } from "../lib/period";
 
 type SeriesFrequency = MonthlyGoalSeriesFrequency | "";
@@ -72,6 +74,8 @@ function seriesBadgeTitle(series: MonthlyGoalSeries | undefined): string {
 export default function MonthlyGoalsPage() {
   const queryClient = useQueryClient();
   const { showSuccess } = useToast();
+  const { user } = useSession();
+  const canWrite = canWriteBusinessData(user.role);
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -304,11 +308,12 @@ export default function MonthlyGoalsPage() {
       <header className="page-header">
         <div><h1>月目标</h1><p>每月为工作安排一组随月份变化的目标，并自动跟随关联计划完成。</p></div>
         <div className="header-actions">
-          <button className="secondary-button" type="button" onClick={() => setQuickEditing(true)} aria-label="快速编辑月目标"><Table2 />快速编辑</button>
+          {canWrite ? <button className="secondary-button" type="button" onClick={() => setQuickEditing(true)} aria-label="快速编辑月目标"><Table2 />快速编辑</button> : null}
           <label className={`secondary-button compact-check ${showArchived ? "selected" : ""}`}><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /><span>显示已归档</span></label>
-          <button className="primary-button" type="button" onClick={openCreate}><Plus />新建月目标</button>
+          {canWrite ? <button className="primary-button" type="button" onClick={openCreate}><Plus />新建月目标</button> : null}
         </div>
       </header>
+      {canWrite ? null : <p className="read-only-hint" role="note">当前账户为只读账户：可查看月目标及其关联计划，不能新建或修改目标。</p>}
 
       <div className="month-toolbar">
         <label className="month-selector"><span>年份</span><select value={year} onChange={(event) => setYear(Number(event.target.value))}>{yearRange.map((option) => <option key={option} value={option}>{option} 年</option>)}</select></label>
@@ -329,18 +334,18 @@ export default function MonthlyGoalsPage() {
             ) : <span className="goal-unlinked">未关联</span>}
             {goal.status ? <StatusBadge status={goal.status} /> : <span className="goal-unlinked">未关联</span>}
             <div className="field-row-actions">
-              {goal.seriesId ? (
+              {canWrite && goal.seriesId ? (
                 <button className="icon-button" type="button" title={seriesBadgeTitle(seriesById.get(goal.seriesId))} aria-label={`管理系列 ${goal.title}`} disabled={saving} onClick={() => setManagingSeries({ seriesId: goal.seriesId!, keepGoalId: goal.id })}><Repeat2 /></button>
               ) : null}
-              <button className="icon-button" type="button" title="关联计划" aria-label={`关联计划 ${goal.title}`} disabled={saving} onClick={() => { setLinkingGoal(goal); setPlanSearch(""); }}><Target /></button>
-              <button className="icon-button" type="button" title="编辑" aria-label={`编辑 ${goal.title}`} disabled={saving} onClick={() => openEdit(goal)}><Pencil /></button>
-              <button className="icon-button" type="button" title={goal.archivedAt ? "恢复" : "归档"} aria-label={goal.archivedAt ? `恢复 ${goal.title}` : `归档 ${goal.title}`} disabled={saving} onClick={() => handleArchive(goal)}>{goal.archivedAt ? <RotateCcw /> : <Archive />}</button>
-              <button className="icon-button" type="button" title="删除" aria-label={`删除 ${goal.title}`} disabled={saving} onClick={() => handleDelete(goal)}><Trash2 /></button>
+              {canWrite ? <button className="icon-button" type="button" title="关联计划" aria-label={`关联计划 ${goal.title}`} disabled={saving} onClick={() => { setLinkingGoal(goal); setPlanSearch(""); }}><Target /></button> : null}
+              {canWrite ? <button className="icon-button" type="button" title="编辑" aria-label={`编辑 ${goal.title}`} disabled={saving} onClick={() => openEdit(goal)}><Pencil /></button> : null}
+              {canWrite ? <button className="icon-button" type="button" title={goal.archivedAt ? "恢复" : "归档"} aria-label={goal.archivedAt ? `恢复 ${goal.title}` : `归档 ${goal.title}`} disabled={saving} onClick={() => handleArchive(goal)}>{goal.archivedAt ? <RotateCcw /> : <Archive />}</button> : null}
+              {canWrite ? <button className="icon-button" type="button" title="删除" aria-label={`删除 ${goal.title}`} disabled={saving} onClick={() => handleDelete(goal)}><Trash2 /></button> : null}
             </div>
           </div>
         ))}
         {!goalsQuery.isLoading && visibleGoals.length === 0 ? (
-          <div className="empty-state"><Target /><h3>这个月还没有配置月目标</h3><p>点击「新建月目标」为 {year} 年 {month} 月安排一份工作目标。</p></div>
+          <div className="empty-state"><Target /><h3>这个月还没有配置月目标</h3><p>{canWrite ? `点击「新建月目标」为 ${year} 年 ${month} 月安排一份工作目标。` : `只读账户可查看 ${year} 年 ${month} 月已配置的目标。`}</p></div>
         ) : null}
       </div>
 

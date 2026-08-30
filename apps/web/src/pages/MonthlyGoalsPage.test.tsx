@@ -9,6 +9,13 @@ import { ToastProvider } from "../components/ToastProvider";
 import MonthlyGoalsPage from "./MonthlyGoalsPage";
 
 const apiMock = vi.hoisted(() => vi.fn());
+const sessionMock = vi.hoisted(() => ({
+  user: { username: "lxj", role: "admin" as "admin" | "editor" | "viewer", loginMode: "password" as "password" | "token" },
+}));
+
+vi.mock("../App", () => ({
+  useSession: () => ({ user: sessionMock.user, signOut: vi.fn() }),
+}));
 
 vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),
@@ -252,6 +259,7 @@ function mockStatefulApi(
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 7, 22, 9));
+  sessionMock.user = { username: "lxj", role: "admin", loginMode: "password" };
   apiMock.mockClear();
   mockStatefulApi();
 });
@@ -1085,6 +1093,29 @@ describe("MonthlyGoalsPage", () => {
     expect(confirmationInput).toHaveValue("");
     expect(within(dissolveDialog).getByRole("button", { name: "解散并删除 0 个目标" })).toBeDisabled();
     await waitFor(() => expect(previewRequests).toBeGreaterThanOrEqual(2));
+    view.unmount();
+  });
+});
+
+describe("viewer read-only monthly goals", () => {
+  it("keeps browsing and filtering while hiding every write entry", async () => {
+    sessionMock.user = { username: "审计", role: "viewer", loginMode: "password" };
+    const view = renderPage();
+    await screen.findByText("官网上线计划");
+
+    expect(screen.queryByRole("button", { name: "快速编辑月目标" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "新建月目标" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /编辑 官网上线计划/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /关联计划 官网上线计划/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /归档 官网上线计划/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /删除 官网上线计划/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /管理系列/ })).toBeNull();
+    expect(screen.getByText(/只读账户/)).toBeTruthy();
+    expect(screen.getByText(/不能新建或修改目标/)).toBeTruthy();
+
+    // 查询能力保留：显示已归档、月份切换仍然可用
+    fireEvent.click(screen.getByLabelText("显示已归档"));
+    await screen.findByText("已归档");
     view.unmount();
   });
 });

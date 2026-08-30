@@ -194,10 +194,14 @@ export class RecurrenceService {
         if (until && instant.epochNanoseconds > until.epochNanoseconds) break;
         if (instant.epochNanoseconds >= currentInstant.subtract({ minutes: 1 }).epochNanoseconds) {
           const endInstant = instant.add({ milliseconds: durationMilliseconds });
+          // 月目标是一对一关联：模板中的目标被首个成员占用后，后续成员不抢占；
+          // 占用解除（计划删除 → work_plan_id 置空）后，下一次重新生成会自动重连。
+          const monthlyGoalIds = this.unoccupiedMonthlyGoalIds(template.monthlyGoalIds ?? []);
           const occurrenceInput: CreateWorkPlan = {
             ...template,
             startAt: instant.toString(),
             endAt: endInstant.toString(),
+            monthlyGoalIds,
           };
           const created = this.workPlans.createOccurrence(occurrenceInput, id, instant.toString());
           if (created) generated.push(created);
@@ -210,6 +214,16 @@ export class RecurrenceService {
       .prepare("UPDATE work_plan_series SET generated_through = ?, updated_at = ? WHERE id = ?")
       .run(horizon.toString(), nowIso(), id);
     return generated;
+  }
+
+  /** 过滤已被任何计划占用的月目标（同系列前期成员或外部计划均视为占用）。 */
+  private unoccupiedMonthlyGoalIds(goalIds: string[]): string[] {
+    if (goalIds.length === 0) return goalIds;
+    const occupied = this.database.sqlite
+      .prepare(`SELECT id FROM monthly_goals WHERE work_plan_id IS NOT NULL AND id IN (${goalIds.map(() => "?").join(",")})`)
+      .all(...goalIds) as Array<{ id: string }>;
+    const occupiedIds = new Set(occupied.map((row) => row.id));
+    return goalIds.filter((id) => !occupiedIds.has(id));
   }
 
   private serialize(row: SeriesRow) {

@@ -1,6 +1,6 @@
 # 04 — Viewer 只读工作台
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01, 02
 Spec: ../spec.md
 Scope: apps/web/src/App.tsx、apps/web/src/components/AppShell.tsx、apps/web/src/pages/WorkPlansPage.tsx、apps/web/src/pages/MonthlyGoalsPage.tsx、WorkPlanDrawer/GanttTimeline 及相关测试
@@ -29,3 +29,13 @@ Scope: apps/web/src/App.tsx、apps/web/src/components/AppShell.tsx、apps/web/sr
 
 ## Comments
 
+## Answer
+
+- 新增 `apps/web/src/lib/permissions.ts`：`canWriteBusinessData(role)` 统一派生可写状态（Administrator/Editor 可写、Viewer 只读）与 `roleLabel(role)`，各页面不再自行猜测。
+- `App.tsx`：`User` 类型改用共享 `UserRole`/`LoginMode`；非管理员直接访问 `/custom-fields`、`/accounts`、`/settings` 仍重定向到工作计划页（行为不变）。
+- `AppShell.tsx`：侧栏账户信息用 `roleLabel` 显示「管理员/编辑者/只读账户」；Viewer 导航仅保留工作台/工作计划/月目标（adminOnly 过滤不变）。
+- `WorkPlansPage.tsx`：隐藏「新建工作计划」；新增轻量只读提示（`.read-only-hint`，非全局横幅）；GanttTimeline/WorkPlanDrawer 接收 `readOnly`；`onDuplicate`/`onDelete` 对 Viewer 不再传入；`handleScheduleChange`/`handleCreateAt`/`onSave` 内部再次判写（防御性）；列表、搜索、筛选、分页、详情与全部导出（JSON/模板 XLS/自定义 XLS）保留。
+- `WorkPlanDrawer.tsx`：新增 `readOnly` 只读呈现——标题改为「工作计划详情」，字段/状态/时间/自定义字段以只读控件展示，计划周期只显示静态摘要，月目标复选框禁用，不渲染保存/删除/复制按钮；表单 onSubmit 恒先 `preventDefault`，只读时绝不调用保存，关闭/交互不会隐式提交。
+- `GanttTimeline.tsx`：新增 `readOnly`；只读时不挂接拖拽/缩放（configureScheduleInteraction）、双击新建（configureDateCellCreation）与新建光标提示（configureDateCellAffordance）；选择（on_click）、浮动提示、提醒铃铛保留。
+- `MonthlyGoalsPage.tsx`：隐藏快速编辑、新建月目标及每行的系列管理/关联/编辑/归档/删除入口；加入月目标只读提示；月份切换、显示已归档、列表与关联计划展示保留；空状态文案区分只读。
+- 测试：WorkPlansPage 新增 viewer 用例（写入口缺失+提示+搜索/导出可用+readOnly 透传、抽屉只读且无 mutation 回调）；MonthlyGoalsPage 补 useSession mock 并新增 viewer 无写入口用例；GanttTimeline 测试 mock 支持注入最小甘特 DOM，新增「只读不触发创建/拖拽 mutation、选择仍可用」「可写时双击/拖拽仍触发回调」双向回归。全仓 web 测试 212/212、server 110/110，typecheck 与 build 全绿。

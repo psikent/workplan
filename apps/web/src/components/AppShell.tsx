@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CalendarRange, ChevronLeft, ChevronRight, LayoutDashboard, LogOut, MonitorCog, Moon, Settings, SlidersHorizontal, Sun, Target, UsersRound } from "lucide-react";
+import { CalendarRange, ChevronLeft, ChevronRight, LayoutDashboard, LogOut, MonitorCog, Moon, Settings, Sun, Target } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useSession } from "../App";
+import { roleLabel } from "../lib/permissions";
 import { applyTheme, useSystemTheme, type Theme } from "../lib/theme";
 import BrandMark from "./BrandMark";
 
@@ -9,8 +10,6 @@ const navItems = [
   { to: "/overview", label: "工作台", icon: LayoutDashboard, end: true, adminOnly: false },
   { to: "/work-plans", label: "工作计划", icon: CalendarRange, end: true, adminOnly: false },
   { to: "/monthly-goals", label: "月目标", icon: Target, end: true, adminOnly: false },
-  { to: "/custom-fields", label: "自定义字段", icon: SlidersHorizontal, end: false, adminOnly: true },
-  { to: "/accounts", label: "账户管理", icon: UsersRound, end: true, adminOnly: true },
   { to: "/settings", label: "设置", icon: Settings, end: false, adminOnly: true },
 ] as const;
 
@@ -88,7 +87,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="sidebar-footer">
           <div className="user-chip" title={user.username}>{user.username.slice(0, 1).toUpperCase()}</div>
-          <div className="user-meta"><strong>{user.username}</strong><span>{user.role === "admin" ? "管理员" : "编辑者"}</span></div>
+          <div className="user-meta"><strong>{user.username}</strong><span>{roleLabel(user.role)}</span></div>
           <button
             className="icon-button theme-toggle"
             type="button"

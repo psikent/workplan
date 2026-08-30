@@ -30,7 +30,7 @@ export async function registerMonthlyGoalSeriesRoutes(app: FastifyInstance, seri
 
   app.post(
     "/api/v1/monthly-goal-series",
-    { schema: { body: createMonthlyGoalSeriesSchema } },
+    { schema: { body: createMonthlyGoalSeriesSchema }, config: { authorization: "write" } },
     async (request, reply) => {
       const created = series.create(createMonthlyGoalSeriesSchema.parse(request.body));
       reply.code(201);
@@ -40,13 +40,13 @@ export async function registerMonthlyGoalSeriesRoutes(app: FastifyInstance, seri
 
   app.patch(
     "/api/v1/monthly-goal-series/:id",
-    { schema: { params: idParams, body: updateMonthlyGoalSeriesSchema } },
+    { schema: { params: idParams, body: updateMonthlyGoalSeriesSchema }, config: { authorization: "write" } },
     async (request) => series.update((request.params as { id: string }).id, updateMonthlyGoalSeriesSchema.parse(request.body)),
   );
 
   app.delete(
     "/api/v1/monthly-goal-series/:id",
-    { schema: { params: idParams, querystring: z.object({ version: z.coerce.number().int().positive() }) } },
+    { schema: { params: idParams, querystring: z.object({ version: z.coerce.number().int().positive() }) }, config: { authorization: "write" } },
     async (request, reply) => {
       series.stop((request.params as { id: string }).id, (request.query as { version: number }).version);
       reply.code(204).send();
@@ -55,7 +55,7 @@ export async function registerMonthlyGoalSeriesRoutes(app: FastifyInstance, seri
 
   app.post(
     "/api/v1/monthly-goal-series/:id/dissolve",
-    { schema: { params: idParams, body: dissolveMonthlyGoalSeriesSchema } },
+    { schema: { params: idParams, body: dissolveMonthlyGoalSeriesSchema }, config: { authorization: "write" } },
     async (request) => {
       const input = dissolveMonthlyGoalSeriesSchema.parse(request.body);
       return series.dissolve((request.params as { id: string }).id, input);

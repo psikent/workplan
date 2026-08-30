@@ -19,10 +19,11 @@ type Props = {
   ownerAccountMappingsError?: boolean;
   open: boolean;
   saving: boolean;
+  readOnly?: boolean;
   onClose: () => void;
   onSave: (input: CreateWorkPlan & { version?: number }, recurrence: RecurrenceInput) => Promise<void>;
-  onDuplicate?: (plan: WorkPlan) => Promise<void>;
-  onDelete?: (plan: WorkPlan) => Promise<void>;
+  onDuplicate?: ((plan: WorkPlan) => Promise<void>) | undefined;
+  onDelete?: ((plan: WorkPlan) => Promise<void>) | undefined;
 };
 
 function defaultTimes(date = new Date()) {
@@ -47,7 +48,7 @@ function isValidPlanRange(startAt: string, endAt: string): boolean {
   return Number.isFinite(startTimestamp) && Number.isFinite(endTimestamp) && endTimestamp > startTimestamp;
 }
 
-export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = [], monthlyGoalsLoading = false, initialDate = null, ownerAccountMappings = [], ownerAccountMappingsLoading = false, ownerAccountMappingsError = false, open, saving, onClose, onSave, onDuplicate, onDelete }: Props) {
+export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = [], monthlyGoalsLoading = false, initialDate = null, ownerAccountMappings = [], ownerAccountMappingsLoading = false, ownerAccountMappingsError = false, open, saving, readOnly = false, onClose, onSave, onDuplicate, onDelete }: Props) {
   const defaults = useMemo(() => defaultTimes(initialDate ?? undefined), [initialDate, open]);
   const sortedMonthlyGoals = useMemo(
     () => [...monthlyGoals].sort((left, right) => right.year - left.year || right.month - left.month || left.createdAt.localeCompare(right.createdAt)),
@@ -168,6 +169,11 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
 
   const cycleLoading = Boolean(plan?.seriesId && series === undefined);
   const cycleUnits = { daily: "天", weekly: "周", monthly: "个月" } as const;
+  const readOnlyCycleSummary = cycleLoading
+    ? "正在读取当前计划周期…"
+    : recurrence === "none"
+      ? "当前计划仅执行一次。"
+      : `每 ${interval} ${cycleUnits[recurrence]}重复。`;
   const cycleSummary = cycleLoading
     ? "正在读取当前计划周期…"
     : recurrence === "none"
@@ -189,27 +195,46 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   return (
     <>
       <button className="drawer-backdrop" type="button" aria-label="关闭编辑抽屉" onClick={onClose} />
-      <aside className="editor-drawer" aria-label={plan ? "编辑工作计划" : "新建工作计划"}>
+      <aside className="editor-drawer" aria-label={readOnly ? "查看工作计划" : plan ? "编辑工作计划" : "新建工作计划"}>
         <header className="drawer-header">
-          <div><h2>{plan ? "编辑工作计划" : "新建工作计划"}</h2><span>{plan?.isException ? "此重复实例已单独调整" : "填写排程与跟进信息"}</span></div>
+          <div><h2>{readOnly ? "工作计划详情" : plan ? "编辑工作计划" : "新建工作计划"}</h2><span>{readOnly ? "只读账户仅可查看计划信息与关联数据" : plan?.isException ? "此重复实例已单独调整" : "填写排程与跟进信息"}</span></div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="关闭"><X /></button>
         </header>
-        <form className="drawer-form" onSubmit={submit}>
-          <label className="field full"><span>工作内容 <b>*</b></span><input value={title} onChange={(event) => setTitle(event.target.value)} required maxLength={200} autoFocus /></label>
-          <label className="field full"><span>说明</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={4_000} /></label>
+        <form
+          className="drawer-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (readOnly) return;
+            void submit(event);
+          }}
+        >
+          <label className="field full"><span>工作内容 <b>*</b></span><input value={title} onChange={(event) => setTitle(event.target.value)} required maxLength={200} autoFocus readOnly={readOnly} /></label>
+          <label className="field full"><span>说明</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={4_000} readOnly={readOnly} /></label>
           <div className="status-field full">
-            <label className="field"><span>状态 <b>*</b> <small>{statusMode === "automatic" ? "自动" : "手动"}</small></span><select value={status} onChange={(event) => { setStatus(event.target.value as WorkPlanStatus); setStatusMode("manual"); }}>{Object.entries(statusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-            <div className="status-mode-help"><small>{statusMode === "automatic" ? "根据开始和结束时间自动更新；选择状态后将切换为手动。" : "当前状态由你手动指定，不再随时间自动变化。"}</small>{statusMode === "manual" ? <button className="text-button" type="button" onClick={() => setStatusMode("automatic")}>恢复自动</button> : null}</div>
+            {readOnly ? (
+              <label className="field"><span>状态 <small>{statusMode === "automatic" ? "自动" : "手动"}</small></span><input value={statusLabels[status]} readOnly aria-label="状态" /></label>
+            ) : (
+              <>
+                <label className="field"><span>状态 <b>*</b> <small>{statusMode === "automatic" ? "自动" : "手动"}</small></span><select value={status} onChange={(event) => { setStatus(event.target.value as WorkPlanStatus); setStatusMode("manual"); }}>{Object.entries(statusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+                <div className="status-mode-help"><small>{statusMode === "automatic" ? "根据开始和结束时间自动更新；选择状态后将切换为手动。" : "当前状态由你手动指定，不再随时间自动变化。"}</small>{statusMode === "manual" ? <button className="text-button" type="button" onClick={() => setStatusMode("automatic")}>恢复自动</button> : null}</div>
+              </>
+            )}
           </div>
-          <label className="field"><span>开始时间 <b>*</b></span><input type="datetime-local" value={startAt} onChange={(event) => updatePlanRange("startAt", event.target.value)} required /></label>
-          <label className="field"><span>结束时间 <b>*</b></span><input type="datetime-local" value={endAt} onChange={(event) => updatePlanRange("endAt", event.target.value)} required /></label>
+          <label className="field"><span>开始时间 <b>*</b></span><input type="datetime-local" value={startAt} onChange={(event) => updatePlanRange("startAt", event.target.value)} required readOnly={readOnly} /></label>
+          <label className="field"><span>结束时间 <b>*</b></span><input type="datetime-local" value={endAt} onChange={(event) => updatePlanRange("endAt", event.target.value)} required readOnly={readOnly} /></label>
           <fieldset className="form-section recurrence-section full">
             <legend><Repeat2 />计划周期</legend>
-            <div className="field-grid compact">
-              <label className="field"><span>周期</span><select value={recurrence} disabled={cycleLoading} onChange={(event) => setRecurrence(event.target.value as typeof recurrence)}><option value="none">不重复</option><option value="daily">每天</option><option value="weekly">每周</option><option value="monthly">每月</option></select></label>
-              <label className="field"><span>间隔</span><input type="number" min={1} max={365} value={interval} required={recurrence !== "none"} disabled={cycleLoading || recurrence === "none"} onChange={(event) => setIntervalValue(Number(event.target.value))} /></label>
-            </div>
-            <p className="recurrence-summary">{cycleSummary}</p>
+            {readOnly ? (
+              <p className="recurrence-summary">{readOnlyCycleSummary}</p>
+            ) : (
+              <>
+                <div className="field-grid compact">
+                  <label className="field"><span>周期</span><select value={recurrence} disabled={cycleLoading} onChange={(event) => setRecurrence(event.target.value as typeof recurrence)}><option value="none">不重复</option><option value="daily">每天</option><option value="weekly">每周</option><option value="monthly">每月</option></select></label>
+                  <label className="field"><span>间隔</span><input type="number" min={1} max={365} value={interval} required={recurrence !== "none"} disabled={cycleLoading || recurrence === "none"} onChange={(event) => setIntervalValue(Number(event.target.value))} /></label>
+                </div>
+                <p className="recurrence-summary">{cycleSummary}</p>
+              </>
+            )}
           </fieldset>
 
           <fieldset className="form-section full">
@@ -226,7 +251,7 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={occupied}
+                          disabled={readOnly || occupied}
                           onChange={(event) => setMonthlyGoalIds((current) => event.target.checked ? [...current, goal.id] : current.filter((id) => id !== goal.id))}
                         />
                         <span>{label}</span>
@@ -242,7 +267,7 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
               <legend><CalendarClock />自定义字段</legend>
               <div className="custom-field-list">{activeFields.map((field) => (
                 <Fragment key={field.id}>
-                  <CustomFieldControl field={field} value={customValues[field.key]} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
+                  <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
                   {field.key === "owner" ? <label className="field derived-field"><span>工作负责人账号</span><input value={ownerAccountDisplay} readOnly aria-readonly="true" /></label> : null}
                 </Fragment>
               ))}</div>
@@ -250,11 +275,15 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
           ) : null}
           {error ? <div className="form-error full" role="alert">{error}</div> : null}
           <footer className="drawer-actions full">
-            <div className="drawer-secondary-actions">
-              {plan && onDelete ? <button className="danger-button" type="button" disabled={saving} onClick={() => void onDelete(plan)}><Archive />删除</button> : null}
-              {plan && onDuplicate ? <button className="secondary-button" type="button" disabled={saving} onClick={() => void duplicate()}><Copy />复制</button> : null}
-            </div>
-            <div><button className="secondary-button" type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</button></div>
+            {readOnly ? (
+              <div className="drawer-secondary-actions" />
+            ) : (
+              <div className="drawer-secondary-actions">
+                {plan && onDelete ? <button className="danger-button" type="button" disabled={saving} onClick={() => void onDelete(plan)}><Archive />删除</button> : null}
+                {plan && onDuplicate ? <button className="secondary-button" type="button" disabled={saving} onClick={() => void duplicate()}><Copy />复制</button> : null}
+              </div>
+            )}
+            <div><button className="secondary-button" type="button" onClick={onClose}>{readOnly ? "关闭" : "取消"}</button>{readOnly ? null : <button className="primary-button" type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</button>}</div>
           </footer>
         </form>
       </aside>
@@ -262,13 +291,13 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   );
 }
 
-function CustomFieldControl({ field, value, onChange }: { field: CustomFieldDefinition; value: unknown; onChange: (value: unknown) => void }) {
+function CustomFieldControl({ field, value, onChange, disabled = false }: { field: CustomFieldDefinition; value: unknown; onChange: (value: unknown) => void; disabled?: boolean }) {
   const label = <span>{field.label}{field.required ? <b> *</b> : null}</span>;
-  if (field.type === "boolean") return <label className="field toggle-field">{label}<button className={`switch ${value ? "on" : ""}`} type="button" onClick={() => onChange(!value)}><i /></button></label>;
-  if (field.type === "single_select") return <label className="field">{label}<select value={String(value ?? "")} onChange={(event) => onChange(event.target.value || null)} required={field.required}><option value="">请选择</option>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select></label>;
-  if (field.type === "multi_select") return <label className="field">{label}<select multiple value={Array.isArray(value) ? value as string[] : []} onChange={(event) => onChange(Array.from(event.target.selectedOptions, (option) => option.value))}>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select></label>;
-  if (field.type === "long_text") return <label className="field">{label}<textarea rows={2} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} required={field.required} /></label>;
+  if (field.type === "boolean") return <label className="field toggle-field">{label}<button className={`switch ${value ? "on" : ""}`} type="button" disabled={disabled} onClick={() => onChange(!value)}><i /></button></label>;
+  if (field.type === "single_select") return <label className="field">{label}<select value={String(value ?? "")} disabled={disabled} onChange={(event) => onChange(event.target.value || null)} required={field.required}><option value="">请选择</option>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select></label>;
+  if (field.type === "multi_select") return <label className="field">{label}<select multiple disabled={disabled} value={Array.isArray(value) ? value as string[] : []} onChange={(event) => onChange(Array.from(event.target.selectedOptions, (option) => option.value))}>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select></label>;
+  if (field.type === "long_text") return <label className="field">{label}<textarea rows={2} value={String(value ?? "")} disabled={disabled} onChange={(event) => onChange(event.target.value)} required={field.required} /></label>;
   const inputType = field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "datetime" ? "datetime-local" : field.type === "url" ? "url" : "text";
   const shownValue = field.type === "datetime" && typeof value === "string" ? toDateTimeLocal(value) : value == null ? "" : String(value);
-  return <label className="field">{label}<input type={inputType} value={shownValue} onChange={(event) => onChange(field.type === "number" ? (event.target.value === "" ? null : Number(event.target.value)) : field.type === "datetime" && event.target.value ? fromDateTimeLocal(event.target.value) : event.target.value)} required={field.required} /></label>;
+  return <label className="field">{label}<input type={inputType} value={shownValue} disabled={disabled} onChange={(event) => onChange(field.type === "number" ? (event.target.value === "" ? null : Number(event.target.value)) : field.type === "datetime" && event.target.value ? fromDateTimeLocal(event.target.value) : event.target.value)} required={field.required} /></label>;
 }

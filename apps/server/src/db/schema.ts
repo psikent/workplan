@@ -167,6 +167,25 @@ export const ownerAccountMappings = sqliteTable("owner_account_mappings", {
   account: text("account").notNull().unique(),
 });
 
+// Bark 推送配置：单行表（id 固定 1，由 CHECK 约束保证），device_key 为空 = 推送关闭。
+export const barkConfig = sqliteTable("bark_config", {
+  id: integer("id").primaryKey(),
+  serverUrl: text("server_url").notNull().default("https://api.day.app"),
+  deviceKey: text("device_key"),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const barkPushLog = sqliteTable(
+  "bark_push_log",
+  {
+    pushDate: text("push_date").notNull(),
+    reminderType: text("reminder_type").notNull(),
+    planId: text("plan_id").notNull(),
+    pushedAt: text("pushed_at").notNull(),
+  },
+  (table) => [uniqueIndex("bark_push_log_unique_idx").on(table.pushDate, table.reminderType, table.planId)],
+);
+
 export const monthlyGoals = sqliteTable(
   "monthly_goals",
   {

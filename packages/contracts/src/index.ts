@@ -14,7 +14,8 @@ export const customFieldTypes = [
   "url",
 ] as const;
 export const recurrenceFrequencies = ["daily", "weekly", "monthly"] as const;
-export const userRoles = ["admin", "editor"] as const;
+export const userRoles = ["admin", "editor", "viewer"] as const;
+export const manageableUserRoles = ["editor", "viewer"] as const;
 export const loginModes = ["password", "token"] as const;
 
 export const workPlanStatusSchema = z.enum(workPlanStatuses);
@@ -22,6 +23,7 @@ export const workPlanStatusModeSchema = z.enum(workPlanStatusModes);
 export const customFieldTypeSchema = z.enum(customFieldTypes);
 export const recurrenceFrequencySchema = z.enum(recurrenceFrequencies);
 export const userRoleSchema = z.enum(userRoles);
+export const manageableUserRoleSchema = z.enum(manageableUserRoles);
 export const loginModeSchema = z.enum(loginModes);
 export const isoDateTimeSchema = z.iso.datetime({ offset: true });
 export const isoDateSchema = z.iso.date();
@@ -177,6 +179,27 @@ export const listRemindersQuerySchema = z
 
 export const listRemindersResponseSchema = z.object({
   days: z.array(reminderDaySchema),
+});
+
+// Bark 推送配置（R1）。serverUrl 只允许 http(s)；deviceKey 允许空字符串（由写入方归一化为 null = 推送关闭）。
+export const barkServerUrlSchema = z.url({ protocol: /^https?$/ }).max(2000);
+export const barkDeviceKeySchema = z.string().trim().max(200);
+
+export const barkConfigSchema = z.object({
+  serverUrl: barkServerUrlSchema,
+  deviceKey: barkDeviceKeySchema.nullable(),
+});
+
+export const updateBarkConfigSchema = z
+  .object({
+    serverUrl: barkServerUrlSchema,
+    deviceKey: barkDeviceKeySchema.nullable().default(null),
+  })
+  .strict();
+
+export const barkTestPushResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
 });
 
 export const monthlyGoalSchema = z.object({
@@ -523,28 +546,28 @@ export const createAccessTokenSchema = z.object({
   expiresAt: isoDateTimeSchema.nullable().default(null),
 });
 
-const editorUserBaseSchema = z.object({
+const managedUserBaseSchema = z.object({
   username: z.string().trim().min(1).max(80),
-  role: z.literal("editor"),
+  role: manageableUserRoleSchema,
 });
 
-export const createPasswordEditorSchema = editorUserBaseSchema.extend({
+export const createPasswordManagedUserSchema = managedUserBaseSchema.extend({
   loginMode: z.literal("password"),
   password: z.string().min(12).max(200),
 });
 
-export const createTokenOnlyUserSchema = editorUserBaseSchema.extend({
+export const createTokenOnlyManagedUserSchema = managedUserBaseSchema.extend({
   loginMode: z.literal("token"),
   tokenName: z.string().trim().min(1).max(100),
   tokenExpiresAt: isoDateTimeSchema,
 });
 
-export const createEditorUserSchema = z.discriminatedUnion("loginMode", [
-  createPasswordEditorSchema,
-  createTokenOnlyUserSchema,
+export const createManagedUserSchema = z.discriminatedUnion("loginMode", [
+  createPasswordManagedUserSchema,
+  createTokenOnlyManagedUserSchema,
 ]);
 
-export const setEditorPasswordSchema = z.object({
+export const setManagedUserPasswordSchema = z.object({
   password: z.string().min(12).max(200),
   version: z.number().int().positive(),
 });
@@ -795,6 +818,8 @@ export type MonthlyGoalSeriesDissolveResult = z.infer<typeof monthlyGoalSeriesDi
 export type WorkPlanStatus = z.infer<typeof workPlanStatusSchema>;
 export type WorkPlanStatusMode = z.infer<typeof workPlanStatusModeSchema>;
 export type UserRole = z.infer<typeof userRoleSchema>;
+export type ManageableUserRole = z.infer<typeof manageableUserRoleSchema>;
+export type CreateManagedUser = z.infer<typeof createManagedUserSchema>;
 export type LoginMode = z.infer<typeof loginModeSchema>;
 export type OwnerAccountMapping = z.infer<typeof ownerAccountMappingSchema>;
 export type CreateOwnerAccountMapping = z.infer<typeof createOwnerAccountMappingSchema>;
@@ -808,6 +833,9 @@ export type Reminder = z.infer<typeof reminderSchema>;
 export type ReminderDay = z.infer<typeof reminderDaySchema>;
 export type ListRemindersQuery = z.infer<typeof listRemindersQuerySchema>;
 export type ListRemindersResponse = z.infer<typeof listRemindersResponseSchema>;
+export type BarkConfig = z.infer<typeof barkConfigSchema>;
+export type UpdateBarkConfig = z.infer<typeof updateBarkConfigSchema>;
+export type BarkTestPushResponse = z.infer<typeof barkTestPushResponseSchema>;
 export type RecurrenceRule = z.infer<typeof recurrenceRuleSchema>;
 export type WorkPlanSeries = z.infer<typeof workPlanSeriesSchema>;
 export type ExportTemplate = z.infer<typeof exportTemplateSchema>;

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-type Migration = { version: number; name: string; sql: string };
+type Migration = { version: number; name: string; sql: string; requiresForeignKeysOff?: boolean; verifyTables?: string[] };
 
 const migrations: Migration[] = [
   {
@@ -144,19 +144,125 @@ const migrations: Migration[] = [
       CREATE UNIQUE INDEX monthly_goal_series_occurrence_idx ON monthly_goals(series_id, occurrence_key);
     `,
   },
+  {
+    // SQLite CHECK 约束无法原地扩展，必须重建 users；为避免级联删除或悬挂外键，
+    // 该迁移在关闭外键检查的事务中同步重建受 users 外键约束的会话与 Token 表。
+    // verifyTables 只限定本次重建的表：全库外键体检会被与本迁移无关的历史脏数据
+    // （如指向已删除计划的 custom_field_values 遗留行）卡死，阻塞后续版本升级。
+    version: 9,
+    name: "viewer_role_support",
+    requiresForeignKeysOff: true,
+    verifyTables: ["users", "sessions", "access_tokens"],
+    sql: `
+      CREATE TABLE users_new (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'admin' CHECK(role IN ('admin', 'editor', 'viewer')),
+        login_mode TEXT NOT NULL DEFAULT 'password' CHECK(login_mode IN ('password', 'token')),
+        disabled_at TEXT,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE sessions_new (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL,
+        csrf_token TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE access_tokens_new (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        token_hash TEXT NOT NULL,
+        expires_at TEXT,
+        last_used_at TEXT,
+        created_at TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      INSERT INTO users_new(id, username, password_hash, role, login_mode, disabled_at, version, created_at)
+        SELECT id, username, password_hash, role, login_mode, disabled_at, version, created_at FROM users;
+      INSERT INTO sessions_new(id, user_id, token_hash, csrf_token, expires_at, created_at)
+        SELECT id, user_id, token_hash, csrf_token, expires_at, created_at FROM sessions;
+      INSERT INTO access_tokens_new(id, user_id, name, token_hash, expires_at, last_used_at, created_at, version)
+        SELECT id, user_id, name, token_hash, expires_at, last_used_at, created_at, version FROM access_tokens;
+      DROP TABLE sessions;
+      DROP TABLE access_tokens;
+      DROP TABLE users;
+      ALTER TABLE users_new RENAME TO users;
+      ALTER TABLE sessions_new RENAME TO sessions;
+      ALTER TABLE access_tokens_new RENAME TO access_tokens;
+      CREATE UNIQUE INDEX sessions_token_hash_uq ON sessions(token_hash);
+      CREATE INDEX sessions_expires_idx ON sessions(expires_at);
+      CREATE UNIQUE INDEX access_tokens_hash_uq ON access_tokens(token_hash);
+    `,
+  },
+  {
+    // Bark 推送配置（单行，id 固定 1）与推送日志（唯一键 = 推送日/提醒类型/计划 id，D3 防重发）。
+    version: 10,
+    name: "bark_push_support",
+    sql: `
+      CREATE TABLE bark_config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        server_url TEXT NOT NULL DEFAULT 'https://api.day.app',
+        device_key TEXT,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE bark_push_log (
+        push_date TEXT NOT NULL,
+        reminder_type TEXT NOT NULL,
+        plan_id TEXT NOT NULL,
+        pushed_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX bark_push_log_unique_idx ON bark_push_log(push_date, reminder_type, plan_id);
+    `,
+  },
 ];
 
 export function migrate(database: Database.Database): void {
   database.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)");
   const current = database.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations").get() as { version: number };
-  const apply = database.transaction((migration: Migration) => {
-    database.exec(migration.sql);
-    database
-      .prepare("INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)")
-      .run(migration.version, migration.name, new Date().toISOString());
-  });
 
   for (const migration of migrations) {
-    if (migration.version > current.version) apply(migration);
+    if (migration.version <= current.version) continue;
+    if (migration.requiresForeignKeysOff) applyWithForeignKeysOff(database, migration);
+    else applyInTransaction(database, migration);
   }
+}
+
+function applyInTransaction(database: Database.Database, migration: Migration): void {
+  database.transaction(() => {
+    database.exec(migration.sql);
+    recordMigration(database, migration);
+  })();
+}
+
+// PRAGMA foreign_keys 在事务内是空操作，因此必须在开启事务之前关闭外键检查，
+// 并在提交后恢复原状态；提交前用 foreign_key_check 验证重建没有破坏引用。
+// 校验范围限定为迁移声明的 verifyTables（默认为重建的 auth 三表），
+// 不检查与本次迁移无关的其他表——全库检查会放大历史脏数据导致升级被阻断。
+function applyWithForeignKeysOff(database: Database.Database, migration: Migration): void {
+  const foreignKeysEnabled = database.pragma("foreign_keys", { simple: true }) === 1;
+  database.pragma("foreign_keys = OFF");
+  try {
+    database.transaction(() => {
+      database.exec(migration.sql);
+      const targetTables = migration.verifyTables ?? ["users", "sessions", "access_tokens"];
+      const violations = targetTables.flatMap((table) => database.pragma(`foreign_key_check(${table})`) as unknown[]);
+      if (violations.length > 0) {
+        throw new Error(`迁移 ${migration.version} 外键校验失败：${targetTables.join("/")} 发现 ${violations.length} 条悬挂引用`);
+      }
+      recordMigration(database, migration);
+    })();
+  } finally {
+    database.pragma(`foreign_keys = ${foreignKeysEnabled ? "ON" : "OFF"}`);
+  }
+}
+
+function recordMigration(database: Database.Database, migration: Migration): void {
+  database
+    .prepare("INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)")
+    .run(migration.version, migration.name, new Date().toISOString());
 }

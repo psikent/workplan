@@ -33,7 +33,7 @@ export async function registerWorkPlanRoutes(app: FastifyInstance, workPlans: Wo
 
   app.post(
     "/api/v1/work-plans",
-    { schema: { body: createWorkPlanSchema } },
+    { schema: { body: createWorkPlanSchema }, config: { authorization: "write" } },
     async (request, reply) => {
       const created = workPlans.create(createWorkPlanSchema.parse(request.body));
       reply.code(201);
@@ -43,19 +43,19 @@ export async function registerWorkPlanRoutes(app: FastifyInstance, workPlans: Wo
 
   app.patch(
     "/api/v1/work-plans/:id",
-    { schema: { params: idParams, body: updateWorkPlanSchema } },
+    { schema: { params: idParams, body: updateWorkPlanSchema }, config: { authorization: "write" } },
     async (request) => workPlans.update((request.params as { id: string }).id, updateWorkPlanSchema.parse(request.body)),
   );
 
   app.patch(
     "/api/v1/work-plans/:id/schedule",
-    { schema: { params: idParams, body: updateScheduleSchema } },
+    { schema: { params: idParams, body: updateScheduleSchema }, config: { authorization: "write" } },
     async (request) => workPlans.updateSchedule((request.params as { id: string }).id, updateScheduleSchema.parse(request.body)),
   );
 
   app.delete(
     "/api/v1/work-plans/:id",
-    { schema: { params: idParams, querystring: z.object({ version: z.coerce.number().int().positive() }) } },
+    { schema: { params: idParams, querystring: z.object({ version: z.coerce.number().int().positive() }) }, config: { authorization: "write" } },
     async (request, reply) => {
       workPlans.delete((request.params as { id: string }).id, (request.query as { version: number }).version);
       reply.code(204).send();
@@ -64,7 +64,7 @@ export async function registerWorkPlanRoutes(app: FastifyInstance, workPlans: Wo
 
   app.post(
     "/api/v1/work-plans/reorder",
-    { schema: { body: reorderWorkPlansSchema } },
+    { schema: { body: reorderWorkPlansSchema }, config: { authorization: "write" } },
     async (request) => workPlans.reorder(reorderWorkPlansSchema.parse(request.body).orderedIds),
   );
 }

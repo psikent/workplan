@@ -11,6 +11,7 @@ import { useToast } from "../components/ToastProvider";
 import WorkPlanDrawer from "../components/WorkPlanDrawer";
 import { useSession } from "../App";
 import { api, downloadWorkPlansXlsCustom, fetchReminders, fileToBase64, jsonBody } from "../lib/api";
+import { canWriteBusinessData } from "../lib/permissions";
 import { endOfMonth, endOfWeek, formatCustomFieldValue, formatDate, startOfMonth, startOfWeek, statusLabels } from "../lib/format";
 
 type BuiltInColumnId = "status" | "startAt" | "endAt";
@@ -177,6 +178,7 @@ function initialTimelineAnchor(value: string | null) {
 
 export default function WorkPlansPage() {
   const { user } = useSession();
+  const canWrite = canWriteBusinessData(user.role);
   const { showSuccess } = useToast();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -463,8 +465,9 @@ export default function WorkPlansPage() {
   });
 
   const handleScheduleChange = useCallback((plan: WorkPlan, startAt: string, endAt: string) => {
+    if (!canWrite) return;
     scheduleMutation.mutate({ plan, startAt, endAt });
-  }, [scheduleMutation.mutate]);
+  }, [canWrite, scheduleMutation.mutate]);
   const handleSelect = useCallback((plan: WorkPlan) => {
     setNewPlanDate(null);
     setSelected(plan);
@@ -475,10 +478,11 @@ export default function WorkPlansPage() {
     if (plan) handleSelect(plan);
   }, [handleSelect, plans]);
   const handleCreateAt = useCallback((date: Date) => {
+    if (!canWrite) return;
     setSelected(null);
     setNewPlanDate(date);
     setDrawerOpen(true);
-  }, []);
+  }, [canWrite]);
 
   function shiftRange(direction: -1 | 1) {
     setAnchor((current) => {
@@ -729,9 +733,10 @@ export default function WorkPlansPage() {
             ) : null}
           </div>
           {user.role === "admin" ? <label className={`secondary-button file-button ${!selectedTemplateCanImport ? "disabled" : ""}`} title={selectedTemplateCanImport ? "按所选模板新增工作计划" : "导入模板必须包含工作内容、开始时间和结束时间"}><Upload />导入 XLS<input type="file" accept="application/vnd.ms-excel,.xls" disabled={!selectedTemplateCanImport} onChange={(event) => void importXls(event)} /></label> : null}
-          <button className="primary-button" type="button" onClick={() => { setSelected(null); setNewPlanDate(null); setDrawerOpen(true); }}><Plus />新建工作计划</button>
+          {canWrite ? <button className="primary-button" type="button" onClick={() => { setSelected(null); setNewPlanDate(null); setDrawerOpen(true); }}><Plus />新建工作计划</button> : null}
         </div>
       </header>
+      {canWrite ? null : <p className="read-only-hint" role="note">当前账户为只读账户：可查询、筛选、查看详情和导出，不能新建或修改工作计划。</p>}
       {spreadsheetMessage ? <div className="spreadsheet-transfer-message" role="status">{spreadsheetMessage}</div> : null}
       <div className="filter-toolbar">
         <label className="search-control"><Search /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索工作计划" /></label>
@@ -799,7 +804,7 @@ export default function WorkPlansPage() {
             <button className={`icon-button column-settings-button ${showGanttSettings ? "selected" : ""}`} type="button" aria-label="甘特条属性" aria-expanded={showGanttSettings} title="甘特图显示设置" onClick={() => setShowGanttSettings((value) => !value)}><ListFilter /></button>
             {showGanttSettings ? <GanttPropertySettings properties={availableGanttProperties} visibleIds={ganttDisplayIds} onToggle={toggleGanttProperty} onMove={moveGanttProperty} onReset={() => setGanttDisplayIds(defaultGanttDisplayIds)} tooltipVisibleIds={tooltipDisplayIds} onToggleTooltip={toggleTooltipProperty} onMoveTooltip={moveTooltipProperty} onResetTooltip={() => setTooltipDisplayIds(defaultTooltipDisplayIds)} /> : null}
           </div>
-          <GanttTimeline plans={visiblePlans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} />
+          <GanttTimeline plans={visiblePlans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} />
         </div>
       </div>
 
@@ -815,16 +820,18 @@ export default function WorkPlansPage() {
         ownerAccountMappingsError={ownerAccountMappingsQuery.isError}
         open={drawerOpen}
         saving={saveMutation.isPending || duplicateMutation.isPending}
+        readOnly={!canWrite}
         onClose={() => { setDrawerOpen(false); setSelected(null); setNewPlanDate(null); }}
         onSave={async (input, recurrence) => {
+          if (!canWrite) return;
           await saveMutation.mutateAsync({ input, recurrence });
         }}
-        onDuplicate={async (plan) => {
+        onDuplicate={canWrite ? async (plan) => {
           await duplicateMutation.mutateAsync(plan);
-        }}
-        onDelete={async (plan) => {
+        } : undefined}
+        onDelete={canWrite ? async (plan) => {
           if (window.confirm(`确定删除“${plan.title}”吗？`)) await deleteMutation.mutateAsync(plan);
-        }}
+        } : undefined}
       />
     </section>
   );

@@ -4,13 +4,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { CustomFieldDefinition } from "@workplan/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ToastProvider } from "../components/ToastProvider";
-import CustomFieldsPage from "./CustomFieldsPage";
+import { ToastProvider } from "../../components/ToastProvider";
+import CustomFieldsSettings from "./CustomFieldsSettings";
 
 const apiMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../lib/api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/api")>()),
+vi.mock("../../lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/api")>()),
   api: apiMock,
 }));
 
@@ -35,20 +35,31 @@ beforeEach(() => {
   });
 });
 
-function renderPage() {
+function renderSettings() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <ToastProvider>
-        <CustomFieldsPage />
+        <CustomFieldsSettings />
       </ToastProvider>
     </QueryClientProvider>,
   );
 }
 
 describe("custom field management", () => {
+  it("opens the create dialog from the panel header entry", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+
+    fireEvent.click(screen.getByRole("button", { name: "新建字段" }));
+
+    expect(screen.getByRole("heading", { name: "新建自定义字段" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "自定义字段", level: 1 })).toBeNull();
+    view.unmount();
+  });
+
   it("edits an existing field while keeping its stable key and type immutable", async () => {
-    const view = renderPage();
+    const view = renderSettings();
     await screen.findByText("字段甲");
 
     fireEvent.click(screen.getByRole("button", { name: "编辑 字段甲" }));
@@ -69,7 +80,7 @@ describe("custom field management", () => {
   });
 
   it("reorders fields with the accessible move controls", async () => {
-    const view = renderPage();
+    const view = renderSettings();
     await screen.findByText("字段甲");
 
     fireEvent.click(screen.getByRole("button", { name: "下移 字段甲" }));

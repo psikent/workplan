@@ -6,6 +6,6 @@ declare module "fastify" {
   }
 
   interface FastifyContextConfig {
-    authorization?: "admin";
+    authorization?: "write" | "admin";
   }
 }
