@@ -309,6 +309,14 @@ describe("settings tab shell", () => {
     unmount();
   });
 
+  it("falls back to the environment tab for an empty tab value via replace", async () => {
+    const { router, unmount } = renderSettings("/settings?tab=");
+    await screen.findByRole("tabpanel");
+    await waitFor(() => expect(router.state.location.search).toBe("?tab=environment"));
+    await waitFor(() => expect(router.state.historyAction).toBe("REPLACE"));
+    unmount();
+  });
+
   it("selects the tab for a valid query parameter without redirecting", async () => {
     const { router, unmount } = renderSettings("/settings?tab=accounts");
     await screen.findByText("账户与访问 Token");

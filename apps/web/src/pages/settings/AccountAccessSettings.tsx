@@ -5,6 +5,7 @@ import { KeyRound, Plus, Trash2 } from "lucide-react";
 import { useToast } from "../../components/ToastProvider";
 import { api, jsonBody } from "../../lib/api";
 import { formatDate } from "../../lib/format";
+import { roleLabel } from "../../lib/permissions";
 
 type AccessToken = { id: string; name: string; expiresAt: string | null; lastUsedAt: string | null; createdAt: string; version: number };
 type ManagedUser = {
@@ -23,12 +24,10 @@ type CreateManagedUserInput =
   | { username: string; role: ManageableUserRole; loginMode: "token"; tokenName: string };
 
 const accessTokenLifetimeMs = 90 * 86_400_000;
-const roleLabels: Record<UserRole, string> = { admin: "管理员", editor: "编辑者", viewer: "只读账户" };
-const accountTypeLabels: Record<ManageableUserRole, string> = { editor: "编辑者", viewer: "只读账户" };
 
 function accountCardLabel(user: ManagedUser) {
   if (user.role === "admin") return "管理员 · 密码登录";
-  return `${roleLabels[user.role]} · ${user.loginMode === "password" ? "密码登录" : "仅 API Token"}`;
+  return `${roleLabel(user.role)} · ${user.loginMode === "password" ? "密码登录" : "仅 API Token"}`;
 }
 
 export default function AccountAccessSettings() {
@@ -62,7 +61,7 @@ export default function AccountAccessSettings() {
       setPassword("");
       setTokenName("");
       await queryClient.invalidateQueries({ queryKey: ["users"] });
-      showSuccess(`${accountTypeLabels[input.role]}已创建`);
+      showSuccess(`${roleLabel(input.role)}已创建`);
     },
   });
   const updateUserStatus = useMutation({
@@ -141,7 +140,7 @@ export default function AccountAccessSettings() {
         {loginMode === "password"
           ? <label>初始密码<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} maxLength={200} autoComplete="new-password" required /></label>
           : <label>初始 Token 名称<input value={tokenName} onChange={(event) => setTokenName(event.target.value)} maxLength={100} required /></label>}
-        <button className="secondary-button" type="submit" disabled={createUser.isPending}><Plus />创建{accountTypeLabels[accountType]}</button>
+        <button className="secondary-button" type="submit" disabled={createUser.isPending}><Plus />创建{roleLabel(accountType)}</button>
       </form>
       {revealedToken ? (
         <div className="token-secret" role="status">

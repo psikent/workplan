@@ -36,7 +36,7 @@ export default function SettingsPage() {
   }
 
   function handleTablistKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const focusedTab = event.target instanceof HTMLElement ? event.target.id.replace("settings-tab-", "") : null;
+    const focusedTab = event.target instanceof HTMLElement ? event.target.dataset.tab ?? null : null;
     if (!isSettingsTab(focusedTab)) return;
     const currentIndex = settingsTabs.findIndex((tab) => tab.key === focusedTab);
     let nextIndex: number | null = null;
@@ -80,7 +80,8 @@ export default function SettingsPage() {
               type="button"
               role="tab"
               aria-selected={tab.key === activeTab}
-              aria-controls={`settings-panel-${tab.key}`}
+              aria-controls={visitedTabs.has(tab.key) ? `settings-panel-${tab.key}` : undefined}
+              data-tab={tab.key}
               tabIndex={tab.key === activeTab ? 0 : -1}
               className={`settings-tab${tab.key === activeTab ? " active" : ""}`}
               onClick={() => activateTab(tab.key)}
