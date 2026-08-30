@@ -126,3 +126,15 @@ _Avoid_: Priority, severity
 **Bark Push (Bark 推送)**:
 The output channel that repeats a Work Order Reminder to the single Bark device configured by the Administrator. One push is sent daily at 09:30 Asia/Shanghai, starting on the Reminder Date and ending the day before the Work Plan starts; pushing stops immediately when the plan is cancelled or manually completed. An empty device key disables pushing. The push is text-only (no deep link).
 _Avoid_: 推送通知, notification, push notification
+
+**Starting Today (今日新开工)**:
+A Work Plan whose start day (local) is today, listed in the workbench group of the same name. Mutually exclusive with Continuing Today.
+_Avoid_: New task today, first-day plan
+
+**Continuing Today (今日继续开工)**:
+A Work Plan that started before today and whose time range still covers today (end day may be today); listed in the workbench group of the same name.
+_Avoid_: Ongoing work, in-progress filter
+
+**Upcoming Window (接下来的窗口)**:
+The calendar range after today through the seventh Working Day from today (inclusive). The workbench 接下来的计划 group lists active Work Plans whose start day falls in this window, regardless of end day.
+_Avoid_: Next week, seven-day window
