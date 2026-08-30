@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { arrayMove } from "@dnd-kit/sortable";
 import { compareWorkPlansBySchedule, deriveWorkPlanStatus } from "@workplan/contracts";
 import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, MonthlyGoal, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus } from "@workplan/contracts";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, Plus, RotateCcw, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import GanttTimeline, { type GanttDisplayProperty } from "../components/GanttTimeline";
 import { StatusBadge } from "../components/StatusBadge";
@@ -35,6 +35,8 @@ const columnPreferencesKey = "workplan:list-columns:v1";
 const ganttPreferencesKey = "workplan:gantt-properties:v1";
 const tooltipPreferencesKey = "workplan:gantt-tooltip:v1";
 const splitPreferencesKey = "workplan:planner-split:v1";
+const collapsePreferencesKey = "workplan:planner-collapsed:v1";
+const mobileViewportQuery = "(max-width: 720px)";
 const defaultColumnIds: ColumnId[] = ["status", "startAt", "endAt"];
 const defaultGanttDisplayIds: GanttDisplayId[] = [];
 const defaultTooltipDisplayIds: GanttDisplayId[] = [];
@@ -103,6 +105,23 @@ function loadListPercent(): number {
   } catch {
     return defaultListPercent;
   }
+}
+
+function loadCollapsedPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(collapsePreferencesKey) ?? "null") as unknown;
+    if (!saved || typeof saved !== "object") return false;
+    const value = saved as { version?: unknown; collapsed?: unknown };
+    if (value.version !== 1 || typeof value.collapsed !== "boolean") return false;
+    return value.collapsed;
+  } catch {
+    return false;
+  }
+}
+
+function matchesMobileViewport() {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(mobileViewportQuery).matches;
 }
 
 function listPercentBounds(panelWidth: number) {
@@ -201,6 +220,7 @@ export default function WorkPlansPage() {
   const [tooltipDisplayIds, setTooltipDisplayIds] = useState<GanttDisplayId[]>(loadTooltipPreferences);
   const [listPercent, setListPercent] = useState(loadListPercent);
   const [resizing, setResizing] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => matchesMobileViewport() || loadCollapsedPreference());
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [spreadsheetMessage, setSpreadsheetMessage] = useState("");
   const [exportPopoverOpen, setExportPopoverOpen] = useState(false);
@@ -263,6 +283,7 @@ export default function WorkPlansPage() {
     "--plan-grid-min-width": `${180 + visibleColumns.reduce((total, column) => total + column.width, 0)}px`,
   }) as CSSProperties, [visibleColumns]);
   const range = useMemo(() => view === "week" ? [startOfWeek(anchor), endOfWeek(anchor)] : [startOfMonth(anchor), endOfMonth(anchor)], [anchor, view]);
+  const rangeTitle = view === "week" ? formatWeekOfMonth(range[0]!) : `${anchor.getFullYear()} 年 ${anchor.getMonth() + 1} 月`;
   const remindersRange = useMemo(() => {
     const lastVisibleDay = new Date(range[1]!);
     lastVisibleDay.setDate(lastVisibleDay.getDate() - 1);
@@ -354,6 +375,25 @@ export default function WorkPlansPage() {
       // The adjusted layout remains usable for this session when storage is unavailable.
     }
   }, [listPercent]);
+
+  useEffect(() => {
+    if (matchesMobileViewport()) return;
+    try {
+      window.localStorage.setItem(collapsePreferencesKey, JSON.stringify({ version: 1, collapsed }));
+    } catch {
+      // The collapsed layout remains usable for this session when storage is unavailable.
+    }
+  }, [collapsed]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(mobileViewportQuery);
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      setCollapsed(event.matches || loadCollapsedPreference());
+    };
+    query.addEventListener("change", handleViewportChange);
+    return () => query.removeEventListener("change", handleViewportChange);
+  }, []);
 
   useEffect(() => {
     try {
@@ -483,6 +523,10 @@ export default function WorkPlansPage() {
     setNewPlanDate(date);
     setDrawerOpen(true);
   }, [canWrite]);
+
+  function toggleTaskList() {
+    setCollapsed((current) => !current);
+  }
 
   function shiftRange(direction: -1 | 1) {
     setAnchor((current) => {
@@ -754,12 +798,13 @@ export default function WorkPlansPage() {
 
       <div
         ref={plannerPanelRef}
-        className={`planner-panel view-${view} ${resizing ? "resizing" : ""}`}
+        className={`planner-panel view-${view} ${collapsed ? "planner-collapsed" : ""} ${resizing ? "resizing" : ""}`}
         style={{ "--planner-list-width": `${listPercent}%` } as CSSProperties}
       >
         <div className="planner-table">
           <div className="table-toolbar">
-            <strong>{view === "week" ? formatWeekOfMonth(range[0]!) : `${anchor.getFullYear()} 年 ${anchor.getMonth() + 1} 月`}</strong>
+            <button className="icon-button planner-collapse-button" type="button" aria-label={collapsed ? "展开任务列表" : "收起任务列表"} aria-expanded={!collapsed} title={collapsed ? "展开任务列表" : "收起任务列表"} onClick={toggleTaskList}>{collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</button>
+            <strong>{rangeTitle}</strong>
             <div className="table-toolbar-actions">
               <div className="column-settings-wrap">
                 <button className={`icon-button column-settings-button ${showColumnSettings ? "selected" : ""}`} type="button" aria-label="列设置" aria-expanded={showColumnSettings} onClick={() => setShowColumnSettings((value) => !value)}><Columns3 /></button>
@@ -804,7 +849,7 @@ export default function WorkPlansPage() {
             <button className={`icon-button column-settings-button ${showGanttSettings ? "selected" : ""}`} type="button" aria-label="甘特条属性" aria-expanded={showGanttSettings} title="甘特图显示设置" onClick={() => setShowGanttSettings((value) => !value)}><ListFilter /></button>
             {showGanttSettings ? <GanttPropertySettings properties={availableGanttProperties} visibleIds={ganttDisplayIds} onToggle={toggleGanttProperty} onMove={moveGanttProperty} onReset={() => setGanttDisplayIds(defaultGanttDisplayIds)} tooltipVisibleIds={tooltipDisplayIds} onToggleTooltip={toggleTooltipProperty} onMoveTooltip={moveTooltipProperty} onResetTooltip={() => setTooltipDisplayIds(defaultTooltipDisplayIds)} /> : null}
           </div>
-          <GanttTimeline plans={visiblePlans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} />
+          <GanttTimeline plans={visiblePlans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} />
         </div>
       </div>
 

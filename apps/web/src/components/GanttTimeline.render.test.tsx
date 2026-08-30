@@ -924,6 +924,38 @@ describe("GanttTimeline rendered grid", () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   });
 
+  it("stops syncing vertical scroll while the task list is collapsed", async () => {
+    const planRows = document.createElement("div");
+    const planRowsRef: RefObject<HTMLElement | null> = { current: planRows };
+    const CollapsedGantt = GanttTimeline as ComponentType<ComponentProps<typeof GanttTimeline> & {
+      verticalScrollPeerRef: RefObject<HTMLElement | null>;
+      taskListCollapsed: boolean;
+    }>;
+    const { container } = render(
+      <CollapsedGantt
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        verticalScrollPeerRef={planRowsRef}
+        taskListCollapsed
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const ganttContainer = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>(".gantt-container");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+
+    ganttContainer.scrollTop = 116;
+    fireEvent.scroll(ganttContainer);
+    expect(planRows.scrollTop).toBe(0);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
+
   it("highlights the matching work plan row while hovering a Gantt row or bar", async () => {
     const planRows = document.createElement("div");
     const planRow = document.createElement("div");

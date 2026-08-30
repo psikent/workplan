@@ -888,6 +888,72 @@ describe("XLS transfer", () => {
   });
 });
 
+describe("task list collapse", () => {
+  it("collapses to the gantt-only layout and expands back while keeping the range title", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    const panel = view.container.querySelector(".planner-panel") as HTMLElement;
+    expect(panel.classList.contains("planner-collapsed")).toBe(false);
+    expect(screen.getByRole("button", { name: "收起任务列表" }).getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "收起任务列表" }));
+    expect(panel.classList.contains("planner-collapsed")).toBe(true);
+    expect(screen.getByRole("button", { name: "展开任务列表" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("8月第1周")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "月视图" }));
+    expect(screen.getByText("2026 年 8 月")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开任务列表" }));
+    expect(panel.classList.contains("planner-collapsed")).toBe(false);
+    expect(screen.getByRole("button", { name: "收起任务列表" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("2026 年 8 月")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("persists the desktop collapse choice across renders", async () => {
+    const first = renderPage();
+    await screen.findByText("示例计划");
+    fireEvent.click(screen.getByRole("button", { name: "收起任务列表" }));
+    expect(JSON.parse(localStorage.getItem("workplan:planner-collapsed:v1") ?? "null")).toEqual({ version: 1, collapsed: true });
+    first.unmount();
+
+    const second = renderPage();
+    await screen.findByText("示例计划");
+    expect(second.container.querySelector(".planner-panel")?.classList.contains("planner-collapsed")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "展开任务列表" }));
+    expect(second.container.querySelector(".planner-panel")?.classList.contains("planner-collapsed")).toBe(false);
+    expect(JSON.parse(localStorage.getItem("workplan:planner-collapsed:v1") ?? "null")).toEqual({ version: 1, collapsed: false });
+    second.unmount();
+  });
+
+  it("auto-collapses on mobile viewports and keeps manual expansion session-only", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockImplementation((query: string) => ({
+      matches: query === "(max-width: 720px)",
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    expect(view.container.querySelector(".planner-panel")?.classList.contains("planner-collapsed")).toBe(true);
+    expect(localStorage.getItem("workplan:planner-collapsed:v1")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开任务列表" }));
+    expect(view.container.querySelector(".planner-panel")?.classList.contains("planner-collapsed")).toBe(false);
+    expect(localStorage.getItem("workplan:planner-collapsed:v1")).toBeNull();
+
+    view.unmount();
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("work plan layout divider", () => {
   it("resizes the list when the divider is dragged", async () => {
     const view = renderPage();

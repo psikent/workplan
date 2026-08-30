@@ -16,6 +16,7 @@ type Props = {
   rangeStart: Date;
   rangeEnd: Date;
   verticalScrollPeerRef?: RefObject<HTMLElement | null>;
+  taskListCollapsed?: boolean;
   onScheduleChange: (plan: WorkPlan, startAt: string, endAt: string) => void;
   onSelect: (plan: WorkPlan) => void;
   onReminderSelect?: (planId: string) => void;
@@ -40,7 +41,7 @@ const EMPTY_REMINDER_DAYS: ReminderDay[] = [];
 const EMPTY_TIMELINE_TASK_ID = "__empty-timeline__";
 const BAR_DOUBLE_CLICK_WINDOW_MS = 500;
 
-function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, view, rangeStart, rangeEnd, verticalScrollPeerRef, onScheduleChange, onSelect, onReminderSelect, onCreateAt, readOnly = false }: Props) {
+function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, view, rangeStart, rangeEnd, verticalScrollPeerRef, taskListCollapsed = false, onScheduleChange, onSelect, onReminderSelect, onCreateAt, readOnly = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
@@ -200,11 +201,12 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
       });
       cleanupCenteredLabels = keepGanttLabelsCentered(containerRef.current);
       trimGanttToPlanRows(containerRef.current, Math.max(plans.length, 1));
-      cleanupVerticalScrollSync = synchronizeVerticalScroll(
+      // 收起态下任务列表不可见：不挂接双向滚动/悬停同步，展开后随图表重建恢复。
+      cleanupVerticalScrollSync = taskListCollapsed ? () => {} : synchronizeVerticalScroll(
         containerRef.current.querySelector<HTMLElement>(".gantt-container"),
         verticalScrollPeerRef?.current ?? null,
       );
-      cleanupPlanRowHover = synchronizePlanRowHover(containerRef.current, verticalScrollPeerRef?.current ?? null, plans);
+      cleanupPlanRowHover = taskListCollapsed ? () => {} : synchronizePlanRowHover(containerRef.current, verticalScrollPeerRef?.current ?? null, plans);
       cleanupPopupFollow = configurePopupFollow(containerRef.current);
       // 只读模式不挂接拖拽/缩放与双击新建，也不会渲染新建提示；选择与浮动提示保持可用。
       if (!readOnly) {
@@ -245,7 +247,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
        cleanupDateCellAffordance();
        cleanupReminderBells();
     };
-  }, [columnWidth, ganttInputSignature, remindersSignature, rangeEndTime, rangeStartTime, readOnly, verticalScrollPeerRef]);
+  }, [columnWidth, ganttInputSignature, remindersSignature, rangeEndTime, rangeStartTime, readOnly, taskListCollapsed, verticalScrollPeerRef]);
 
   return (
     <div className="gantt-shell">

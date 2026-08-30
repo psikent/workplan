@@ -128,6 +128,11 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .range-controls .icon-button { width: 32px; min-height: 32px; }
 .range-controls .today-button { min-height: 32px; padding-inline: 11px; }
 .table-toolbar-actions { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 6px; }
+.planner-collapse-button { justify-self: start; }
+.planner-panel.planner-collapsed { grid-template-columns: 0 0 minmax(0, 1fr); grid-template-rows: 54px minmax(0, 1fr); }
+.planner-collapsed .planner-table { grid-column: 3; grid-row: 1; grid-template-rows: 54px; }
+.planner-collapsed .planner-divider, .planner-collapsed .table-toolbar-actions, .planner-collapsed .plan-grid-scroll, .planner-collapsed .table-footer { display: none; }
+.planner-collapsed .planner-timeline { grid-column: 3; grid-row: 2; }
 .view-switch { display: flex; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: #fafbfc; }
 .view-switch button { min-height: 28px; padding: 0 11px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
 .view-switch button.active { background: #fff; color: var(--accent); font-weight: 650; box-shadow: 0 1px 4px rgb(30 45 72 / 9%); }
