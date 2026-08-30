@@ -18,3 +18,7 @@ dev.log
 
 # timestamped editor backups
 *.bak-*
+
+# session-local agent artifacts (session plans, architecture session reports)
+/.zcode/
+/docs/architecture/
