@@ -25,6 +25,7 @@ import {
   parseSystemdUnit,
   planSystemdAccount,
   previousReleaseRoot,
+  renderSystemdAcceptanceReport,
   renderSystemdUnit,
   runSystemdRelease,
   setupSystemdRelease,
@@ -369,6 +370,37 @@ test("rejects unhealthy HTTP responses and incomplete ready payloads", () => {
   assert.match(evaluateSystemdReleaseEvidence(noDatabase, spec).errors.join("；"), /database=/);
 });
 
+test("renders a detailed acceptance report from the gathered evidence", () => {
+  const lines = renderSystemdAcceptanceReport(conformingEvidence());
+  assert.deepEqual(lines, [
+    "systemd-analyze verify：通过",
+    "服务状态：已启用，运行中",
+    "主进程：PID 4242（workplan:workplan）",
+    "可执行文件：/usr/bin/node",
+    "工作目录：/var/opt/workplan-release",
+    "监听地址：127.0.0.1:3000（PID 4242）",
+    "健康检查：HTTP 正常，status=ready，database=ok",
+  ]);
+
+  const broken = renderSystemdAcceptanceReport({
+    ...conformingEvidence(),
+    verifyStatus: 1,
+    isEnabledStatus: 1,
+    isActiveStatus: 1,
+    mainPid: 0,
+    process: null,
+    listeners: [],
+    health: { httpOk: false, status: null, database: null },
+  }).join("\n");
+  assert.match(broken, /systemd-analyze verify：未通过（退出码 1）/);
+  assert.match(broken, /服务状态：未启用，未运行/);
+  assert.match(broken, /主进程：PID 缺失（用户未知:组未知）/);
+  assert.match(broken, /可执行文件：未知/);
+  assert.match(broken, /工作目录：未知/);
+  assert.match(broken, /监听地址：无（无监听进程）/);
+  assert.match(broken, /健康检查：请求失败/);
+});
+
 // ---------------------------------------------------------------------------
 // Systemd account and ownership plans (ticket 02)
 // ---------------------------------------------------------------------------
@@ -675,6 +707,7 @@ function defaultResponder(ctx, command, args) {
 
 function createFakeIO(ctx, { rules = [], fetchJson } = {}) {
   const calls = [];
+  const logs = [];
   const run = (command, args) => {
     calls.push([command, ...args]);
     for (const rule of rules) {
@@ -687,6 +720,10 @@ function createFakeIO(ctx, { rules = [], fetchJson } = {}) {
     isRoot: true,
     run,
     calls,
+    logs,
+    log(message) {
+      logs.push(message);
+    },
     waitPortFree() {},
     async fetchJson(url) {
       return fetchJson ? fetchJson(url) : { ok: true, text: '{"status":"ready","database":"ok"}' };
@@ -741,6 +778,15 @@ test("first install creates the account, installs a verified unit and starts the
     assert.equal((fs.statSync(path.join(targetRoot, ".env")).mode & 0o777), 0o600);
     assert.ok(!calls.some((call) => /workplan\.mjs\s+(start|stop|restart|setup|status)/.test(call)), "no process may be started through workplan.mjs");
     assert.equal(ctx.started, true);
+
+    const report = io.logs.join("\n");
+    assert.match(report, /正式发布验收清单：/);
+    assert.match(report, /systemd-analyze verify：通过/);
+    assert.match(report, /服务状态：已启用，运行中/);
+    assert.match(report, /主进程：PID 4242（workplan:workplan）/);
+    assert.match(report, /监听地址：127\.0\.0\.1:3000（PID 4242）/);
+    assert.match(report, /健康检查：HTTP 正常，status=ready，database=ok/);
+    assert.match(report, /正式发布验收通过。/);
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
     fs.rmSync(targetRoot, { recursive: true, force: true });

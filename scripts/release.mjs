@@ -742,6 +742,28 @@ export function evaluateSystemdReleaseEvidence(evidence, expected) {
   return { ok: errors.length === 0, errors };
 }
 
+// Factual per-criterion evidence lines for the acceptance report; the verdict
+// (通过/未通过 + errors) is decided separately by evaluateSystemdReleaseEvidence.
+export function renderSystemdAcceptanceReport(evidence) {
+  const processInfo = evidence.process ?? {};
+  const listenerGroups = groupListenersByPid(evidence.listeners ?? []);
+  const listener = listenerGroups[0] ?? null;
+  const addresses = listener?.addresses ?? [];
+  const health = evidence.health ?? {};
+
+  return [
+    `systemd-analyze verify：${evidence.verifyStatus === 0 ? "通过" : `未通过（退出码 ${evidence.verifyStatus}）`}`,
+    `服务状态：${evidence.isEnabledStatus === 0 ? "已启用" : "未启用"}，${evidence.isActiveStatus === 0 ? "运行中" : "未运行"}`,
+    `主进程：${Number.isInteger(evidence.mainPid) && evidence.mainPid > 0 ? `PID ${evidence.mainPid}` : "PID 缺失"}（${processInfo.user ?? "用户未知"}:${processInfo.group ?? "组未知"}）`,
+    `可执行文件：${processInfo.executable ?? "未知"}`,
+    `工作目录：${processInfo.cwd ?? "未知"}`,
+    `监听地址：${addresses.length > 0 ? addresses.join("、") : "无"}（${listener ? `PID ${listener.pid}` : "无监听进程"}）`,
+    `健康检查：${health.httpOk
+      ? `HTTP 正常，status=${health.status ?? "缺失"}，database=${health.database ?? "缺失"}`
+      : "请求失败"}`,
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Systemd account planning and ownership plans
 // ---------------------------------------------------------------------------
@@ -941,7 +963,7 @@ export function makeRealSystemdIO({ platform = process.platform } = {}) {
       const text = await response.text();
       return { ok: response.ok, text };
     },
-    log() {},
+    log: (message) => console.log(message),
   };
 }
 
@@ -996,6 +1018,16 @@ export async function runSystemdRelease({
       throw new Error(`${label} 失败（退出码 ${result.status}）${detail ? `：${detail}` : ""}`);
     }
     return result;
+  };
+  const log = (message) => (io.log ?? console.log)(message);
+  const acceptRelease = (label, evidence) => {
+    log(`${label}清单：`);
+    for (const line of renderSystemdAcceptanceReport(evidence)) log(`  ${line}`);
+    const verdict = evaluateSystemdReleaseEvidence(evidence, unit);
+    if (!verdict.ok) {
+      throw new Error(`${label}未通过：${verdict.errors.join("；")}`);
+    }
+    log(`${label}通过。`);
   };
 
   let stopAttempted = false;
@@ -1133,12 +1165,9 @@ export async function runSystemdRelease({
     await beforeStep("verify");
     await waitForSystemdReady(unit, ioRun, commands, io.fetchJson);
     const evidence = await gatherSystemdEvidence(unit, ioRun, commands, io.fetchJson);
-    const verdict = evaluateSystemdReleaseEvidence(evidence, unit);
-    if (!verdict.ok) {
-      throw new Error(`正式发布验收未通过：${verdict.errors.join("；")}`);
-    }
+    acceptRelease("正式发布验收", evidence);
 
-    console.log(`Workplan 已由 systemd ${unit.name}.service 启动（PID ${evidence.mainPid}，端口 ${unit.port}）`);
+    log(`Workplan 已由 systemd ${unit.name}.service 启动（PID ${evidence.mainPid}，端口 ${unit.port}）`);
   } catch (error) {
     const rollbackErrors = [];
     const rollbackStep = async (label, action) => {
@@ -1185,10 +1214,7 @@ export async function runSystemdRelease({
           requireSuccess("启动上一版本：systemctl start", ioRun(...commands.start));
           await waitForSystemdReady(unit, ioRun, commands, io.fetchJson);
           const evidence = await gatherSystemdEvidence(unit, ioRun, commands, io.fetchJson);
-          const verdict = evaluateSystemdReleaseEvidence(evidence, unit);
-          if (!verdict.ok) {
-            throw new Error(`上一版本验收未通过：${verdict.errors.join("；")}`);
-          }
+          acceptRelease("上一版本验收", evidence);
         });
       } else {
         error.recoveryNotice = `首次安装失败：${unit.unitPath} 未安装（或已移除），服务保持停止状态。请检查日志后重新运行：sudo node scripts/release.mjs --install-systemd`;
@@ -1280,7 +1306,9 @@ async function main() {
       }
       throw error;
     }
-    console.log(`发布完成：${args.targetRoot}`);
+    if (args.noStart) console.log(`发布完成：${args.targetRoot}（--no-start，服务未启动）`);
+    else if (supervisor) console.log(`发布完成：${args.targetRoot}（端口 ${productionPort}，由 ${launchdLabel} 监管）`);
+    else console.log(`发布完成：${args.targetRoot}（端口 ${productionPort}，由 workplan.mjs 托管）`);
   } finally {
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   }
