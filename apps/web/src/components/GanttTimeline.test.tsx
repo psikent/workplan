@@ -181,6 +181,77 @@ describe("GanttTimeline adapter", () => {
     expect(ganttMock.tasks[0]?.name).toBe("");
   });
 
+  it("shows the work content in the bar label when selected", async () => {
+    render(
+      <GanttTimeline
+        plans={[plan]}
+        displayProperties={[{ id: "title", label: "工作内容" }]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(ganttMock.tasks).toHaveLength(1));
+    expect(ganttMock.tasks[0]?.name).toBe("设计评审");
+  });
+
+  it("truncates work content beyond 20 characters in the bar label", async () => {
+    const longTitledPlan = { ...plan, title: "试".repeat(21) };
+    render(
+      <GanttTimeline
+        plans={[longTitledPlan]}
+        displayProperties={[{ id: "title", label: "工作内容" }]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(ganttMock.tasks).toHaveLength(1));
+    expect(ganttMock.tasks[0]?.name).toBe(`${"试".repeat(20)}…`);
+  });
+
+  it("keeps exactly-20-character work content intact in the bar label", async () => {
+    const titledPlan = { ...plan, title: "试".repeat(20) };
+    render(
+      <GanttTimeline
+        plans={[titledPlan]}
+        displayProperties={[{ id: "title", label: "工作内容" }]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(ganttMock.tasks).toHaveLength(1));
+    expect(ganttMock.tasks[0]?.name).toBe("试".repeat(20));
+  });
+
+  it("truncates only the work content value when joining bar label properties", async () => {
+    const longTitledPlan = { ...plan, title: "试".repeat(25) };
+    render(
+      <GanttTimeline
+        plans={[longTitledPlan]}
+        displayProperties={[{ id: "title", label: "工作内容" }, { id: "status", label: "状态" }, { id: "custom:owner", label: "负责人", field: ownerField }]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(ganttMock.tasks).toHaveLength(1));
+    expect(ganttMock.tasks[0]?.name).toBe(`${"试".repeat(20)}… · 待开始 · lxj`);
+  });
+
   it("keeps the existing Gantt when refreshed plans have the same rendered content", async () => {
     const rangeStart = new Date(2026, 7, 3);
     const rangeEnd = new Date(2026, 7, 10);

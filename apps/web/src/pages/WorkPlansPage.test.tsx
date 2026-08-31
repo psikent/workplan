@@ -594,6 +594,53 @@ describe("work plan range and Gantt display", () => {
     }));
     secondRender.unmount();
   });
+
+  it("lists work content as the first built-in bar property and keeps it out of the tooltip section", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    fireEvent.click(screen.getByRole("button", { name: "甘特条属性" }));
+    const barList = view.container.querySelector(".column-settings-popover > .column-settings-list");
+    expect(barList).not.toBeNull();
+    const firstRow = barList!.querySelector(".column-setting-row");
+    expect(firstRow?.querySelector("label span")?.textContent).toBe("工作内容");
+    expect(firstRow?.querySelector("small")?.textContent).toBe("内置属性");
+
+    const tooltipSection = view.container.querySelector(".gantt-popover-section");
+    expect(tooltipSection?.textContent).not.toContain("工作内容");
+    view.unmount();
+  });
+
+  it("persists the work content bar selection and clears it with the header button", async () => {
+    const firstRender = renderPage();
+    await screen.findByText("示例计划");
+
+    fireEvent.click(screen.getByRole("button", { name: "甘特条属性" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "工作内容" }));
+
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      displayProperties: [expect.objectContaining({ id: "title", label: "工作内容" })],
+    }));
+    expect(JSON.parse(localStorage.getItem("workplan:gantt-properties:v1") ?? "null"))
+      .toEqual({ version: 1, visibleIds: ["title"] });
+
+    firstRender.unmount();
+    const secondRender = renderPage();
+    await screen.findByText("示例计划");
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      displayProperties: [expect.objectContaining({ id: "title" })],
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "甘特条属性" }));
+    const popover = secondRender.container.querySelector(".gantt-property-popover");
+    expect(popover).not.toBeNull();
+    fireEvent.click(popover!.querySelector<HTMLButtonElement>("header button")!);
+
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ displayProperties: [] }));
+    expect(JSON.parse(localStorage.getItem("workplan:gantt-properties:v1") ?? "null"))
+      .toEqual({ version: 1, visibleIds: [] });
+    secondRender.unmount();
+  });
 });
 
 describe("work plan tooltip settings", () => {
@@ -691,6 +738,14 @@ describe("work plan tooltip settings", () => {
     await screen.findByText("示例计划");
     await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ tooltipProperties: [] }));
     expect(screen.getByRole("button", { name: "甘特条属性" })).toBeTruthy();
+    view.unmount();
+  });
+
+  it("rejects the work content id in persisted tooltip selections", async () => {
+    localStorage.setItem("workplan:gantt-tooltip:v1", JSON.stringify({ version: 1, visibleIds: ["title"] }));
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ tooltipProperties: [] }));
     view.unmount();
   });
 });

@@ -566,6 +566,28 @@ describe("GanttTimeline rendered grid", () => {
     expect(label.classList.contains("big")).toBe(false);
   });
 
+  it("renders the work content bar label truncated to 20 characters", async () => {
+    const titledPlan = { ...plan, title: "试".repeat(21) };
+    const { container } = render(
+      <GanttTimeline
+        plans={[titledPlan]}
+        displayProperties={[{ id: "title", label: "工作内容" }]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const label = await waitFor(() => {
+      const element = container.querySelector<SVGTextElement>(".bar-wrapper .bar-label");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(label.textContent).toBe(`${"试".repeat(20)}…`);
+  });
+
   it("keeps resize hit areas out of the bar wrapper geometry", async () => {
     const { container } = render(
       <GanttTimeline

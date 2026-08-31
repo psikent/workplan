@@ -5,7 +5,15 @@ import { formatCustomFieldValue, statusLabels } from "../lib/format";
 
 export type GanttDisplayProperty =
   | { id: "status"; label: string; field?: undefined }
+  | { id: "title"; label: string; field?: undefined }
   | { id: `custom:${string}`; label: string; field: CustomFieldDefinition };
+
+export type GanttDisplayId = GanttDisplayProperty["id"];
+
+// Bar labels are a single SVG text line with no overflow handling, so the work
+// content is capped here; the hover tooltip keeps showing the full title via
+// its fixed title line.
+const WORK_CONTENT_LABEL_MAX_CHARS = 20;
 
 type Props = {
   plans: WorkPlan[];
@@ -399,11 +407,24 @@ function verticalRowOffset(ganttContainer: HTMLElement, planRows: HTMLElement) {
   return Number.isFinite(offset) && Math.abs(offset) > 1 ? offset : 0;
 }
 
+function truncateWorkContent(value: string) {
+  const chars = Array.from(value);
+  return chars.length > WORK_CONTENT_LABEL_MAX_CHARS
+    ? `${chars.slice(0, WORK_CONTENT_LABEL_MAX_CHARS).join("")}…`
+    : value;
+}
+
+function ganttPropertyValue(plan: WorkPlan, property: GanttDisplayProperty, options?: { truncateTitle?: boolean }) {
+  return property.id === "status"
+    ? statusLabels[plan.status]
+    : property.id === "title"
+      ? options?.truncateTitle ? truncateWorkContent(plan.title) : plan.title
+      : formatCustomFieldValue(plan.customFields[property.field.key], property.field);
+}
+
 function formatGanttLabel(plan: WorkPlan, properties: GanttDisplayProperty[]) {
   const details = properties.flatMap((property) => {
-    const value = property.id === "status"
-      ? statusLabels[plan.status]
-      : formatCustomFieldValue(plan.customFields[property.field.key], property.field);
+    const value = ganttPropertyValue(plan, property, { truncateTitle: true });
     return value === "—" ? [] : [value];
   });
   return details.join(" · ");
@@ -423,9 +444,7 @@ export function formatGanttTooltip(plan: WorkPlan, properties: GanttDisplayPrope
     `${chineseDayLabel(start, crossMonthOrYear)} - ${chineseDayLabel(end, crossMonthOrYear)}`,
   ];
   for (const property of properties) {
-    const value = property.id === "status"
-      ? statusLabels[plan.status]
-      : formatCustomFieldValue(plan.customFields[property.field.key], property.field);
+    const value = ganttPropertyValue(plan, property);
     if (value === "—" || value === "") continue;
     lines.push(`${escapeHtml(property.label)}：${escapeHtml(value)}`);
   }

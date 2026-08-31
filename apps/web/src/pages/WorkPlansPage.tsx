@@ -5,7 +5,7 @@ import { compareWorkPlansBySchedule, deriveWorkPlanStatus } from "@workplan/cont
 import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, MonthlyGoal, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus } from "@workplan/contracts";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
-import GanttTimeline, { type GanttDisplayProperty } from "../components/GanttTimeline";
+import GanttTimeline, { type GanttDisplayId, type GanttDisplayProperty } from "../components/GanttTimeline";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import WorkPlanDrawer from "../components/WorkPlanDrawer";
@@ -16,7 +16,6 @@ import { endOfMonth, endOfWeek, formatCustomFieldValue, formatDate, startOfMonth
 
 type BuiltInColumnId = "status" | "startAt" | "endAt";
 type ColumnId = BuiltInColumnId | `custom:${string}`;
-type GanttDisplayId = "status" | `custom:${string}`;
 type PlanColumn = {
   id: ColumnId;
   label: string;
@@ -72,7 +71,7 @@ function loadGanttPreferences(): GanttDisplayId[] {
     const value = saved as { version?: unknown; visibleIds?: unknown };
     if (value.version !== 1 || !Array.isArray(value.visibleIds)) return defaultGanttDisplayIds;
     return Array.from(new Set(value.visibleIds.filter((id): id is GanttDisplayId =>
-      id === "status" || (typeof id === "string" && id.startsWith("custom:")),
+      id === "status" || id === "title" || (typeof id === "string" && id.startsWith("custom:")),
     )));
   } catch {
     return defaultGanttDisplayIds;
@@ -258,12 +257,18 @@ export default function WorkPlansPage() {
     });
   }, [availableColumns, visibleColumnIds]);
   const availableGanttProperties = useMemo<GanttDisplayProperty[]>(() => [
+    { id: "title", label: "工作内容" },
     { id: "status", label: "状态" },
     ...(fieldsQuery.data ?? []).slice()
       .filter((field) => !field.archivedAt)
       .sort((left, right) => left.sortOrder - right.sortOrder)
       .map((field) => ({ id: `custom:${field.key}` as const, label: field.label, field })),
   ], [fieldsQuery.data]);
+  // 工作内容已固定为浮动提示首行，不进入浮动提示可选项，避免重复显示。
+  const availableTooltipProperties = useMemo<GanttDisplayProperty[]>(
+    () => availableGanttProperties.filter((property) => property.id !== "title"),
+    [availableGanttProperties],
+  );
   const visibleGanttProperties = useMemo(() => {
     const propertiesById = new Map(availableGanttProperties.map((property) => [property.id, property]));
     return ganttDisplayIds.flatMap((id) => {
@@ -272,12 +277,12 @@ export default function WorkPlansPage() {
     });
   }, [availableGanttProperties, ganttDisplayIds]);
   const visibleTooltipProperties = useMemo(() => {
-    const propertiesById = new Map(availableGanttProperties.map((property) => [property.id, property]));
+    const propertiesById = new Map(availableTooltipProperties.map((property) => [property.id, property]));
     return tooltipDisplayIds.flatMap((id) => {
       const property = propertiesById.get(id);
       return property ? [property] : [];
     });
-  }, [availableGanttProperties, tooltipDisplayIds]);
+  }, [availableTooltipProperties, tooltipDisplayIds]);
   const planGridStyle = useMemo(() => ({
     "--plan-grid-template": ["minmax(180px, 1.5fr)", ...visibleColumns.map((column) => `${column.width}px`)].join(" "),
     "--plan-grid-min-width": `${180 + visibleColumns.reduce((total, column) => total + column.width, 0)}px`,
@@ -847,7 +852,7 @@ export default function WorkPlansPage() {
           </div>
           <div className="column-settings-wrap timeline-gantt-settings">
             <button className={`icon-button column-settings-button ${showGanttSettings ? "selected" : ""}`} type="button" aria-label="甘特条属性" aria-expanded={showGanttSettings} title="甘特图显示设置" onClick={() => setShowGanttSettings((value) => !value)}><ListFilter /></button>
-            {showGanttSettings ? <GanttPropertySettings properties={availableGanttProperties} visibleIds={ganttDisplayIds} onToggle={toggleGanttProperty} onMove={moveGanttProperty} onReset={() => setGanttDisplayIds(defaultGanttDisplayIds)} tooltipVisibleIds={tooltipDisplayIds} onToggleTooltip={toggleTooltipProperty} onMoveTooltip={moveTooltipProperty} onResetTooltip={() => setTooltipDisplayIds(defaultTooltipDisplayIds)} /> : null}
+            {showGanttSettings ? <GanttPropertySettings properties={availableGanttProperties} tooltipProperties={availableTooltipProperties} visibleIds={ganttDisplayIds} onToggle={toggleGanttProperty} onMove={moveGanttProperty} onReset={() => setGanttDisplayIds(defaultGanttDisplayIds)} tooltipVisibleIds={tooltipDisplayIds} onToggleTooltip={toggleTooltipProperty} onMoveTooltip={moveTooltipProperty} onResetTooltip={() => setTooltipDisplayIds(defaultTooltipDisplayIds)} /> : null}
           </div>
           <GanttTimeline plans={visiblePlans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} />
         </div>
@@ -941,8 +946,9 @@ function ColumnSettings({ columns, visibleIds, onToggle, onMove, onReset }: {
   );
 }
 
-function GanttPropertySettings({ properties, visibleIds, onToggle, onMove, onReset, tooltipVisibleIds, onToggleTooltip, onMoveTooltip, onResetTooltip }: {
+function GanttPropertySettings({ properties, tooltipProperties, visibleIds, onToggle, onMove, onReset, tooltipVisibleIds, onToggleTooltip, onMoveTooltip, onResetTooltip }: {
   properties: GanttDisplayProperty[];
+  tooltipProperties: GanttDisplayProperty[];
   visibleIds: GanttDisplayId[];
   onToggle: (id: GanttDisplayId) => void;
   onMove: (id: GanttDisplayId, direction: -1 | 1) => void;
@@ -953,6 +959,7 @@ function GanttPropertySettings({ properties, visibleIds, onToggle, onMove, onRes
   onResetTooltip: () => void;
 }) {
   const propertiesById = new Map(properties.map((property) => [property.id, property]));
+  const tooltipPropertiesById = new Map(tooltipProperties.map((property) => [property.id, property]));
   const orderedProperties = [
     ...visibleIds.flatMap((id) => {
       const property = propertiesById.get(id);
@@ -962,10 +969,10 @@ function GanttPropertySettings({ properties, visibleIds, onToggle, onMove, onRes
   ];
   const orderedTooltipProperties = [
     ...tooltipVisibleIds.flatMap((id) => {
-      const property = propertiesById.get(id);
+      const property = tooltipPropertiesById.get(id);
       return property ? [property] : [];
     }),
-    ...properties.filter((property) => !tooltipVisibleIds.includes(property.id)),
+    ...tooltipProperties.filter((property) => !tooltipVisibleIds.includes(property.id)),
   ];
   return (
     <div className="column-settings-popover gantt-property-popover" role="dialog" aria-label="甘特条属性">

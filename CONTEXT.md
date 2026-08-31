@@ -8,6 +8,10 @@ This context describes a personal system for scheduling and following work. Ever
 A single scheduled piece of work with its own status, time range, extensible properties, and recurrence.
 _Avoid_: Task, project, child plan
 
+**Work Content (工作内容)**:
+The required single-line title of a Work Plan; it is the Work Plan's primary identity in the plan list, exports, and Gantt displays. Distinct from the long-text Description field.
+_Avoid_: Description, 说明, long text
+
 **Automatic Status**:
 The effective Work Plan status derived from its time range: pending before the start, in progress during the range, and completed after the end.
 _Avoid_: Default status, calculated flag
