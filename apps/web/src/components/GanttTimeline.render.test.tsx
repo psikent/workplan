@@ -191,6 +191,69 @@ describe("GanttTimeline rendered grid", () => {
     expect(onCreateAt).toHaveBeenCalledWith(new Date(2026, 7, 7));
   });
 
+  it("keeps weekend holiday highlights from intercepting double clicks", async () => {
+    const onCreateAt = vi.fn();
+    const { container } = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+        onCreateAt={onCreateAt}
+      />,
+    );
+
+    const holiday = await waitFor(() => {
+      const element = container.querySelector<SVGRectElement>(".holiday-highlight");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(holiday.style.pointerEvents).toBe("none");
+
+    const svg = container.querySelector<SVGSVGElement>("svg.gantt")!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+      x: 100, y: 0, left: 100, right: 800, top: 0, bottom: 300, width: 700, height: 300, toJSON: () => ({}),
+    });
+
+    // Saturday 2026-08-08 occupies the sixth day column (x = 500, width 100).
+    fireEvent.doubleClick(holiday, { clientX: 100 + Number(holiday.getAttribute("x")) + 50 });
+
+    expect(onCreateAt).toHaveBeenCalledOnce();
+    expect(onCreateAt).toHaveBeenCalledWith(new Date(2026, 7, 8));
+  });
+
+  it("maps a double click on the Saturday grid column to that local date", async () => {
+    const onCreateAt = vi.fn();
+    const { container } = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+        onCreateAt={onCreateAt}
+      />,
+    );
+
+    const row = await waitFor(() => {
+      const element = container.querySelector<SVGRectElement>(".grid-row");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    const svg = container.querySelector<SVGSVGElement>("svg.gantt")!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+      x: 100, y: 0, left: 100, right: 800, top: 0, bottom: 300, width: 700, height: 300, toJSON: () => ({}),
+    });
+
+    fireEvent.doubleClick(row, { clientX: 650 });
+
+    expect(onCreateAt).toHaveBeenCalledOnce();
+    expect(onCreateAt).toHaveBeenCalledWith(new Date(2026, 7, 8));
+  });
+
   it("opens an existing bar once on double click without creating a plan", async () => {
     const onCreateAt = vi.fn();
     const onSelect = vi.fn();

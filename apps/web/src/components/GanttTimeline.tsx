@@ -190,6 +190,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
       gantt.gantt_end = exactRangeEnd;
       gantt.setup_date_values();
       gantt.render();
+      disableWeekendHighlightHit(containerRef.current);
        if (plans.length === 0) {
          containerRef.current.querySelector<SVGGElement>(`.bar-wrapper[data-id="${EMPTY_TIMELINE_TASK_ID}"]`)?.remove();
        }
@@ -833,7 +834,9 @@ function configureDateCellCreation(mount: HTMLElement, options: {
     const target = event.target;
     if (!(target instanceof Element)) return;
     if (target.closest(".bar-wrapper, .handle, .grid-header, .popup-wrapper")) return;
-    if (!target.closest(".grid-row")) return;
+    // frappe-gantt paints weekend highlight rects above .grid-row, so a
+    // double click on a weekend column lands on .holiday-highlight.
+    if (!target.closest(".grid-row, .holiday-highlight")) return;
 
     const svgRect = svg.getBoundingClientRect();
     const position = event.clientX - svgRect.left + scrollContainer.scrollLeft;
@@ -847,6 +850,14 @@ function configureDateCellCreation(mount: HTMLElement, options: {
 
   mount.addEventListener("dblclick", handleDoubleClick);
   return () => mount.removeEventListener("dblclick", handleDoubleClick);
+}
+
+// frappe-gantt paints weekend highlight rects above .grid-row; without this the
+// overlay swallows the hover hint and double-click create on weekend columns.
+function disableWeekendHighlightHit(mount: HTMLElement) {
+  for (const rect of mount.querySelectorAll<SVGRectElement>(".holiday-highlight")) {
+    rect.style.pointerEvents = "none";
+  }
 }
 
 export function alignCurrentDateMarker(mount: HTMLElement) {

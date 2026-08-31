@@ -1,6 +1,6 @@
 # Spec: 时间轴双击日期格新建工作计划
 
-> Status: **已完成** — 规格已定稿（/grill-with-docs 共识，2026-08-20）；票据 01–04 全部 done，代码与测试已落地（`GanttTimeline.tsx` dblclick + 「双击新建工作计划」悬停提示；`WorkPlansPage.tsx` 日期预填与不可见保存反馈），2026-08-22 核实通过。
+> Status: **已完成** — 规格已定稿（/grill-with-docs 共识，2026-08-20）；票据 01–04 全部 done，代码与测试已落地（`GanttTimeline.tsx` dblclick + 「双击新建工作计划」悬停提示；`WorkPlansPage.tsx` 日期预填与不可见保存反馈），2026-08-22 核实通过。2026-08-31 修复周末列被 frappe-gantt 周末高亮覆盖层拦截双击/悬停的回归（`issues/05`）。
 
 ## Goal
 
