@@ -23,3 +23,6 @@ dev.log
 /.zcode/
 /docs/architecture/
 .ssh/
+
+# local-only agent skills (personal workflow skills, not part of the repo)
+/.agents/skills/
