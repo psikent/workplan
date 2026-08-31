@@ -22,3 +22,4 @@ dev.log
 # session-local agent artifacts (session plans, architecture session reports)
 /.zcode/
 /docs/architecture/
+.ssh/
