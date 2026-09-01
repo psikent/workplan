@@ -151,7 +151,9 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
         language: "zh",
         bar_height: 26,
         padding: 32,
-        upper_header_height: 49,
+        // 高度归零以省出空白行，但 upper_text 标签仍须渲染（display:none 隐藏）：
+        // frappe-gantt 内部按标签文字定位滚动位置，缺标签会抛错。
+        upper_header_height: 0,
         lower_header_height: 40,
         column_width: columnWidth,
         snap_at: "1d",
@@ -196,12 +198,6 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
        }
       ensureCurrentDateMarker(gantt, containerRef.current, exactRangeStart, exactRangeEnd);
       centerDateMarkersWithinDayColumns(containerRef.current, columnWidth);
-      if (view === "week" && rangeSpansCalendarMonth(exactRangeStart, new Date(rangeEndTime))) {
-        alignCrossMonthUpperLabel(
-          containerRef.current,
-          containerRef.current.closest<HTMLElement>(".planner-timeline")?.querySelector<HTMLElement>(".timeline-range-controls") ?? null,
-        );
-      }
       applyWholeDayBarGeometry(containerRef.current, plansById, exactRangeStart, columnWidth);
       alignCurrentDateMarker(containerRef.current);
       currentMarkerFrame = window.requestAnimationFrame(() => {
@@ -653,26 +649,6 @@ function centerDateMarkersWithinDayColumns(mount: HTMLElement, columnWidth: numb
     marker.style.marginRight = "0px";
     marker.style.textAlign = "center";
   }
-}
-
-export function alignCrossMonthUpperLabel(mount: HTMLElement, controls: HTMLElement | null) {
-  const labels = [...mount.querySelectorAll<HTMLElement>(".upper-header > .upper-text")];
-  if (labels.length < 2 || !controls) return;
-
-  const firstLabelRect = labels[0]!.getBoundingClientRect();
-  const controlsRect = controls.getBoundingClientRect();
-  const nextLabel = labels[1]!;
-  const nextLabelRect = nextLabel.getBoundingClientRect();
-  const leadingGap = controlsRect.left - firstLabelRect.right;
-  const targetLeft = controlsRect.right + leadingGap;
-  const shift = Math.round(targetLeft - nextLabelRect.left);
-  if (shift !== 0) nextLabel.style.marginLeft = `${shift}px`;
-}
-
-function rangeSpansCalendarMonth(start: Date, exclusiveEnd: Date) {
-  const lastVisibleDay = new Date(exclusiveEnd);
-  lastVisibleDay.setDate(lastVisibleDay.getDate() - 1);
-  return start.getFullYear() !== lastVisibleDay.getFullYear() || start.getMonth() !== lastVisibleDay.getMonth();
 }
 
 function shiftIsoByLocalDays(value: string, days: number) {

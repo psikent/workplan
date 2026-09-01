@@ -806,17 +806,28 @@ export default function WorkPlansPage() {
         className={`planner-panel view-${view} ${collapsed ? "planner-collapsed" : ""} ${resizing ? "resizing" : ""}`}
         style={{ "--planner-list-width": `${listPercent}%` } as CSSProperties}
       >
-        <div className="planner-table">
-          <div className="table-toolbar">
+        <div className="table-toolbar">
+          <div className="table-toolbar-left">
             <button className="icon-button planner-collapse-button" type="button" aria-label={collapsed ? "展开任务列表" : "收起任务列表"} aria-expanded={!collapsed} title={collapsed ? "展开任务列表" : "收起任务列表"} onClick={toggleTaskList}>{collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</button>
-            <strong>{rangeTitle}</strong>
-            <div className="table-toolbar-actions">
-              <div className="column-settings-wrap">
-                <button className={`icon-button column-settings-button ${showColumnSettings ? "selected" : ""}`} type="button" aria-label="列设置" aria-expanded={showColumnSettings} onClick={() => setShowColumnSettings((value) => !value)}><Columns3 /></button>
-                {showColumnSettings ? <ColumnSettings columns={availableColumns} visibleIds={visibleColumnIds} onToggle={toggleColumn} onMove={moveColumn} onReset={() => setVisibleColumnIds(defaultColumnIds)} /> : null}
-              </div>
+            <div className="range-controls"><button className="icon-button" type="button" aria-label="上一时间范围" onClick={() => shiftRange(-1)}><ChevronLeft /></button><button className="secondary-button today-button" type="button" onClick={() => setAnchor(new Date())}>今天</button><button className="icon-button" type="button" aria-label="下一时间范围" onClick={() => shiftRange(1)}><ChevronRight /></button></div>
+          </div>
+          <strong>{rangeTitle}</strong>
+          <div className="table-toolbar-actions">
+            <div className="column-settings-wrap list-column-settings">
+              <button className={`icon-button column-settings-button ${showColumnSettings ? "selected" : ""}`} type="button" aria-label="列设置" aria-expanded={showColumnSettings} onClick={() => setShowColumnSettings((value) => !value)}><Columns3 /></button>
+              {showColumnSettings ? <ColumnSettings columns={availableColumns} visibleIds={visibleColumnIds} onToggle={toggleColumn} onMove={moveColumn} onReset={() => setVisibleColumnIds(defaultColumnIds)} /> : null}
+            </div>
+            <div className="view-switch" role="tablist" aria-label="时间轴视图">
+              <button className={view === "week" ? "active" : ""} type="button" role="tab" aria-selected={view === "week"} onClick={() => setView("week")}>周视图</button>
+              <button className={view === "month" ? "active" : ""} type="button" role="tab" aria-selected={view === "month"} onClick={() => setView("month")}>月视图</button>
+            </div>
+            <div className="column-settings-wrap">
+              <button className={`icon-button column-settings-button ${showGanttSettings ? "selected" : ""}`} type="button" aria-label="甘特条属性" aria-expanded={showGanttSettings} title="甘特图显示设置" onClick={() => setShowGanttSettings((value) => !value)}><ListFilter /></button>
+              {showGanttSettings ? <GanttPropertySettings properties={availableGanttProperties} tooltipProperties={availableTooltipProperties} visibleIds={ganttDisplayIds} onToggle={toggleGanttProperty} onMove={moveGanttProperty} onReset={() => setGanttDisplayIds(defaultGanttDisplayIds)} tooltipVisibleIds={tooltipDisplayIds} onToggleTooltip={toggleTooltipProperty} onMoveTooltip={moveTooltipProperty} onResetTooltip={() => setTooltipDisplayIds(defaultTooltipDisplayIds)} /> : null}
             </div>
           </div>
+        </div>
+        <div className="planner-table">
           <div className="plan-grid-scroll" style={planGridStyle}>
             <div className="planner-columns"><span>工作内容</span>{visibleColumns.map((column) => <span className={isTextPlanColumn(column) ? undefined : "plan-column-centered"} key={column.id}>{column.label}</span>)}</div>
             <div ref={planRowsRef} className="plan-rows">
@@ -845,15 +856,6 @@ export default function WorkPlansPage() {
           onDoubleClick={() => setListPercent(defaultListPercent)}
         />
         <div className="planner-timeline">
-          <div className="range-controls timeline-range-controls"><button className="icon-button" type="button" aria-label="上一时间范围" onClick={() => shiftRange(-1)}><ChevronLeft /></button><button className="secondary-button today-button" type="button" onClick={() => setAnchor(new Date())}>今天</button><button className="icon-button" type="button" aria-label="下一时间范围" onClick={() => shiftRange(1)}><ChevronRight /></button></div>
-          <div className="view-switch timeline-view-switch" role="tablist" aria-label="时间轴视图">
-            <button className={view === "week" ? "active" : ""} type="button" role="tab" aria-selected={view === "week"} onClick={() => setView("week")}>周视图</button>
-            <button className={view === "month" ? "active" : ""} type="button" role="tab" aria-selected={view === "month"} onClick={() => setView("month")}>月视图</button>
-          </div>
-          <div className="column-settings-wrap timeline-gantt-settings">
-            <button className={`icon-button column-settings-button ${showGanttSettings ? "selected" : ""}`} type="button" aria-label="甘特条属性" aria-expanded={showGanttSettings} title="甘特图显示设置" onClick={() => setShowGanttSettings((value) => !value)}><ListFilter /></button>
-            {showGanttSettings ? <GanttPropertySettings properties={availableGanttProperties} tooltipProperties={availableTooltipProperties} visibleIds={ganttDisplayIds} onToggle={toggleGanttProperty} onMove={moveGanttProperty} onReset={() => setGanttDisplayIds(defaultGanttDisplayIds)} tooltipVisibleIds={tooltipDisplayIds} onToggleTooltip={toggleTooltipProperty} onMoveTooltip={moveTooltipProperty} onResetTooltip={() => setTooltipDisplayIds(defaultTooltipDisplayIds)} /> : null}
-          </div>
           <GanttTimeline plans={visiblePlans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} />
         </div>
       </div>

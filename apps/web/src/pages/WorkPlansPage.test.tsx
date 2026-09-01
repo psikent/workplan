@@ -527,21 +527,23 @@ describe("work plan range and Gantt display", () => {
     view.unmount();
   });
 
-  it("places the timeline controls over the timeline pane", async () => {
+  it("places the timeline controls in the merged panel toolbar", async () => {
     const view = renderPage();
     await screen.findByText("示例计划");
 
+    const toolbar = view.container.querySelector(".table-toolbar");
+    expect(toolbar).not.toBeNull();
+    const timeline = view.container.querySelector(".planner-timeline");
     const tabs = screen.getByRole("tablist", { name: "时间轴视图" });
-    expect(tabs.closest(".planner-timeline")).not.toBeNull();
-    expect(tabs.closest(".planner-table")).toBeNull();
+    expect(toolbar!.contains(tabs)).toBe(true);
     const previousRange = screen.getByRole("button", { name: "上一时间范围" });
     const nextRange = screen.getByRole("button", { name: "下一时间范围" });
     const today = screen.getByRole("button", { name: "今天" });
-    expect(previousRange.closest(".planner-timeline")).not.toBeNull();
-    expect(nextRange.closest(".planner-table")).toBeNull();
+    expect(toolbar!.contains(previousRange)).toBe(true);
+    expect(toolbar!.contains(today)).toBe(true);
     const ganttSettings = screen.getByRole("button", { name: "甘特条属性" });
-    expect(ganttSettings.closest(".planner-timeline")).not.toBeNull();
-    expect(ganttSettings.closest(".planner-table")).toBeNull();
+    expect(toolbar!.contains(ganttSettings)).toBe(true);
+    expect(timeline!.contains(toolbar!)).toBe(false);
     const ganttProps = ganttPropsMock.mock.calls.at(-1)?.[0] as { verticalScrollPeerRef?: { current: HTMLElement | null } };
     expect(ganttProps.verticalScrollPeerRef?.current).toBe(view.container.querySelector(".plan-rows"));
     expect(view.container.querySelector(".plan-row")?.getAttribute("data-plan-id")).toBe(plan.id);
