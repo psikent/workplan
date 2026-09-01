@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import ReloadPrompt from "./components/ReloadPrompt";
 import { ToastProvider } from "./components/ToastProvider";
 import "./styles.css";
 
@@ -19,6 +20,7 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <ToastProvider>
           <App />
+          <ReloadPrompt />
         </ToastProvider>
       </BrowserRouter>
     </QueryClientProvider>

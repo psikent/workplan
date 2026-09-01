@@ -55,6 +55,7 @@ export function AuthenticatedRoutes({ role }: { role: UserRole }) {
 
 type BootstrapState =
   | { status: "loading" }
+  | { status: "offline" }
   | { status: "anonymous"; setupRequired: boolean; setupTokenExpiresAt: string | null }
   | { status: "authenticated"; user: User };
 
@@ -68,25 +69,31 @@ function SystemTheme({ children }: { children: ReactNode }) {
 
 export default function App() {
   const [state, setState] = useState<BootstrapState>({ status: "loading" });
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
+    setState({ status: "loading" });
     Promise.all([
       api<{ setupRequired: boolean; setupTokenExpiresAt: string | null }>("/setup/status"),
       api<{ user: User; csrfToken: string | null }>("/auth/me").catch(() => null),
-    ]).then(([setup, session]) => {
-      if (!active) return;
-      if (session) {
-        setCsrfToken(session.csrfToken);
-        setState({ status: "authenticated", user: session.user });
-      } else {
-        setState({ status: "anonymous", ...setup });
-      }
-    });
+    ])
+      .then(([setup, session]) => {
+        if (!active) return;
+        if (session) {
+          setCsrfToken(session.csrfToken);
+          setState({ status: "authenticated", user: session.user });
+        } else {
+          setState({ status: "anonymous", ...setup });
+        }
+      })
+      .catch(() => {
+        if (active) setState({ status: "offline" });
+      });
     return () => {
       active = false;
     };
-  }, []);
+  }, [bootstrapAttempt]);
 
   const session = useMemo<SessionContextValue | null>(() => {
     if (state.status !== "authenticated") return null;
@@ -106,6 +113,16 @@ export default function App() {
       <main className="boot-screen" aria-live="polite">
         <BrandMark className="brand-mark" />
         <p>正在载入工作计划…</p>
+      </main>
+    );
+  } else if (state.status === "offline") {
+    content = (
+      <main className="boot-screen" aria-live="polite">
+        <BrandMark className="brand-mark" />
+        <p>网络连接不可用，请检查网络后重试。</p>
+        <button className="secondary-button" type="button" onClick={() => setBootstrapAttempt((attempt) => attempt + 1)}>
+          重试
+        </button>
       </main>
     );
   } else if (state.status === "anonymous") {

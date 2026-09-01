@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CalendarRange, ChevronLeft, ChevronRight, LayoutDashboard, LogOut, MonitorCog, Moon, Settings, Sun, Target } from "lucide-react";
+import { CalendarRange, ChevronLeft, ChevronRight, LayoutDashboard, LogOut, MonitorCog, Moon, Settings, Sun, Target, WifiOff } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useSession } from "../App";
+import { useOnline } from "../lib/useOnline";
 import { roleLabel } from "../lib/permissions";
 import { applyTheme, useSystemTheme, type Theme } from "../lib/theme";
 import BrandMark from "./BrandMark";
@@ -41,6 +42,7 @@ function loadThemePreference(): ThemePreference {
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useSession();
+  const online = useOnline();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const systemTheme = useSystemTheme();
@@ -130,7 +132,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <span>{sidebarCollapsed ? "展开导航" : "收起导航"}</span>
         </button>
       </aside>
-      <main className="app-main">{children}</main>
+      <main className="app-main">
+        {!online && (
+          <div className="offline-banner" role="status">
+            <WifiOff aria-hidden="true" />
+            <span>当前处于离线状态，数据可能不是最新的。</span>
+          </div>
+        )}
+        {children}
+      </main>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, createMemoryRouter, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App, { AuthenticatedRoutes } from "./App";
@@ -93,6 +93,26 @@ describe("login screen theme", () => {
       systemThemeListeners.forEach((listener) => listener({ matches: false } as MediaQueryListEvent));
     });
     expect(document.documentElement.dataset.theme).toBe("light");
+    view.unmount();
+  });
+});
+
+describe("bootstrap offline", () => {
+  it("shows an offline screen with retry when the bootstrap requests fail", async () => {
+    apiMock.mockImplementation(() => Promise.reject(new Error("offline")));
+    const view = render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("网络连接不可用，请检查网络后重试。")).toBeTruthy();
+    apiMock.mockImplementation((url: string) =>
+      url === "/auth/me"
+        ? Promise.reject(new Error("no session"))
+        : Promise.resolve({ setupRequired: false, setupTokenExpiresAt: null }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "登录" })).toBeTruthy());
     view.unmount();
   });
 });

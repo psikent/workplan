@@ -101,6 +101,16 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .success-toast button svg { width: 15px; height: 15px; }
 @keyframes toast-in { from { transform: translateY(-8px); opacity: 0; } }
 
+.update-prompt { position: fixed; z-index: 210; bottom: 24px; left: 50%; transform: translateX(-50%); display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 28px; align-items: center; gap: 10px; width: min(420px, calc(100vw - 32px)); min-height: 48px; padding: 9px 9px 9px 13px; border: 1px solid #aebefa; border-radius: 9px; background: var(--surface); color: var(--text); box-shadow: 0 14px 36px rgb(24 48 42 / 18%); font-size: 13px; font-weight: 600; animation: toast-in .18s ease-out; }
+.update-prompt > svg { color: var(--accent); }
+.update-prompt-reload { min-height: 30px; padding: 0 13px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; font-size: 12px; font-weight: 650; }
+.update-prompt-reload:hover { background: var(--accent-hover); }
+.update-prompt-close { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.update-prompt-close:hover { background: var(--accent-soft); color: var(--text); }
+.update-prompt-close svg { width: 15px; height: 15px; }
+
+.offline-banner { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 9px 13px; border-bottom: 1px solid #f2dcae; background: var(--amber-soft); color: #8a6116; font-size: 13px; font-weight: 600; }
+
 .filter-toolbar { min-height: 50px; display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
 .secondary-button.selected { border-color: #aebfff; background: var(--accent-soft); color: var(--accent); }
 .advanced-filter-panel { min-height: 50px; display: flex; align-items: center; gap: 10px; margin: -5px 0 13px; padding: 8px 11px; border: 1px solid #d8e0fa; border-radius: 7px; background: #f7f9ff; }
@@ -506,7 +516,11 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 :root[data-theme="dark"] .upcoming-section,
 :root[data-theme="dark"] .auth-screen,
 :root[data-theme="dark"] .boot-screen,
+:root[data-theme="dark"] .update-prompt,
 :root[data-theme="dark"] .success-toast { background: var(--surface); }
+
+:root[data-theme="dark"] .update-prompt { border-color: #2f3a6e; box-shadow: 0 14px 36px rgb(0 0 0 / 38%); }
+:root[data-theme="dark"] .offline-banner { border-bottom-color: #705620; color: #f3c96f; }
 
 :root[data-theme="dark"] .success-toast { border-color: #2f6a52; box-shadow: 0 14px 36px rgb(0 0 0 / 38%); }
 :root[data-theme="dark"] .signout-button { border-color: var(--line); background: var(--surface); color: #c5cede; }
