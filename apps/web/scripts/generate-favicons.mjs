@@ -41,12 +41,12 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function sample(p) {
+function sample(p, maskable) {
   const gp = { x: p.x - GLYPH_TRANSLATE.x, y: p.y - GLYPH_TRANSLATE.y };
   const tileSd = sdRoundRect(p, TILE);
-  const tileCover = clamp(0.5 - tileSd, 0, 1);
+  const tileCover = maskable ? 1 : clamp(0.5 - tileSd, 0, 1);
   let glyphCover = 0;
-  if (tileSd < STROKE) {
+  if (maskable || tileSd < STROKE) {
     glyphCover = Math.max(glyphCover, clamp(STROKE / 2 + 0.5 - Math.abs(sdRoundRect(gp, GLYPH_RECT)), 0, 1));
     for (const [a, b] of GLYPH_SEGMENTS) {
       glyphCover = Math.max(glyphCover, clamp(STROKE / 2 + 0.5 - sdSegment(gp, a, b), 0, 1));
@@ -55,7 +55,7 @@ function sample(p) {
   return { cover: tileCover, glyph: glyphCover };
 }
 
-function render(size) {
+function render(size, maskable = false) {
   const rgba = Buffer.alloc(size * size * 4);
   const SS = 4;
   for (let y = 0; y < size; y++) {
@@ -67,7 +67,7 @@ function render(size) {
             x: ((x + (sx + 0.5) / SS) / size) * 40,
             y: ((y + (sy + 0.5) / SS) / size) * 40,
           };
-          const s = sample(p);
+          const s = sample(p, maskable);
           const mix = s.glyph;
           r += TILE_COLOR[0] * (1 - mix) + GLYPH_COLOR[0] * mix;
           g += TILE_COLOR[1] * (1 - mix) + GLYPH_COLOR[1] * mix;
@@ -168,4 +168,8 @@ writeFileSync(join(outDir, "favicon.svg"), GLYPH_SVG);
 writeFileSync(join(outDir, "favicon.ico"), encodeIco([16, 32, 48, 256]));
 writeFileSync(join(outDir, "apple-touch-icon.png"), encodePng(render(180), 180));
 writeFileSync(join(outDir, "brand-preview.png"), encodePng(render(256), 256));
+writeFileSync(join(outDir, "pwa-192x192.png"), encodePng(render(192), 192));
+writeFileSync(join(outDir, "pwa-512x512.png"), encodePng(render(512), 512));
+writeFileSync(join(outDir, "pwa-maskable-192x192.png"), encodePng(render(192, true), 192));
+writeFileSync(join(outDir, "pwa-maskable-512x512.png"), encodePng(render(512, true), 512));
 console.log("favicons written to", outDir);
