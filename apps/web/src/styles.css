@@ -480,6 +480,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 :root[data-theme="dark"] .planner-panel,
 :root[data-theme="dark"] .planner-table,
 :root[data-theme="dark"] .planner-divider,
+:root[data-theme="dark"] .table-toolbar,
 :root[data-theme="dark"] .view-switch button.active,
 :root[data-theme="dark"] .column-settings-popover,
 :root[data-theme="dark"] .column-settings-popover > header,
