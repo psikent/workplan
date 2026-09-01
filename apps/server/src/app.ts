@@ -266,7 +266,21 @@ export async function buildApp(options: BuildAppOptions = {}) {
   }
 
   if (fs.existsSync(config.webDistPath)) {
-    await app.register(fastifyStatic, { root: config.webDistPath, wildcard: false });
+    await app.register(fastifyStatic, {
+      root: config.webDistPath,
+      wildcard: false,
+      cacheControl: false,
+      setHeaders: (reply, filePath) => {
+        const relative = path.relative(config.webDistPath, filePath);
+        if (relative.startsWith(`assets${path.sep}`)) {
+          reply.header("Cache-Control", "public, max-age=31536000, immutable");
+        } else if (relative === "sw.js") {
+          reply.header("Cache-Control", "public, max-age=0, must-revalidate");
+        } else {
+          reply.header("Cache-Control", "no-cache");
+        }
+      },
+    });
     app.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith("/api/") || request.url.startsWith("/health/")) {
         reply.code(404).send({
@@ -278,7 +292,10 @@ export async function buildApp(options: BuildAppOptions = {}) {
         });
         return;
       }
-      reply.type("text/html").send(fs.createReadStream(path.join(config.webDistPath, "index.html")));
+      reply
+        .type("text/html")
+        .header("Cache-Control", "no-cache")
+        .send(fs.createReadStream(path.join(config.webDistPath, "index.html")));
     });
   }
 
