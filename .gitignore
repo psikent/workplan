@@ -26,3 +26,6 @@ dev.log
 
 # local-only agent skills (personal workflow skills, not part of the repo)
 /.agents/skills/
+
+# dev log shell output
+dev-console.log
