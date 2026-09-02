@@ -1211,6 +1211,46 @@ describe("GanttTimeline rendered grid", () => {
     expect(Number.parseFloat(secondDate.style.top)).toBe(secondTop);
   });
 
+  it("centers the task date range highlight with the date layers, including while hidden", () => {
+    const mount = document.createElement("div");
+    const header = document.createElement("div");
+    const date = document.createElement("div");
+    const range = document.createElement("div");
+    header.className = "grid-header";
+    date.className = "lower-text";
+    range.className = "date-range-highlight hide";
+    header.append(range, date);
+    mount.append(header);
+
+    Object.defineProperty(header, "clientHeight", { configurable: true, value: 49 });
+    Object.defineProperty(header, "clientTop", { configurable: true, value: 0 });
+    vi.spyOn(header, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 100, left: 0, right: 700, top: 100, bottom: 150, width: 700, height: 50, toJSON: () => ({}),
+    });
+    for (const el of [date, range]) {
+      Object.defineProperty(el, "offsetParent", { configurable: true, value: header });
+    }
+    vi.spyOn(date, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 105, left: 0, right: 80, top: 105, bottom: 137, width: 80, height: 32, toJSON: () => ({}),
+    });
+    vi.spyOn(range, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}),
+    });
+    const computedSpy = vi.spyOn(window, "getComputedStyle").mockImplementation(((el: Element) => (
+      el === range ? { height: "34px" } : { height: "" }
+    ) as unknown as CSSStyleDeclaration) as typeof window.getComputedStyle);
+
+    alignDateHeaderContentVertically(mount);
+    expect(Number.parseFloat(date.style.top)).toBe(8.5);
+    expect(Number.parseFloat(range.style.top)).toBe(7.5);
+    expect(Math.abs(Number.parseFloat(range.style.top) + 17 - header.clientHeight / 2)).toBeLessThanOrEqual(1);
+
+    alignDateHeaderContentVertically(mount);
+    expect(Number.parseFloat(range.style.top)).toBe(7.5);
+    expect(Number.parseFloat(date.style.top)).toBe(8.5);
+    computedSpy.mockRestore();
+  });
+
   it("safely skips missing or unmeasurable date header content", () => {
     expect(() => alignDateHeaderContentVertically(document.createElement("div"))).not.toThrow();
 

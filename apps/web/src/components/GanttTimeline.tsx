@@ -863,14 +863,17 @@ export function alignDateHeaderContentVertically(mount: HTMLElement) {
 
   const headerRect = header.getBoundingClientRect();
   const contentTop = headerRect.top + header.clientTop;
-  for (const date of mount.querySelectorAll<HTMLElement>(".lower-text")) {
-    const dateRect = date.getBoundingClientRect();
-    if (dateRect.height <= 0) continue;
-    const parent = date.offsetParent instanceof HTMLElement ? date.offsetParent : date.parentElement;
+  // .date-range-highlight（悬停任务时表头显示的日期范围块）平时带 .hide（display:none），
+  // rect 高度为 0，但 CSS 的 calc 高度仍可解析；据此参与居中，避免显示时回落到 frappe 固定的 top。
+  for (const block of mount.querySelectorAll<HTMLElement>(".lower-text, .date-range-highlight")) {
+    let height = block.getBoundingClientRect().height;
+    if (height <= 0) height = Number.parseFloat(getComputedStyle(block).height);
+    if (!(height > 0)) continue;
+    const parent = block.offsetParent instanceof HTMLElement ? block.offsetParent : block.parentElement;
     if (!parent) continue;
     const parentRect = parent.getBoundingClientRect();
-    const top = contentTop - parentRect.top + (header.clientHeight - dateRect.height) / 2;
-    date.style.top = `${top}px`;
+    const top = contentTop - parentRect.top + (header.clientHeight - height) / 2;
+    block.style.top = `${top}px`;
   }
 }
 
