@@ -3,7 +3,7 @@ import { fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReminderDay, WorkPlan } from "@workplan/contracts";
 import type { ComponentProps, ComponentType, RefObject } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import GanttTimeline, { alignCurrentDateMarker, ensureCurrentDateMarker, timelineDateAtPosition } from "./GanttTimeline";
+import GanttTimeline, { alignCurrentDateMarker, alignDateHeaderContentVertically, ensureCurrentDateMarker, timelineDateAtPosition } from "./GanttTimeline";
 
 const originalScrollTo = HTMLElement.prototype.scrollTo;
 const svgElementPrototype = SVGElement.prototype as SVGElement & { getBBox?: () => DOMRect };
@@ -1174,6 +1174,71 @@ describe("GanttTimeline rendered grid", () => {
 
     expect(line.style.left).toBe("99.5px");
     expect(ball.style.left).toBe("87px");
+  });
+
+  it("centers every date layer within the visible header content without accumulating drift", () => {
+    const mount = document.createElement("div");
+    const header = document.createElement("div");
+    const firstDate = document.createElement("div");
+    const secondDate = document.createElement("div");
+    header.className = "grid-header";
+    firstDate.className = "lower-text";
+    secondDate.className = "lower-text current-date-highlight";
+    header.append(firstDate, secondDate);
+    mount.append(header);
+
+    Object.defineProperty(header, "clientHeight", { configurable: true, value: 49 });
+    Object.defineProperty(header, "clientTop", { configurable: true, value: 0 });
+    vi.spyOn(header, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 100, left: 0, right: 700, top: 100, bottom: 150, width: 700, height: 50, toJSON: () => ({}),
+    });
+    for (const date of [firstDate, secondDate]) {
+      vi.spyOn(date, "getBoundingClientRect").mockReturnValue({
+        x: 0, y: 105, left: 0, right: 80, top: 105, bottom: 137, width: 80, height: 32, toJSON: () => ({}),
+      });
+      Object.defineProperty(date, "offsetParent", { configurable: true, value: header });
+    }
+
+    alignDateHeaderContentVertically(mount);
+    const firstTop = Number.parseFloat(firstDate.style.top);
+    const secondTop = Number.parseFloat(secondDate.style.top);
+    const contentCenter = header.clientHeight / 2;
+    expect(Math.abs(firstTop + 16 - contentCenter)).toBeLessThanOrEqual(1);
+    expect(secondTop).toBe(firstTop);
+
+    alignDateHeaderContentVertically(mount);
+    expect(Number.parseFloat(firstDate.style.top)).toBe(firstTop);
+    expect(Number.parseFloat(secondDate.style.top)).toBe(secondTop);
+  });
+
+  it("safely skips missing or unmeasurable date header content", () => {
+    expect(() => alignDateHeaderContentVertically(document.createElement("div"))).not.toThrow();
+
+    const headerOnlyMount = document.createElement("div");
+    const headerOnly = document.createElement("div");
+    headerOnly.className = "grid-header";
+    headerOnlyMount.append(headerOnly);
+    Object.defineProperty(headerOnly, "clientHeight", { configurable: true, value: 49 });
+    expect(() => alignDateHeaderContentVertically(headerOnlyMount)).not.toThrow();
+
+    const mount = document.createElement("div");
+    const header = document.createElement("div");
+    const date = document.createElement("div");
+    header.className = "grid-header";
+    date.className = "lower-text";
+    header.append(date);
+    mount.append(header);
+    Object.defineProperty(header, "clientHeight", { configurable: true, value: 0 });
+
+    expect(() => alignDateHeaderContentVertically(mount)).not.toThrow();
+    expect(date.style.top).toBe("");
+
+    Object.defineProperty(header, "clientHeight", { configurable: true, value: 49 });
+    vi.spyOn(date, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}),
+    });
+    expect(() => alignDateHeaderContentVertically(mount)).not.toThrow();
+    expect(date.style.top).toBe("");
   });
 });
 

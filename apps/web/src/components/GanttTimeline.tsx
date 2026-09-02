@@ -200,10 +200,6 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
       centerDateMarkersWithinDayColumns(containerRef.current, columnWidth);
       applyWholeDayBarGeometry(containerRef.current, plansById, exactRangeStart, columnWidth);
       alignCurrentDateMarker(containerRef.current);
-      currentMarkerFrame = window.requestAnimationFrame(() => {
-        currentMarkerFrame = null;
-        if (!disposed && containerRef.current) alignCurrentDateMarker(containerRef.current);
-      });
       cleanupCenteredLabels = keepGanttLabelsCentered(containerRef.current);
       trimGanttToPlanRows(containerRef.current, Math.max(plans.length, 1));
       // 收起态下任务列表不可见：不挂接双向滚动/悬停同步，展开后随图表重建恢复。
@@ -238,6 +234,14 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
           if (plan) onSelectRef.current(plan);
           else onReminderSelectRef.current?.(planId);
         },
+      });
+      alignDateHeaderContentVertically(containerRef.current);
+      currentMarkerFrame = window.requestAnimationFrame(() => {
+        currentMarkerFrame = null;
+        if (!disposed && containerRef.current) {
+          alignDateHeaderContentVertically(containerRef.current);
+          alignCurrentDateMarker(containerRef.current);
+        }
       });
     });
     return () => {
@@ -850,6 +854,23 @@ export function alignCurrentDateMarker(mount: HTMLElement) {
     const markerRect = marker.getBoundingClientRect();
     const markerWidth = markerRect.width || Number.parseFloat(marker.style.width) || (marker.classList.contains("current-ball-highlight") ? 6 : 1);
     marker.style.left = `${centerX - parentRect.left - markerWidth / 2}px`;
+  }
+}
+
+export function alignDateHeaderContentVertically(mount: HTMLElement) {
+  const header = mount.querySelector<HTMLElement>(".grid-header");
+  if (!header || header.clientHeight <= 0) return;
+
+  const headerRect = header.getBoundingClientRect();
+  const contentTop = headerRect.top + header.clientTop;
+  for (const date of mount.querySelectorAll<HTMLElement>(".lower-text")) {
+    const dateRect = date.getBoundingClientRect();
+    if (dateRect.height <= 0) continue;
+    const parent = date.offsetParent instanceof HTMLElement ? date.offsetParent : date.parentElement;
+    if (!parent) continue;
+    const parentRect = parent.getBoundingClientRect();
+    const top = contentTop - parentRect.top + (header.clientHeight - dateRect.height) / 2;
+    date.style.top = `${top}px`;
   }
 }
 
