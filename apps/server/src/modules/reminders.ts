@@ -7,7 +7,7 @@ import type {
   WorkPlanStatus,
   WorkPlanStatusMode,
 } from "@workplan/contracts";
-import { deriveWorkPlanStatus } from "@workplan/contracts";
+import { compareWorkPlansBySchedule, deriveWorkPlanStatus } from "@workplan/contracts";
 import type { DatabaseBundle } from "../db/index.js";
 import type { CustomFieldService } from "./custom-fields.js";
 
@@ -58,6 +58,7 @@ type PlanSnapshot = {
   title: string;
   startAt: string;
   endAt: string;
+  createdAt: string;
   status: WorkPlanStatus;
   customFields: Record<string, unknown>;
 };
@@ -92,11 +93,22 @@ function riskLabelOf(value: unknown, definitions: CustomFieldDefinition[]): stri
 }
 
 function planRef(plan: PlanSnapshot, definitions: CustomFieldDefinition[]): Reminder["plans"][number] {
-  return { id: plan.id, title: plan.title, startAt: plan.startAt, risk: riskLabelOf(plan.customFields.risk, definitions) };
+  return {
+    id: plan.id,
+    title: plan.title,
+    startAt: plan.startAt,
+    endAt: plan.endAt,
+    createdAt: plan.createdAt,
+    risk: riskLabelOf(plan.customFields.risk, definitions),
+  };
 }
 
-function comparePlans(left: { id: string; startAt: string }, right: { id: string; startAt: string }): number {
-  return Date.parse(left.startAt) - Date.parse(right.startAt) || left.id.localeCompare(right.id);
+// 同类提醒内的计划改用统一排期顺序（开始升、结束降、创建升、ID 码点升）。
+function comparePlans(
+  left: { id: string; startAt: string; endAt: string; createdAt: string },
+  right: { id: string; startAt: string; endAt: string; createdAt: string },
+): number {
+  return compareWorkPlansBySchedule(left, right);
 }
 
 /** 从计划 customFields 中取出检修单布尔值（兼容 need_ticket/ticket 两个 key）。 */
@@ -231,7 +243,7 @@ export class ReminderService {
     const definitions = this.customFields.list();
 
     const rows = this.database.sqlite
-      .prepare("SELECT id, title, status, status_mode, start_at, end_at FROM work_plans")
+      .prepare("SELECT id, title, status, status_mode, start_at, end_at, created_at FROM work_plans")
       .all() as Array<{
       id: string;
       title: string;
@@ -239,10 +251,12 @@ export class ReminderService {
       status_mode: WorkPlanStatusMode;
       start_at: string;
       end_at: string;
+      created_at: string;
     }>;
     const plans: PlanSnapshot[] = rows.map((row) => ({
       id: row.id,
       title: row.title,
+      createdAt: row.created_at,
       startAt: row.start_at,
       endAt: row.end_at,
       status: row.status_mode === "automatic" ? deriveWorkPlanStatus(row.start_at, row.end_at, now) : row.status,

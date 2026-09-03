@@ -1,11 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { compareWorkPlansBySchedule, type ReminderType, type WorkPlan } from "@workplan/contracts";
+import type { ReminderType, WorkbenchOverview } from "@workplan/contracts";
 import { ArrowRight, CalendarClock, CircleCheckBig, Clock3, PlayCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
 import { api, fetchReminders } from "../lib/api";
 import { formatDate, toLocalDateString } from "../lib/format";
-import { workingDaysAfter } from "../lib/working-days";
 
 const reminderTypeLabels: Record<ReminderType, string> = {
   "work-order": "检修单提醒",
@@ -21,38 +20,35 @@ function workPlanTimelineLink(plan: { id: string; startAt: string }) {
   return `/work-plans?${params.toString()}`;
 }
 
+// 区块成员、计数与顺序全部来自服务端（同一求值时刻），前端不再二次分组或排序。
 export default function OverviewPage() {
-  const plans = useQuery({ queryKey: ["work-plans"], queryFn: () => api<WorkPlan[]>("/work-plans?limit=500"), refetchInterval: 30_000 });
+  const overview = useQuery({
+    queryKey: ["workbench-overview"],
+    queryFn: () => api<WorkbenchOverview>("/workbench/overview?limit=50"),
+    refetchInterval: 30_000,
+  });
   const today = toLocalDateString(new Date());
   const remindersQuery = useQuery({
     queryKey: ["reminders", today, today],
     queryFn: () => fetchReminders(today, today),
     refetchInterval: 30_000,
   });
-  const data = plans.data ?? [];
-  const active = data.filter((plan) => !["completed", "cancelled"].includes(plan.status));
-  const localDay = (iso: string) => toLocalDateString(new Date(iso));
-  const bySchedule = (items: WorkPlan[]) => [...items].sort(compareWorkPlansBySchedule);
-  const startingToday = bySchedule(active.filter((plan) => localDay(plan.startAt) === today));
-  const continuingToday = bySchedule(active.filter((plan) => localDay(plan.startAt) < today && localDay(plan.endAt) >= today));
-  const windowEnd = toLocalDateString(workingDaysAfter(new Date(), 7));
-  const upcoming = bySchedule(active.filter((plan) => {
-    const startDay = localDay(plan.startAt);
-    return startDay > today && startDay <= windowEnd;
-  }));
+  const data = overview.data;
   const todayReminders = remindersQuery.data?.days.find((day) => day.date === today)?.reminders ?? [];
   const reminderRows = todayReminders.flatMap((reminder) => reminder.plans.map((plan) => ({ type: reminder.type, reminder, plan })));
-  const planGroups = [
-    { key: "starting-today", heading: "今日新开工", description: "开始时间是今天的计划", items: startingToday, viewAll: false },
-    { key: "continuing-today", heading: "今日继续开工", description: "此前开工、今天仍在工期内的计划", items: continuingToday, viewAll: false },
-    { key: "upcoming", heading: "接下来的计划", description: "未来 7 个工作日内开工的计划", items: upcoming, viewAll: true },
-  ] as const;
-  const showEmptyState = !plans.isLoading && reminderRows.length === 0 && planGroups.every((group) => group.items.length === 0);
+  const planGroups = data
+    ? [
+        { key: "starting-today", heading: "今日新开工", description: "开始时间是今天的计划", items: data.startingToday.items, viewAll: false },
+        { key: "continuing-today", heading: "今日继续开工", description: "此前开工、今天仍在工期内的计划", items: data.continuingToday.items, viewAll: false },
+        { key: "upcoming", heading: "接下来的计划", description: "未来 7 个工作日内开工的计划", items: data.upcoming.items, viewAll: true },
+      ]
+    : [];
+  const showEmptyState = !overview.isLoading && reminderRows.length === 0 && planGroups.every((group) => group.items.length === 0);
   const summary = [
-    { label: "全部计划", value: data.length, icon: CalendarClock },
-    { label: "待开始", value: data.filter((plan) => plan.status === "pending").length, icon: Clock3 },
-    { label: "进行中", value: data.filter((plan) => plan.status === "in_progress").length, icon: PlayCircle },
-    { label: "已完成", value: data.filter((plan) => plan.status === "completed").length, icon: CircleCheckBig },
+    { label: "全部计划", value: data?.summary.all ?? 0, icon: CalendarClock },
+    { label: "待开始", value: data?.summary.pending ?? 0, icon: Clock3 },
+    { label: "进行中", value: data?.summary.inProgress ?? 0, icon: PlayCircle },
+    { label: "已完成", value: data?.summary.completed ?? 0, icon: CircleCheckBig },
   ];
   return (
     <section className="content-page narrow-page overview-page">

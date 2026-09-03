@@ -170,7 +170,7 @@ describe("reminder derivation API", () => {
         type: "work-order",
         date: "2027-08-12",
         originalDate: null,
-        plans: [{ id: plan.id, title: "需要检修单的计划", startAt: "2027-08-23T01:00:00.000Z", risk: "低" }],
+        plans: [{ id: plan.id, title: "需要检修单的计划", startAt: "2027-08-23T01:00:00.000Z", endAt: "2027-08-23T03:00:00.000Z", createdAt: "2027-08-11T01:00:00.000Z", risk: "低" }],
       },
     ]);
   });
@@ -209,7 +209,7 @@ describe("reminder derivation API", () => {
         type: "work-order",
         date: "2027-08-12",
         originalDate: null,
-        plans: [{ id: plan.id, title: "运行库 need_ticket 计划", startAt: "2027-08-23T01:00:00.000Z", risk: null }],
+        plans: [{ id: plan.id, title: "运行库 need_ticket 计划", startAt: "2027-08-23T01:00:00.000Z", endAt: "2027-08-23T03:00:00.000Z", createdAt: "2027-08-11T01:00:00.000Z", risk: null }],
       },
     ]);
   });
@@ -234,7 +234,7 @@ describe("reminder derivation API", () => {
         type: "work-order",
         date: "2027-08-11",
         originalDate: "2027-08-05",
-        plans: [{ id: plan.id, title: "已错过提醒日", startAt: "2027-08-16T01:00:00.000Z", risk: "低" }],
+        plans: [{ id: plan.id, title: "已错过提醒日", startAt: "2027-08-16T01:00:00.000Z", endAt: "2027-08-16T03:00:00.000Z", createdAt: "2027-08-11T01:00:00.000Z", risk: "低" }],
       },
     ]);
   });
@@ -302,8 +302,8 @@ describe("reminder derivation API", () => {
         date: "2027-08-11",
         originalDate: null,
         plans: [
-          { id: nextMonday.id, title: "下周一的计划", startAt: "2027-08-16T01:00:00.000Z", risk: "高" },
-          { id: nextSunday.id, title: "下周日计划", startAt: "2027-08-22T01:00:00.000Z", risk: "中" },
+          { id: nextMonday.id, title: "下周一的计划", startAt: "2027-08-16T01:00:00.000Z", endAt: "2027-08-16T03:00:00.000Z", createdAt: "2027-08-11T01:00:00.000Z", risk: "高" },
+          { id: nextSunday.id, title: "下周日计划", startAt: "2027-08-22T01:00:00.000Z", endAt: "2027-08-22T03:00:00.000Z", createdAt: "2027-08-11T01:00:00.000Z", risk: "中" },
         ],
       },
     ]);
@@ -358,7 +358,7 @@ describe("reminder derivation API", () => {
         date: "2027-08-25",
         originalDate: null,
         plans: [
-          { id: expect.any(String) as string, title: "更远一周的中风险计划", startAt: "2027-08-30T01:00:00.000Z", risk: "中" },
+          { id: expect.any(String) as string, title: "更远一周的中风险计划", startAt: "2027-08-30T01:00:00.000Z", endAt: "2027-08-30T03:00:00.000Z", createdAt: "2027-08-11T01:00:00.000Z", risk: "中" },
         ],
       },
     ]);

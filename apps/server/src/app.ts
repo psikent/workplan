@@ -30,6 +30,7 @@ import { TransferService } from "./modules/transfer.js";
 import { SpreadsheetTransferService } from "./modules/spreadsheet-transfer.js";
 import { WorkPlanService } from "./modules/work-plans.js";
 import { WorkPlanQueryEngine } from "./modules/work-plan-query.js";
+import { WorkbenchService } from "./modules/workbench.js";
 import { registerAuthRoutes, cookieName } from "./routes/auth.js";
 import { registerBarkSettingsRoutes } from "./routes/settings.js";
 import { registerCustomFieldRoutes } from "./routes/custom-fields.js";
@@ -42,6 +43,7 @@ import { registerReminderRoutes } from "./routes/reminders.js";
 import { registerTransferRoutes } from "./routes/transfer.js";
 import { registerSpreadsheetTransferRoutes } from "./routes/spreadsheet-transfer.js";
 import { registerWorkPlanRoutes } from "./routes/work-plans.js";
+import { registerWorkbenchRoutes } from "./routes/workbench.js";
 import "./types.js";
 
 const developmentWebOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"];
@@ -118,6 +120,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const monthlyGoalSeries = new MonthlyGoalSeriesService(database, monthlyGoals);
   const workPlanQueryEngine = new WorkPlanQueryEngine(database, customFields, ownerAccounts, monthlyGoals);
   const workPlans = new WorkPlanService(database, customFields, ownerAccounts, monthlyGoals, workPlanQueryEngine);
+  const workbench = new WorkbenchService(database, workPlanQueryEngine);
   const reminders = new ReminderService(database, customFields, config.timeZone);
   const recurrence = new RecurrenceService(database, workPlans);
   const transfer = new TransferService(database);
@@ -201,6 +204,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
   await registerAuthRoutes(app, auth);
   await registerWorkPlanRoutes(app, workPlans);
+  registerWorkbenchRoutes(app, workbench);
   await registerReminderRoutes(app, reminders);
   await registerMonthlyGoalRoutes(app, monthlyGoals);
   await registerMonthlyGoalSeriesRoutes(app, monthlyGoalSeries);

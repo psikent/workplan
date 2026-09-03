@@ -173,10 +173,14 @@ export class WorkPlanQueryEngine {
     readonly monthlyGoals: MonthlyGoalService,
   ) {}
 
-  // 统一查询入口：/query、旧 list/search 适配器与导出共用。
+  // 统一查询入口：/query、旧 list/search 适配器、导出与工作台共用。
   // options.offset 仅限旧兼容适配器使用；/query 路由不传，保持纯游标语义。
   query(request: WorkPlanQueryRequest, options: { offset?: number } = {}): WorkPlanQueryResult {
-    const evaluatedAt = nowIso();
+    return this.queryAt(request, nowIso(), options);
+  }
+
+  // 显式求值时刻版本：工作台三区块等场景要求多个查询共享同一求值时刻。
+  queryAt(request: WorkPlanQueryRequest, evaluatedAt: string, options: { offset?: number } = {}): WorkPlanQueryResult {
     const now = Date.parse(evaluatedAt);
     const catalog = new Map(this.customFields.list(true).map((field) => [field.key, field]));
 

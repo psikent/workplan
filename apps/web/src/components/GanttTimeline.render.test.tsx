@@ -1293,7 +1293,7 @@ describe("timeline reminder bells", () => {
   it("injects a bell under the date number for each reminder day", async () => {
     const reminderDays: ReminderDay[] = [{
       date: "2026-08-05",
-      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] }],
+      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, endAt: plan.startAt, createdAt: plan.createdAt, risk: null }] }],
     }];
     const { container } = render(
       <GanttTimeline plans={[plan]} reminders={reminderDays} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
@@ -1308,8 +1308,8 @@ describe("timeline reminder bells", () => {
     const reminderDays: ReminderDay[] = [{
       date: "2026-08-05",
       reminders: [
-        { type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] },
-        { type: "plan-submission", date: "2026-08-05", originalDate: null, plans: [{ id: trailingPlanId, title: "下周计划", startAt: localIso(2026, 8, 13), risk: "高" }] },
+        { type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, endAt: plan.startAt, createdAt: plan.createdAt, risk: null }] },
+        { type: "plan-submission", date: "2026-08-05", originalDate: null, plans: [{ id: trailingPlanId, title: "下周计划", startAt: localIso(2026, 8, 13), endAt: localIso(2026, 8, 13), createdAt: plan.createdAt, risk: "高" }] },
       ],
     }];
     const { container } = render(
@@ -1336,7 +1336,7 @@ describe("timeline reminder bells", () => {
   it("shows the plan title and start date for a work-order reminder", async () => {
     const reminderDays: ReminderDay[] = [{
       date: "2026-08-05",
-      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: "设计评审", startAt: localIso(2026, 8, 12), risk: null }] }],
+      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: "设计评审", startAt: localIso(2026, 8, 12), endAt: localIso(2026, 8, 12), createdAt: plan.createdAt, risk: null }] }],
     }];
     const { container } = render(
       <GanttTimeline plans={[plan]} reminders={reminderDays} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
@@ -1362,8 +1362,8 @@ describe("timeline reminder bells", () => {
         date: "2026-08-05",
         originalDate: null,
         plans: [
-          { id: plan.id, title: "设计评审", startAt: localIso(2026, 8, 12), risk: "高" },
-          { id: trailingPlanId, title: "下周计划", startAt: localIso(2026, 8, 13), risk: "中" },
+          { id: plan.id, title: "设计评审", startAt: localIso(2026, 8, 12), endAt: localIso(2026, 8, 12), createdAt: plan.createdAt, risk: "高" },
+          { id: trailingPlanId, title: "下周计划", startAt: localIso(2026, 8, 13), endAt: localIso(2026, 8, 13), createdAt: plan.createdAt, risk: "中" },
         ],
       }],
     }];
@@ -1389,7 +1389,7 @@ describe("timeline reminder bells", () => {
     const onSelect = vi.fn();
     const single: ReminderDay[] = [{
       date: "2026-08-05",
-      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] }],
+      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, endAt: plan.startAt, createdAt: plan.createdAt, risk: null }] }],
     }];
     const { container, unmount } = render(
       <GanttTimeline plans={[plan]} reminders={single} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={onSelect} />,
@@ -1413,8 +1413,8 @@ describe("timeline reminder bells", () => {
         date: "2026-08-05",
         originalDate: null,
         plans: [
-          { id: plan.id, title: "设计评审", startAt: localIso(2026, 8, 12), risk: "高" },
-          { id: trailingPlanId, title: "下周计划", startAt: localIso(2026, 8, 13), risk: "中" },
+          { id: plan.id, title: "设计评审", startAt: localIso(2026, 8, 12), endAt: localIso(2026, 8, 12), createdAt: plan.createdAt, risk: "高" },
+          { id: trailingPlanId, title: "下周计划", startAt: localIso(2026, 8, 13), endAt: localIso(2026, 8, 13), createdAt: plan.createdAt, risk: "中" },
         ],
       }],
     }];
@@ -1435,7 +1435,7 @@ describe("timeline reminder bells", () => {
   it("replays bells after the range changes and skips reminder days outside the range", async () => {
     const firstDays: ReminderDay[] = [{
       date: "2026-08-05",
-      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] }],
+      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, endAt: plan.startAt, createdAt: plan.createdAt, risk: null }] }],
     }];
     const { container, rerender } = render(
       <GanttTimeline plans={[plan]} reminders={firstDays} view="week" rangeStart={rangeStart} rangeEnd={rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
@@ -1444,7 +1444,7 @@ describe("timeline reminder bells", () => {
 
     const secondDays: ReminderDay[] = [{
       date: "2026-08-12",
-      reminders: [{ type: "work-order", date: "2026-08-12", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: localIso(2026, 8, 19), risk: null }] }],
+      reminders: [{ type: "work-order", date: "2026-08-12", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: localIso(2026, 8, 19), endAt: localIso(2026, 8, 19), createdAt: plan.createdAt, risk: null }] }],
     }];
     rerender(
       <GanttTimeline plans={[plan]} reminders={secondDays} view="week" rangeStart={new Date(2026, 7, 10)} rangeEnd={new Date(2026, 7, 17)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
@@ -1453,7 +1453,7 @@ describe("timeline reminder bells", () => {
     expect(bellIn(container, "2026-08-05")).toBeNull();
 
     rerender(
-      <GanttTimeline plans={[plan]} reminders={[{ date: "2026-08-20", reminders: [{ type: "work-order", date: "2026-08-20", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] }] }]} view="week" rangeStart={new Date(2026, 7, 10)} rangeEnd={new Date(2026, 7, 17)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+      <GanttTimeline plans={[plan]} reminders={[{ date: "2026-08-20", reminders: [{ type: "work-order", date: "2026-08-20", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, endAt: plan.startAt, createdAt: plan.createdAt, risk: null }] }] }]} view="week" rangeStart={new Date(2026, 7, 10)} rangeEnd={new Date(2026, 7, 17)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
     );
     await waitFor(() => expect(container.querySelectorAll(".timeline-reminder-bell")).toHaveLength(0));
   });

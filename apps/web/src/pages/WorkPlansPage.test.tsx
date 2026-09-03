@@ -1097,7 +1097,7 @@ describe("timeline reminder bells", () => {
   it("fetches reminders for the visible range and forwards them to the timeline", async () => {
     const reminderDays = [{
       date: "2026-08-05",
-      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, risk: null }] }],
+      reminders: [{ type: "work-order", date: "2026-08-05", originalDate: null, plans: [{ id: plan.id, title: plan.title, startAt: plan.startAt, endAt: plan.startAt, createdAt: plan.createdAt, risk: null }] }],
     }];
     fetchRemindersMock.mockResolvedValue({ days: reminderDays });
     const view = renderPage();

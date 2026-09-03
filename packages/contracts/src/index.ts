@@ -236,6 +236,9 @@ export const reminderPlanSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
   startAt: isoDateTimeSchema,
+  // 排期顺序比较所需：结束时间与创建时间（附加字段，向后兼容）
+  endAt: isoDateTimeSchema,
+  createdAt: isoDateTimeSchema,
   risk: z.string().nullable(),
 });
 
@@ -869,6 +872,32 @@ export const importWorkPlansXlsSchema = z.object({
   fileName: z.string().trim().min(1).max(255).refine((value) => value.toLocaleLowerCase().endsWith(".xls"), "只支持 .xls 文件"),
   dataBase64: z.string().min(1).max(8_000_000),
 });
+
+// ---------- 工作台（Overview）响应契约：成员/计数/顺序由服务端统一产生 ----------
+
+export const workbenchBlockSchema = z.object({
+  items: z.array(workPlanSchema),
+  total: z.number().int().min(0),
+});
+
+export const workbenchOverviewSchema = z.object({
+  evaluatedAt: isoDateTimeSchema,
+  timeZone: z.string(),
+  today: isoDateSchema,
+  windowEnd: isoDateSchema,
+  startingToday: workbenchBlockSchema,
+  continuingToday: workbenchBlockSchema,
+  upcoming: workbenchBlockSchema,
+  summary: z.object({
+    all: z.number().int().min(0),
+    pending: z.number().int().min(0),
+    inProgress: z.number().int().min(0),
+    completed: z.number().int().min(0),
+  }),
+});
+
+export type WorkbenchBlock = z.infer<typeof workbenchBlockSchema>;
+export type WorkbenchOverview = z.infer<typeof workbenchOverviewSchema>;
 
 export const problemDetailsSchema = z.object({
   type: z.string(),
