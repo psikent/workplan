@@ -1,6 +1,6 @@
 # 工作计划排序规则决策地图
 
-Status: active
+Status: awaiting-approval
 Type: map
 
 ## Destination
@@ -17,10 +17,16 @@ Type: map
 ## Decisions so far
 
 - [确立工作计划排序体系的基础原则](./issues/01-establish-ordering-foundations.md) — 采用场景主序与统一排期兜底，由服务端权威执行，并退出工作计划人工 `sortOrder`。
+- [明确工作台成员与日期边界](./issues/02-define-workbench-membership-and-date-boundaries.md) — 时间范围和本地日历日采用半开区间；三个计划区块互斥，提醒可与计划区块重复。
+- [定义排序面板与偏好状态](./issues/03-define-sort-controls-and-preference-state.md) — 最多五字段排序，URL 优先于账户隔离浏览器偏好，并为失效、加载、失败和无障碍状态定义可见行为。
+- [定义查询分页与并发契约](./issues/04-define-query-pagination-and-concurrency-contract.md) — 服务端统一查询，提供准确总数、不透明键集游标和实时视图，旧 offset 调用进入兼容层。
+- [规划工作计划 sortOrder 退役](./issues/05-plan-sort-order-retirement.md) — 保留自定义字段排序，工作计划人工序号按查询脱钩、API 墓碑、观察窗口和数据库删列四阶段退出。
+- [锁定验收、性能与上线边界](./issues/06-lock-acceptance-performance-and-rollout.md) — 以十万条标准数据集、500 ms 查询 p95、60 秒 XLS 和连续 14 天兼容观察作为推进门槛。
+- [形成排序需求规格与实施票据](./issues/07-produce-spec-and-implementation-tickets.md) — 正式规格与 08–17 十张实施票据已经形成，等待用户批准后从自然排序与查询计划原型开始。
 
 ## Not yet specified
 
-无；当前可见的不确定项均已形成决策票据。后续票据答案可能揭示新的依赖或更深层问题，届时再扩展地图。
+- 用户是否批准正式规格和实施票据进入开发；未批准前不修改功能代码、数据库或生产环境。
 
 ## Out of scope
 
