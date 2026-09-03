@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { ListRemindersResponse, Reminder, WorkPlan, WorkbenchOverview } from "@workplan/contracts";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import OverviewPage from "./OverviewPage";
 import { toLocalDateString } from "../lib/format";
 
@@ -60,6 +60,8 @@ function renderPage() {
     </QueryClientProvider>,
   );
 }
+
+afterEach(cleanup);
 
 beforeEach(() => {
   apiMock.mockReset();

@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
@@ -7,6 +7,13 @@ import { fileURLToPath } from "node:url";
 const appDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  // 根任务并行运行 server/web 测试时的负载余量：放宽单测超时并限制并发 worker。
+  test: {
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
+    maxWorkers: 2,
+    fileParallelism: true,
+  },
   plugins: [
     react(),
     VitePWA({

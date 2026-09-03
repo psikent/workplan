@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { compareWorkPlansBySchedule } from "@workplan/contracts";
 import type { CustomFieldDefinition, ExportTemplate, MonthlyGoal, WorkPlan, WorkPlanQueryRequest, WorkPlanQueryResponse } from "@workplan/contracts";
@@ -149,6 +149,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
