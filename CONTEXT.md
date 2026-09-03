@@ -12,6 +12,10 @@ _Avoid_: Task, project, child plan
 The required single-line title of a Work Plan; it is the Work Plan's primary identity in the plan list, exports, and Gantt displays. Distinct from the long-text Description field.
 _Avoid_: Description, 说明, long text
 
+**Schedule Order (排期顺序)**:
+The canonical total order for Work Plans: earlier start first, then later end first, then earlier creation first, with identity as the final stable tie-breaker. It is the default and fallback order rather than a manually maintained rank.
+_Avoid_: Manual order, task priority, `sortOrder`
+
 **Automatic Status**:
 The effective Work Plan status derived from its time range: pending before the start, in progress during the range, and completed after the end.
 _Avoid_: Default status, calculated flag
