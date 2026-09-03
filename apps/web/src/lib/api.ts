@@ -1,4 +1,4 @@
-import type { ExportTemplateColumn, ListRemindersResponse } from "@workplan/contracts";
+import type { ExportTemplateColumn, ExportWorkPlansQuery, ListRemindersResponse } from "@workplan/contracts";
 
 export type ApiProblem = {
   status: number;
@@ -73,7 +73,7 @@ export async function downloadWorkPlansXlsCustom(
   columns: ExportTemplateColumn[],
   sheetName: string,
   name: string,
-  filters: { q?: string; status?: string; from?: string; to?: string } = {},
+  filters: { q?: string; status?: string; from?: string; to?: string; query?: ExportWorkPlansQuery } = {},
 ) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (csrfToken) headers.set("X-CSRF-Token", csrfToken);

@@ -867,7 +867,9 @@ describe("XLS transfer", () => {
       customHeaderTemplate.columns,
       customHeaderTemplate.sheetName,
       customHeaderTemplate.name,
-      expect.objectContaining({ from: expect.any(String), to: expect.any(String) }),
+      expect.objectContaining({
+        query: expect.objectContaining({ range: expect.objectContaining({ from: expect.any(String), to: expect.any(String) }) }),
+      }),
     ));
     view.unmount();
   });
@@ -894,7 +896,9 @@ describe("XLS transfer", () => {
       ],
       "工作计划",
       "标准工作计划",
-      expect.objectContaining({ from: expect.any(String), to: expect.any(String) }),
+      expect.objectContaining({
+        query: expect.objectContaining({ range: expect.objectContaining({ from: expect.any(String), to: expect.any(String) }) }),
+      }),
     ));
     expect(await screen.findByText("已导出当前时间范围")).toBeTruthy();
     view.unmount();
@@ -921,7 +925,9 @@ describe("XLS transfer", () => {
       ],
       "工作计划",
       "标准工作计划",
-      expect.objectContaining({ from: expect.any(String), to: expect.any(String) }),
+      expect.objectContaining({
+        query: expect.objectContaining({ range: expect.objectContaining({ from: expect.any(String), to: expect.any(String) }) }),
+      }),
     ));
     view.unmount();
   });

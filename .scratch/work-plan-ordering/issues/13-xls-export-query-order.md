@@ -1,7 +1,7 @@
 # 13 — 让 XLS 导出复用统一查询
 
 Type: task
-Status: ready-for-agent
+Status: done
 Blocked by: 10, 12
 Spec: ../spec.md
 Scope: XLS 导出 contracts、`apps/server/src/modules/spreadsheet-transfer.ts`、相关路由/Web API 与测试
@@ -27,4 +27,12 @@ Scope: XLS 导出 contracts、`apps/server/src/modules/spreadsheet-transfer.ts`�
 - 现有导入、模板和 Viewer 权限测试无回归。
 
 ## Comments
+
+## 实施记录（2026-09-03）
+
+- **契约**：`exportWorkPlansQuerySchema = workPlanQueryRequestSchema.omit({ limit, cursor })`（strict，携带 cursor/offset 即整体 422）；`exportWorkPlansXlsSchema` 增加 `query` 字段并保留旧扁平 q/status/from/to 兼容期字段（服务端转换为查询描述，status→eq 筛选）。
+- **SpreadsheetTransfer**：构造注入统一查询引擎；`buildXls` 重写为——单个数据库读事务内，按键集游标分页（每页 1,000）从头读取全部命中项，`sheet_add_aoa` 分批写入工作表，行计数驱动 autofilter/日期格式列；不再有 100,000 条上限，也不再一次性物化 plans 数组。
+- **模板导出（GET）**：接受可选 `sort` URL 参数（`parseWorkPlanSortParam`），同样走引擎排序。
+- **Web**：`downloadWorkPlansXlsCustom` 第四参支持 `query` 描述；页面以"最近一次成功应用的完整查询"（剔除 limit/cursor）发起导出；查询未成功应用或加载中时导出按钮禁用并提示。
+- 测试：`test/export-query-order.test.ts` 2 项——550 行（>500）导出行集合与键集游标分页（limit 200）拼接逐一相等、cursor 携带被 422 拒绝；自定义字段自然序导出与缺失值置后一致。server 162/162、web 266/266、全仓 typecheck 通过。
 

@@ -857,14 +857,20 @@ export const envConfigImportResultSchema = z.object({
   }),
 });
 
+// 导出查询描述：与统一查询同构，但不接受 limit/cursor——导出从头读取全部命中项。
+export const exportWorkPlansQuerySchema = workPlanQueryRequestSchema.omit({ limit: true, cursor: true });
+export type ExportWorkPlansQuery = z.infer<typeof exportWorkPlansQuerySchema>;
+
 export const exportWorkPlansXlsSchema = z.object({
   columns: z.array(exportTemplateColumnSchema).min(1).max(100),
   sheetName: z.string().trim().min(1).max(31).regex(/^[^\\/?*\[\]:]+$/).default("工作计划"),
   name: z.string().trim().min(1).max(80).optional(),
+  // 旧扁平字段（兼容期保留）；query 存在时以 query 为准。
   q: z.string().max(200).optional(),
   status: workPlanStatusSchema.optional(),
   from: isoDateTimeSchema.optional(),
   to: isoDateTimeSchema.optional(),
+  query: exportWorkPlansQuerySchema.optional(),
 });
 
 export const importWorkPlansXlsSchema = z.object({

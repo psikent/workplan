@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
-import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, ExportTemplateColumn, WorkPlan, WorkPlanStatus } from "@workplan/contracts";
+import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, ExportTemplateColumn, ExportWorkPlansQuery, WorkPlan, WorkPlanStatus } from "@workplan/contracts";
+import type { WorkPlanQueryEngine } from "./work-plan-query.js";
 import type { DatabaseBundle } from "../db/index.js";
 import { invalidInput, notFound, versionConflict } from "../errors.js";
 import { newId, nowIso, parseJson } from "../utils.js";
@@ -51,7 +52,21 @@ export class SpreadsheetTransferService {
     private readonly database: DatabaseBundle,
     private readonly customFields: CustomFieldService,
     private readonly workPlans: WorkPlanService,
+    private readonly queryEngine: WorkPlanQueryEngine,
   ) {}
+
+  // 旧扁平查询参数 → 统一查询描述（兼容 GET 模板导出与旧调用方）。
+  private toEngineQuery(query: { q?: string; status?: WorkPlanStatus; from?: string; to?: string; sort?: ExportWorkPlansQuery["sort"] }): ExportWorkPlansQuery {
+    const filters: Array<{ field: string; op: string; value: unknown }> = [];
+    if (query.status) filters.push({ field: "status", op: "eq", value: query.status });
+    const request: ExportWorkPlansQuery = {
+      filters: filters as ExportWorkPlansQuery["filters"],
+      range: { from: query.from, to: query.to },
+      sort: query.sort ?? [],
+    };
+    if (query.q) request.q = query.q;
+    return request;
+  }
 
   listTemplates(ensureDefault = true): ExportTemplate[] {
     if (ensureDefault) this.ensureDefaultTemplate();
@@ -95,34 +110,50 @@ export class SpreadsheetTransferService {
     }
   }
 
-  exportXls(templateId: string, query: { q?: string; status?: WorkPlanStatus; from?: string; to?: string }): { fileName: string; data: Buffer } {
-    return this.buildXls(this.getTemplate(templateId), query);
+  exportXls(templateId: string, query: { q?: string; status?: WorkPlanStatus; from?: string; to?: string; sort?: ExportWorkPlansQuery["sort"] }): { fileName: string; data: Buffer } {
+    return this.buildXls(this.getTemplate(templateId), this.toEngineQuery(query));
   }
 
   exportXlsCustom(
     input: { columns: ExportTemplateColumn[]; sheetName: string; name?: string },
-    query: { q?: string; status?: WorkPlanStatus; from?: string; to?: string },
+    query: ExportWorkPlansQuery | { q?: string; status?: WorkPlanStatus; from?: string; to?: string },
   ): { fileName: string; data: Buffer } {
     this.validateColumns(input.columns);
-    return this.buildXls({ name: input.name ?? "导出", sheetName: input.sheetName, columns: input.columns }, query);
+    const engineQuery: ExportWorkPlansQuery = "filters" in query && Array.isArray(query.filters)
+      ? query as ExportWorkPlansQuery
+      : this.toEngineQuery(query as { q?: string; status?: WorkPlanStatus; from?: string; to?: string });
+    return this.buildXls({ name: input.name ?? "导出", sheetName: input.sheetName, columns: input.columns }, engineQuery);
   }
 
   private buildXls(
     template: { name: string; sheetName: string; columns: ExportTemplateColumn[] },
-    query: { q?: string; status?: WorkPlanStatus; from?: string; to?: string },
+    query: ExportWorkPlansQuery,
   ): { fileName: string; data: Buffer } {
     const fields = new Map(this.customFields.list(true).map((field) => [field.key, field]));
-    const plans = this.workPlans.list({ ...query, limit: 100_000, offset: 0 });
-    const rows: unknown[][] = [
-      template.columns.map((column) => column.header),
-      ...plans.map((plan) => template.columns.map((column) => this.exportValue(plan, column, fields))),
-    ];
-    const sheet = XLSX.utils.aoa_to_sheet(rows, { cellDates: true });
+    // 统一引擎在单个读事务内从头读取全部命中项：按键集游标分页推进，
+    // 不受旧 500/10,000/100,000 条上限约束，也不接受页面 cursor/offset。
+    const sheet = XLSX.utils.aoa_to_sheet([template.columns.map((column) => column.header)], { cellDates: true });
+    let rowCount = 0;
+    const readTransaction = this.database.sqlite.transaction(() => {
+      let cursor: string | null = null;
+      for (;;) {
+        const request = { ...query, limit: 1_000 };
+        if (cursor) (request as { cursor?: string }).cursor = cursor;
+        const page = this.queryEngine.query(request as Parameters<WorkPlanQueryEngine["query"]>[0]);
+        if (cursor && page.items.length === 0) break; // 传入游标首页为空说明已到末页
+        const rows = page.items.map((plan) => template.columns.map((column) => this.exportValue(plan, column, fields)));
+        XLSX.utils.sheet_add_aoa(sheet, rows, { origin: -1 });
+        rowCount += rows.length;
+        if (!page.nextCursor) break;
+        cursor = page.nextCursor;
+      }
+    });
+    readTransaction();
     sheet["!cols"] = template.columns.map((column) => ({ wch: Math.min(42, Math.max(12, column.header.length * 2 + 4)) }));
-    sheet["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(Math.max(0, template.columns.length - 1))}${Math.max(1, rows.length)}` };
+    sheet["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(Math.max(0, template.columns.length - 1))}${Math.max(1, rowCount + 1)}` };
     template.columns.forEach((column, columnIndex) => {
       if (column.source !== "startAt" && column.source !== "endAt") return;
-      for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+      for (let rowIndex = 1; rowIndex <= rowCount; rowIndex += 1) {
         const cell = sheet[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })];
         if (cell) cell.z = "yyyy-mm-dd hh:mm";
       }

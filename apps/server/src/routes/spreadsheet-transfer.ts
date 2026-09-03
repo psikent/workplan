@@ -6,6 +6,7 @@ import {
   updateExportTemplateSchema,
   workPlanStatusSchema,
 } from "@workplan/contracts";
+import { parseWorkPlanSortParam } from "@workplan/contracts";
 import { z } from "zod";
 import type { SpreadsheetTransferService } from "../modules/spreadsheet-transfer.js";
 
@@ -16,6 +17,7 @@ const exportQuerySchema = z.object({
   status: workPlanStatusSchema.optional(),
   from: z.iso.datetime({ offset: true }).optional(),
   to: z.iso.datetime({ offset: true }).optional(),
+  sort: z.string().max(700).optional(),
 });
 
 export async function registerSpreadsheetTransferRoutes(app: FastifyInstance, spreadsheetTransfer: SpreadsheetTransferService) {
@@ -59,6 +61,7 @@ export async function registerSpreadsheetTransferRoutes(app: FastifyInstance, sp
         ...(query.status ? { status: query.status } : {}),
         ...(query.from ? { from: query.from } : {}),
         ...(query.to ? { to: query.to } : {}),
+        ...(query.sort ? { sort: parseWorkPlanSortParam(query.sort) ?? [] } : {}),
       });
       reply.header("Content-Type", "application/vnd.ms-excel");
       reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`);
@@ -71,14 +74,15 @@ export async function registerSpreadsheetTransferRoutes(app: FastifyInstance, sp
     { schema: { body: exportWorkPlansXlsSchema } },
     async (request, reply) => {
       const body = exportWorkPlansXlsSchema.parse(request.body);
+      const query = body.query ?? {
+        ...(body.q ? { q: body.q } : {}),
+        filters: body.status ? [{ field: "status", op: "eq", value: body.status }] : [],
+        range: { ...(body.from ? { from: body.from } : {}), ...(body.to ? { to: body.to } : {}) },
+        sort: [],
+      };
       const result = spreadsheetTransfer.exportXlsCustom(
         { columns: body.columns, sheetName: body.sheetName, ...(body.name ? { name: body.name } : {}) },
-        {
-          ...(body.q ? { q: body.q } : {}),
-          ...(body.status ? { status: body.status } : {}),
-          ...(body.from ? { from: body.from } : {}),
-          ...(body.to ? { to: body.to } : {}),
-        },
+        query,
       );
       reply.header("Content-Type", "application/vnd.ms-excel");
       reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`);

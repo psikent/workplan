@@ -124,7 +124,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const reminders = new ReminderService(database, customFields, config.timeZone);
   const recurrence = new RecurrenceService(database, workPlans);
   const transfer = new TransferService(database);
-  const spreadsheetTransfer = new SpreadsheetTransferService(database, customFields, workPlans);
+  const spreadsheetTransfer = new SpreadsheetTransferService(database, customFields, workPlans, workPlanQueryEngine);
   const envConfig = new EnvConfigService(database, customFields, ownerAccounts, spreadsheetTransfer);
   const barkConfig = new BarkConfigService(database);
 

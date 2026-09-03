@@ -425,10 +425,11 @@ export default function WorkPlansPage() {
     placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   });
-  // 已经成功应用的排序：仅由最近一次成功查询固化，导出与展示使用它，失败不污染。
-  const appliedSortRef = useRef<WorkPlanSortItem[]>([]);
-  const appliedSort = plansQuery.isSuccess ? sortItems : appliedSortRef.current;
-  appliedSortRef.current = appliedSort;
+  // 已经成功应用的查询：仅由最近一次成功查询固化，导出与展示使用它，失败不污染。
+  const appliedQueryRef = useRef<WorkPlanQueryRequest | null>(null);
+  if (plansQuery.isSuccess) appliedQueryRef.current = queryRequest;
+  const appliedQuery = appliedQueryRef.current;
+  const appliedSort = appliedQuery?.sort ?? [];
   const plans = plansQuery.data?.items ?? [];
   const canExportPlans = plansQuery.isSuccess && !plansQuery.isFetching;
   const templates = templatesQuery.data ?? [];
@@ -724,15 +725,17 @@ export default function WorkPlansPage() {
   async function exportXls() {
     const sources = exportSources ?? [];
     if (sources.length === 0) return;
+    if (!appliedQuery) {
+      setSpreadsheetMessage("当前查询尚未成功应用，暂不能导出");
+      return;
+    }
+    const { limit: _limit, cursor: _cursor, ...exportQuery } = appliedQuery;
     setExporting(true);
     setSpreadsheetMessage("正在生成 XLS…");
     try {
       const columns = buildSelectedExportColumns();
       await downloadWorkPlansXlsCustom(columns, selectedTemplate?.sheetName ?? "工作计划", selectedTemplate?.name ?? "导出", {
-        ...(deferredSearch ? { q: deferredSearch } : {}),
-        ...(status !== "all" ? { status } : {}),
-        from: range[0]!.toISOString(),
-        to: range[1]!.toISOString(),
+        query: exportQuery,
       });
       setSpreadsheetMessage("已导出当前时间范围");
       setExportPopoverOpen(false);
@@ -915,7 +918,7 @@ export default function WorkPlansPage() {
                         <button className="secondary-button" type="button" disabled={!saveAsName.trim() || saveAsTemplate.isPending} onClick={() => saveAsTemplate.mutate()}><Save />另存为模板</button>
                       </span>
                     ) : <span />}
-                    <button className="primary-button" type="button" disabled={(exportSources ?? []).length === 0 || exporting} onClick={() => void exportXls()}>导出</button>
+                    <button className="primary-button" type="button" disabled={(exportSources ?? []).length === 0 || exporting || !canExportPlans} title={canExportPlans ? undefined : "当前查询尚未成功应用"} onClick={() => void exportXls()}>导出</button>
                   </footer>
                   {saveAsTemplate.error ? <div className="form-error">{saveAsTemplate.error.message}</div> : null}
                 </div>
