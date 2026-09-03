@@ -1,9 +1,10 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { arrayMove } from "@dnd-kit/sortable";
-import { compareWorkPlansBySchedule, deriveWorkPlanStatus } from "@workplan/contracts";
-import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, MonthlyGoal, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus } from "@workplan/contracts";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
+import { deriveWorkPlanStatus } from "@workplan/contracts";
+import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, MonthlyGoal, OwnerAccountMapping, WorkPlan, WorkPlanQueryRequest, WorkPlanQueryResponse, WorkPlanSeries, WorkPlanSortItem, WorkPlanStatus } from "@workplan/contracts";
+import { formatWorkPlanSortParam, parseWorkPlanSortParam } from "@workplan/contracts";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import GanttTimeline, { type GanttDisplayId, type GanttDisplayProperty } from "../components/GanttTimeline";
 import { StatusBadge } from "../components/StatusBadge";
@@ -35,6 +36,7 @@ const ganttPreferencesKey = "workplan:gantt-properties:v1";
 const tooltipPreferencesKey = "workplan:gantt-tooltip:v1";
 const splitPreferencesKey = "workplan:planner-split:v1";
 const collapsePreferencesKey = "workplan:planner-collapsed:v1";
+const sortPreferencesKeyPrefix = "workplan:list-sort:v1";
 const mobileViewportQuery = "(max-width: 720px)";
 const defaultColumnIds: ColumnId[] = ["status", "startAt", "endAt"];
 const defaultGanttDisplayIds: GanttDisplayId[] = [];
@@ -42,11 +44,69 @@ const defaultTooltipDisplayIds: GanttDisplayId[] = [];
 const defaultListPercent = 44;
 const minimumPaneWidth = 360;
 const dividerWidth = 8;
+const pageSize = 200;
+const sortableBuiltInLabels: Record<string, string> = {
+  title: "工作内容",
+  status: "状态",
+  startAt: "开始时间",
+  endAt: "结束时间",
+  duration: "持续时长",
+  createdAt: "创建时间",
+  updatedAt: "更新时间",
+};
+const sortableCustomFieldTypes = new Set(["short_text", "url", "number", "boolean", "date", "datetime", "single_select"]);
 const builtInColumns: PlanColumn[] = [
   { id: "status", label: "状态", width: 89 },
   { id: "startAt", label: "开始时间", width: 96 },
   { id: "endAt", label: "结束时间", width: 96 },
 ];
+
+function sortPreferencesKey(accountId: string) {
+  return `${sortPreferencesKeyPrefix}:${accountId}`;
+}
+
+function loadSortPreference(accountId: string): WorkPlanSortItem[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(sortPreferencesKey(accountId)) ?? "null") as unknown;
+    if (!saved || typeof saved !== "object") return null;
+    const value = saved as { version?: unknown; sort?: unknown };
+    if (value.version !== 1 || !Array.isArray(value.sort)) return null;
+    const items: WorkPlanSortItem[] = [];
+    const seen = new Set<string>();
+    for (const raw of value.sort) {
+      if (!raw || typeof raw !== "object") return null;
+      const { field, direction } = raw as { field?: unknown; direction?: unknown };
+      if (typeof field !== "string" || (direction !== "asc" && direction !== "desc")) return null;
+      if (seen.has(field)) return null;
+      seen.add(field);
+      items.push({ field, direction });
+    }
+    return items;
+  } catch {
+    return null;
+  }
+}
+
+function saveSortPreference(accountId: string, items: WorkPlanSortItem[]) {
+  try {
+    window.localStorage.setItem(sortPreferencesKey(accountId), JSON.stringify({ version: 1, sort: items }));
+  } catch {
+    // 排序偏好保留到本次会话即可。
+  }
+}
+
+// 逐项清理偏好：未知/归档/类型不支持的排序字段剔除，空值按缺失处理不拦截。
+function cleanSortItems(items: WorkPlanSortItem[], fields: CustomFieldDefinition[]): WorkPlanSortItem[] {
+  return items.filter((item) => {
+    if (item.field.startsWith("custom.")) {
+      const key = item.field.slice("custom.".length);
+      const field = fields.find((candidate) => candidate.key === key);
+      return Boolean(field && !field.archivedAt && sortableCustomFieldTypes.has(field.type));
+    }
+    return item.field in sortableBuiltInLabels;
+  });
+}
 
 function loadColumnPreferences(): ColumnId[] {
   if (typeof window === "undefined") return defaultColumnIds;
@@ -152,36 +212,21 @@ function duplicateWorkPlanInput(plan: WorkPlan): CreateWorkPlan {
   };
 }
 
-function matchesVisibleWorkPlan(
-  plan: WorkPlan,
-  search: string,
-  status: WorkPlanStatus | "all",
-  customFilterKey: string,
-  customFilterValue: string,
-  fields: CustomFieldDefinition[],
-  range: [Date, Date],
-) {
-  if (search && !`${plan.title} ${plan.description}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())) return false;
-  if (status !== "all" && plan.status !== status) return false;
-  if (customFilterKey && customFilterValue) {
-    const definition = fields.find((field) => field.key === customFilterKey);
-    const actual = plan.customFields[customFilterKey];
-    if (definition?.type === "multi_select") {
-      if (!Array.isArray(actual) || !actual.includes(customFilterValue)) return false;
-    } else if (definition?.type === "boolean") {
-      if (String(actual) !== customFilterValue) return false;
-    } else if (definition?.type === "number") {
-      if (Number(actual) !== Number(customFilterValue)) return false;
-    } else if (!String(actual ?? "").toLocaleLowerCase().includes(customFilterValue.toLocaleLowerCase())) return false;
-  }
-  return Date.parse(plan.endAt) >= range[0].getTime() && Date.parse(plan.startAt) <= range[1].getTime();
-}
-
 function toLocalDateString(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function customFilterToQueryFilter(customFilterKey: string, customFilterValue: string, fields: CustomFieldDefinition[]): WorkPlanQueryRequest["filters"][number] | null {
+  if (!customFilterKey || !customFilterValue) return null;
+  const field = fields.find((candidate) => candidate.key === customFilterKey);
+  if (!field) return null;
+  if (field.type === "multi_select") return { field: `custom.${customFilterKey}`, op: "any", value: [customFilterValue] };
+  if (field.type === "boolean") return { field: `custom.${customFilterKey}`, op: "eq", value: customFilterValue === "true" };
+  if (field.type === "number") return Number.isFinite(Number(customFilterValue)) ? { field: `custom.${customFilterKey}`, op: "eq", value: Number(customFilterValue) } : null;
+  return { field: `custom.${customFilterKey}`, op: "contains", value: customFilterValue };
 }
 
 function initialTimelineView(value: string | null): "week" | "month" {
@@ -199,7 +244,7 @@ export default function WorkPlansPage() {
   const canWrite = canWriteBusinessData(user.role);
   const { showSuccess } = useToast();
   const queryClient = useQueryClient();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedPlanId = searchParams.get("plan");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
@@ -226,20 +271,68 @@ export default function WorkPlansPage() {
   const [exportSources, setExportSources] = useState<string[] | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [showSortSettings, setShowSortSettings] = useState(false);
+  const [pageCursors, setPageCursors] = useState<string[]>([]);
+  const [sortNotice, setSortNotice] = useState("");
+  const [preferenceItems, setPreferenceItems] = useState<WorkPlanSortItem[] | null>(null);
+  const sortNoticeShownRef = useRef(false);
   const plannerPanelRef = useRef<HTMLDivElement>(null);
   const planRowsRef = useRef<HTMLDivElement>(null);
   const openedRequestedPlanIdRef = useRef<string | null>(null);
 
-  const plansQuery = useQuery({ queryKey: ["work-plans"], queryFn: () => api<WorkPlan[]>("/work-plans?limit=500"), refetchInterval: 30_000 });
-  const monthlyGoalsQuery = useQuery({ queryKey: ["monthly-goals"], queryFn: () => api<MonthlyGoal[]>("/monthly-goals") });
   const fieldsQuery = useQuery({ queryKey: ["custom-fields"], queryFn: () => api<CustomFieldDefinition[]>("/custom-fields") });
+  // ---------- 排序状态：合法 URL → 当前账户浏览器偏好 → 默认排期顺序 ----------
+  const accountId = user.id;
+  const sortParam = searchParams.get("sort");
+  const parsedUrlSort = useMemo(() => (sortParam === null ? undefined : parseWorkPlanSortParam(sortParam)), [sortParam]);
+  const urlSortInvalid = sortParam !== null && parsedUrlSort === null;
+
+  useEffect(() => {
+    setPreferenceItems(loadSortPreference(accountId));
+  }, [accountId]);
+
+  const cleanedPreference = useMemo(
+    () => (preferenceItems ? cleanSortItems(preferenceItems, fieldsQuery.data ?? []) : null),
+    [fieldsQuery.data, preferenceItems],
+  );
+  useEffect(() => {
+    // 本地偏好逐项清理失效字段：写回并只提示一次。
+    if (!preferenceItems || !cleanedPreference) return;
+    if (cleanedPreference.length === preferenceItems.length) return;
+    saveSortPreference(accountId, cleanedPreference);
+    setPreferenceItems(cleanedPreference);
+    if (!sortNoticeShownRef.current) {
+      sortNoticeShownRef.current = true;
+      setSortNotice("浏览器偏好中的失效排序字段已清理");
+    }
+  }, [accountId, cleanedPreference, preferenceItems]);
+
+  useEffect(() => {
+    // 非法 URL 整体回退到排期顺序：移除参数并说明。
+    if (!urlSortInvalid) return;
+    const params = new URLSearchParams(searchParams);
+    params.delete("sort");
+    setSearchParams(params, { replace: true });
+    setSortNotice("链接中的排序参数无效，已恢复默认排期顺序");
+  }, [searchParams, setSearchParams, urlSortInvalid]);
+
+  const sortItems: WorkPlanSortItem[] = parsedUrlSort ?? cleanedPreference ?? [];
+
+  const applySort = useCallback((next: WorkPlanSortItem[]) => {
+    const unique = next.filter((item, index) => next.findIndex((candidate) => candidate.field === item.field) === index);
+    saveSortPreference(accountId, unique);
+    setPreferenceItems(unique);
+    setSortNotice("");
+    const params = new URLSearchParams(searchParams);
+    if (unique.length === 0) params.delete("sort");
+    else params.set("sort", formatWorkPlanSortParam(unique));
+    setSearchParams(params);
+  }, [accountId, searchParams, setSearchParams]);
+
+  const monthlyGoalsQuery = useQuery({ queryKey: ["monthly-goals"], queryFn: () => api<MonthlyGoal[]>("/monthly-goals") });
   const ownerAccountMappingsQuery = useQuery({ queryKey: ["owner-account-mappings"], queryFn: () => api<OwnerAccountMapping[]>("/owner-account-mappings") });
   const seriesQuery = useQuery({ queryKey: ["work-plan-series"], queryFn: () => api<WorkPlanSeries[]>("/work-plan-series") });
   const templatesQuery = useQuery({ queryKey: ["export-templates"], queryFn: () => api<ExportTemplate[]>("/export-templates") });
-  const plans = useMemo(
-    () => [...(plansQuery.data ?? [])].sort(compareWorkPlansBySchedule),
-    [plansQuery.data],
-  );
   const goalsById = useMemo(() => new Map((monthlyGoalsQuery.data ?? []).map((goal) => [goal.id, goal])), [monthlyGoalsQuery.data]);
   const selectedSeries = selected?.seriesId ? seriesQuery.data?.find((series) => series.id === selected.seriesId) : null;
   const availableColumns = useMemo<PlanColumn[]>(() => [
@@ -299,6 +392,45 @@ export default function WorkPlansPage() {
     queryFn: () => fetchReminders(remindersRange.from, remindersRange.to),
     refetchInterval: 30_000,
   });
+  // 服务端统一查询：搜索、筛选、半开时间范围、排序与游标分页全部交给引擎；
+  // 表格与甘特共享同一份 items，前端不再二次排列。
+  const queryFilters = useMemo(() => {
+    const filters: WorkPlanQueryRequest["filters"] = [];
+    if (status !== "all") filters.push({ field: "status", op: "eq", value: status });
+    const customFilter = customFilterToQueryFilter(customFilterKey, customFilterValue, fieldsQuery.data ?? []);
+    if (customFilter) filters.push(customFilter);
+    return filters;
+  }, [customFilterKey, customFilterValue, fieldsQuery.data, status]);
+  const requestRange = useMemo(() => ({ from: range[0]!.toISOString(), to: range[1]!.toISOString() }), [range]);
+  const queryRequest = useMemo<WorkPlanQueryRequest>(() => {
+    const request: WorkPlanQueryRequest = {
+      filters: queryFilters,
+      range: requestRange,
+      sort: sortItems,
+      limit: pageSize,
+    };
+    if (deferredSearch) request.q = deferredSearch;
+    const cursor = pageCursors.at(-1);
+    if (cursor) request.cursor = cursor;
+    return request;
+  }, [deferredSearch, pageCursors, queryFilters, requestRange, sortItems]);
+  const querySignature = JSON.stringify({ ...queryRequest, cursor: null });
+  useEffect(() => {
+    // 查询条件变化时回到第一页重新同步实时结果。
+    setPageCursors([]);
+  }, [querySignature]);
+  const plansQuery = useQuery({
+    queryKey: ["work-plans", "query", queryRequest],
+    queryFn: () => api<WorkPlanQueryResponse>("/work-plans/query", { method: "POST", ...jsonBody(queryRequest) }),
+    placeholderData: keepPreviousData,
+    refetchInterval: 30_000,
+  });
+  // 已经成功应用的排序：仅由最近一次成功查询固化，导出与展示使用它，失败不污染。
+  const appliedSortRef = useRef<WorkPlanSortItem[]>([]);
+  const appliedSort = plansQuery.isSuccess ? sortItems : appliedSortRef.current;
+  appliedSortRef.current = appliedSort;
+  const plans = plansQuery.data?.items ?? [];
+  const canExportPlans = plansQuery.isSuccess && !plansQuery.isFetching;
   const templates = templatesQuery.data ?? [];
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null;
   const selectedTemplateCanImport = selectedTemplate
@@ -329,20 +461,26 @@ export default function WorkPlansPage() {
       ...exportAttributes.filter((attribute) => !selectedExportSources.includes(attribute.source)),
     ];
   }, [exportAttributes, selectedExportSources]);
-  const visiblePlans = useMemo(
-    () => plans.filter((plan) => matchesVisibleWorkPlan(plan, deferredSearch, status, customFilterKey, customFilterValue, fieldsQuery.data ?? [], [range[0]!, range[1]!])),
-    [customFilterKey, customFilterValue, deferredSearch, fieldsQuery.data, plans, range, status],
-  );
 
   useEffect(() => {
     if (!requestedPlanId || openedRequestedPlanIdRef.current === requestedPlanId) return;
     const requestedPlan = plans.find((plan) => plan.id === requestedPlanId);
-    if (!requestedPlan) return;
+    if (!requestedPlan) {
+      // 服务端按条件分页，深链计划可能不在当前页：直接按 id 打开。
+      if (!plansQuery.isSuccess) return;
+      openedRequestedPlanIdRef.current = requestedPlanId;
+      void api<WorkPlan>(`/work-plans/${requestedPlanId}`).then((plan) => {
+        setAnchor(new Date(plan.startAt));
+        setSelected(plan);
+        setDrawerOpen(true);
+      }).catch(() => undefined);
+      return;
+    }
     openedRequestedPlanIdRef.current = requestedPlanId;
     setAnchor(new Date(requestedPlan.startAt));
     setSelected(requestedPlan);
     setDrawerOpen(true);
-  }, [plans, requestedPlanId]);
+  }, [plans, plansQuery.isSuccess, requestedPlanId]);
 
   useEffect(() => {
     if (selectedTemplate && selectedTemplate.id !== selectedTemplateId) setSelectedTemplateId(selectedTemplate.id);
@@ -454,21 +592,27 @@ export default function WorkPlansPage() {
     },
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["work-plans"] });
+      await queryClient.invalidateQueries({ queryKey: ["workbench-overview"] });
       await queryClient.invalidateQueries({ queryKey: ["work-plan-series"] });
       await queryClient.invalidateQueries({ queryKey: ["monthly-goals"] });
       setDrawerOpen(false);
       setSelected(null);
       setNewPlanDate(null);
-      const createdPlanIsVisible = result.createdPlans.some((plan) => matchesVisibleWorkPlan(
-        plan,
-        deferredSearch,
-        status,
-        customFilterKey,
-        customFilterValue,
-        fieldsQuery.data ?? [],
-        [range[0]!, range[1]!],
-      ));
-      showSuccess(result.created && !createdPlanIsVisible
+      const createdPlanVisible = result.createdPlans.some((plan) => {
+        const searchHit = !deferredSearch || `${plan.title} ${plan.description}`.toLocaleLowerCase().includes(deferredSearch.toLocaleLowerCase());
+        const statusHit = status === "all" || plan.status === status;
+        const rangeHit = Date.parse(plan.endAt) > range[0]!.getTime() && Date.parse(plan.startAt) < range[1]!.getTime();
+        const customHit = !customFilterKey || !customFilterValue || (() => {
+          const field = (fieldsQuery.data ?? []).find((candidate) => candidate.key === customFilterKey);
+          const actual = plan.customFields[customFilterKey];
+          if (field?.type === "multi_select") return Array.isArray(actual) && actual.includes(customFilterValue);
+          if (field?.type === "boolean") return String(actual) === customFilterValue;
+          if (field?.type === "number") return Number(actual) === Number(customFilterValue);
+          return String(actual ?? "").toLocaleLowerCase().includes(customFilterValue.toLocaleLowerCase());
+        })();
+        return searchHit && statusHit && rangeHit && customHit;
+      });
+      showSuccess(result.created && !createdPlanVisible
         ? "工作计划已创建，但在当前时间范围或筛选条件下不可见"
         : "工作计划已保存");
     },
@@ -477,16 +621,9 @@ export default function WorkPlansPage() {
   const scheduleMutation = useMutation({
     mutationFn: ({ plan, startAt, endAt }: { plan: WorkPlan; startAt: string; endAt: string }) =>
       api<WorkPlan>(`/work-plans/${plan.id}/schedule`, { method: "PATCH", ...jsonBody({ startAt, endAt, version: plan.version }) }),
-    onMutate: async ({ plan, startAt, endAt }) => {
-      await queryClient.cancelQueries({ queryKey: ["work-plans"] });
-      const previous = queryClient.getQueryData<WorkPlan[]>(["work-plans"]);
-      queryClient.setQueryData<WorkPlan[]>(["work-plans"], (current = []) => current.map((item) => item.id === plan.id
-        ? { ...item, startAt, endAt, status: item.statusMode === "automatic" ? deriveWorkPlanStatus(startAt, endAt) : item.status }
-        : item));
-      return { previous };
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["work-plans"] });
     },
-    onError: (_error, _variables, context) => queryClient.setQueryData(["work-plans"], context?.previous),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["work-plans"] }),
   });
 
   const duplicateMutation = useMutation({
@@ -520,7 +657,11 @@ export default function WorkPlansPage() {
   }, []);
   const handleReminderSelect = useCallback((planId: string) => {
     const plan = plans.find((item) => item.id === planId);
-    if (plan) handleSelect(plan);
+    if (plan) {
+      handleSelect(plan);
+      return;
+    }
+    void api<WorkPlan>(`/work-plans/${planId}`).then(handleSelect).catch(() => undefined);
   }, [handleSelect, plans]);
   const handleCreateAt = useCallback((date: Date) => {
     if (!canWrite) return;
@@ -792,7 +933,27 @@ export default function WorkPlansPage() {
         <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}><option value="all">全部状态</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         <button className={`secondary-button compact-button ${showAdvancedFilters ? "selected" : ""}`} type="button" onClick={() => setShowAdvancedFilters((value) => !value)}><SlidersHorizontal />筛选</button>
         <button className="text-button" type="button" onClick={() => { setSearch(""); setStatus("all"); setCustomFilterKey(""); setCustomFilterValue(""); }}>重置</button>
+        <div className="column-settings-wrap sort-settings-wrap">
+          <button className={`secondary-button compact-button ${showSortSettings ? "selected" : ""}`} type="button" aria-label="排序设置" aria-haspopup="dialog" aria-expanded={showSortSettings} onClick={() => setShowSortSettings((value) => !value)}><ArrowUpDown />排序</button>
+        </div>
       </div>
+      {sortNotice ? <div className="spreadsheet-transfer-message" role="status">{sortNotice}</div> : null}
+      {plansQuery.isError ? (
+        <div className="spreadsheet-transfer-message" role="alert">
+          加载工作计划失败，当前显示的是最近一次成功结果。
+          <button className="text-button" type="button" onClick={() => void plansQuery.refetch()}>重试</button>
+        </div>
+      ) : null}
+      {showSortSettings ? (
+        <SortSettings
+          items={sortItems}
+          fields={fieldsQuery.data ?? []}
+          appliedItems={appliedSort}
+          queryFailed={plansQuery.isError}
+          onChange={applySort}
+          onClose={() => setShowSortSettings(false)}
+        />
+      ) : null}
       {showAdvancedFilters ? (
         <div className="advanced-filter-panel">
           <strong>自定义字段筛选</strong>
@@ -831,11 +992,18 @@ export default function WorkPlansPage() {
           <div className="plan-grid-scroll" style={planGridStyle}>
             <div className="planner-columns"><span>工作内容</span>{visibleColumns.map((column) => <span className={isTextPlanColumn(column) ? undefined : "plan-column-centered"} key={column.id}>{column.label}</span>)}</div>
             <div ref={planRowsRef} className="plan-rows">
-              {visiblePlans.map((plan) => <PlanRow key={plan.id} plan={plan} columns={visibleColumns} goalsById={goalsById} onSelect={handleSelect} />)}
-              {!plansQuery.isLoading && visiblePlans.length === 0 ? <div className="plan-list-empty">这个时间范围还没有工作计划</div> : null}
+              {plans.map((plan) => <PlanRow key={plan.id} plan={plan} columns={visibleColumns} goalsById={goalsById} onSelect={handleSelect} />)}
+              {!plansQuery.isLoading && plans.length === 0 ? <div className="plan-list-empty">这个时间范围还没有工作计划</div> : null}
             </div>
           </div>
-          <footer className="table-footer"><span>共 {visiblePlans.length} 条</span><span>{scheduleMutation.isPending ? "正在保存排程…" : "所有更改已保存"}</span></footer>
+          <footer className="table-footer">
+            <span>共 {plansQuery.data ? plansQuery.data.total : "…"} 条</span>
+            <span className="table-pagination">
+              <button className="text-button" type="button" disabled={pageCursors.length === 0 || plansQuery.isFetching} onClick={() => setPageCursors((current) => current.slice(0, -1))}>上一页</button>
+              <button className="text-button" type="button" disabled={!plansQuery.data?.nextCursor || plansQuery.isFetching} onClick={() => setPageCursors((current) => (plansQuery.data?.nextCursor ? [...current, plansQuery.data.nextCursor] : current))}>下一页</button>
+            </span>
+            <span>{plansQuery.isFetching ? "正在加载…" : plansQuery.isError ? "加载失败" : scheduleMutation.isPending ? "正在保存排程…" : "所有更改已保存"}</span>
+          </footer>
         </div>
         <div
           className="planner-divider"
@@ -856,7 +1024,7 @@ export default function WorkPlansPage() {
           onDoubleClick={() => setListPercent(defaultListPercent)}
         />
         <div className="planner-timeline">
-          <GanttTimeline plans={visiblePlans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} />
+          <GanttTimeline plans={plans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} />
         </div>
       </div>
 
@@ -905,6 +1073,86 @@ function PlanRow({ plan, columns, goalsById, onSelect }: { plan: WorkPlan; colum
         ) : null}
       </div>
       {columns.map((column) => <PlanColumnValue key={column.id} column={column} plan={plan} />)}
+    </div>
+  );
+}
+
+function SortSettings({ items, fields, appliedItems, queryFailed, onChange, onClose }: {
+  items: WorkPlanSortItem[];
+  fields: CustomFieldDefinition[];
+  appliedItems: WorkPlanSortItem[];
+  queryFailed: boolean;
+  onChange: (items: WorkPlanSortItem[]) => void;
+  onClose: () => void;
+}) {
+  const labelOf = (field: string) => {
+    if (field.startsWith("custom.")) {
+      const definition = fields.find((candidate) => candidate.key === field.slice("custom.".length));
+      return definition ? `${definition.label}（自定义）` : field;
+    }
+    return sortableBuiltInLabels[field] ?? field;
+  };
+  const availableFieldKeys = [
+    ...Object.keys(sortableBuiltInLabels),
+    ...fields
+      .filter((field) => !field.archivedAt && sortableCustomFieldTypes.has(field.type))
+      .map((field) => `custom.${field.key}`),
+  ];
+  const addable = availableFieldKeys.filter((key) => !items.some((item) => item.field === key));
+  const sameSort = (left: WorkPlanSortItem[], right: WorkPlanSortItem[]) =>
+    left.length === right.length && left.every((item, index) => item.field === right[index]?.field && item.direction === right[index]?.direction);
+  const defaultActive = items.length === 0;
+
+  return (
+    <div className="advanced-filter-panel sort-panel" role="dialog" aria-label="排序设置">
+      <header className="sort-panel-head">
+        <div>
+          <strong>排序</strong>
+          <small>{defaultActive ? "当前：排期顺序（默认）" : `当前按 ${items.map((item) => labelOf(item.field)).join(" → ")} 排序`}</small>
+        </div>
+        <span className="sort-panel-actions">
+          {defaultActive ? null : <button className="text-button" type="button" onClick={() => onChange([])}><RotateCcw />恢复默认</button>}
+          <button className="text-button" type="button" onClick={onClose}>关闭</button>
+        </span>
+      </header>
+      {queryFailed && !sameSort(items, appliedItems) ? <div className="form-error" role="status">最近一次排序未应用成功，表格仍按之前的顺序显示。</div> : null}
+      {items.length === 0 ? <p className="sort-panel-hint">未添加排序项时，表格与甘特图按默认排期顺序显示。</p> : null}
+      <ol className="sort-item-list">
+        {items.map((item, index) => (
+          <li className="sort-item-row" key={item.field}>
+            <span className="sort-item-rank" aria-hidden>{index + 1}</span>
+            <span>{labelOf(item.field)}</span>
+            <button
+              type="button"
+              aria-label={`${labelOf(item.field)} 方向 ${item.direction === "asc" ? "升序，点击改为降序" : "降序，点击改为升序"}`}
+              onClick={() => onChange(items.map((candidate, candidateIndex) => (candidateIndex === index ? { ...candidate, direction: candidate.direction === "asc" ? "desc" as const : "asc" as const } : candidate)))}
+            >
+              {item.direction === "asc" ? <ArrowUp /> : <ArrowDown />}{item.direction === "asc" ? "升序" : "降序"}
+            </button>
+            <span className="column-order-actions">
+              <button type="button" aria-label={`上移 ${labelOf(item.field)}`} disabled={index <= 0} onClick={() => onChange(arrayMove(items, index, index - 1))}><ArrowUp /></button>
+              <button type="button" aria-label={`下移 ${labelOf(item.field)}`} disabled={index < 0 || index === items.length - 1} onClick={() => onChange(arrayMove(items, index, index + 1))}><ArrowDown /></button>
+              <button type="button" aria-label={`移除 ${labelOf(item.field)}`} onClick={() => onChange(items.filter((_, candidateIndex) => candidateIndex !== index))}>移除</button>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <div className="sort-add-row">
+        <select
+          aria-label="添加排序字段"
+          value=""
+          disabled={items.length >= 5 || addable.length === 0}
+          onChange={(event) => {
+            if (!event.target.value) return;
+            onChange([...items, { field: event.target.value, direction: "asc" }]);
+            event.target.value = "";
+          }}
+        >
+          <option value="">{items.length >= 5 ? "最多五项排序" : "添加排序字段"}</option>
+          {addable.map((key) => <option key={key} value={key}>{labelOf(key)}</option>)}
+        </select>
+        <small>最多五项，从上到下是优先级；并列时按默认排期顺序兜底。</small>
+      </div>
     </div>
   );
 }

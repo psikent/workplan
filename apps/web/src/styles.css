@@ -731,3 +731,23 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .annual-quick-edit-table-scroll { min-height: 0; overflow: auto; padding: 0 24px; }.annual-quick-edit-table { width: 100%; min-width: 840px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 12px; }.annual-quick-edit-table th, .annual-quick-edit-table td { height: 58px; padding: 7px 5px; border-bottom: 1px solid var(--line-soft); text-align: center; }.annual-quick-edit-table thead th { position: sticky; top: 0; z-index: 3; height: 42px; background: var(--canvas); color: var(--muted); font-weight: 650; }.annual-quick-edit-table thead th:first-child, .annual-quick-edit-table tbody th { position: sticky; left: 0; z-index: 2; width: 250px; min-width: 250px; text-align: left; }.annual-quick-edit-table thead th:first-child { z-index: 4; }.annual-quick-edit-table thead th:last-child, .annual-quick-edit-table tbody td:last-child { width: 42px; min-width: 42px; }.annual-quick-edit-table tbody th { background: var(--surface); }.annual-quick-edit-name-cell input { width: 100%; height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 13px; }.annual-quick-edit-name-cell input:focus { border-color: #7d99fa; box-shadow: 0 0 0 3px rgb(49 87 223 / 9%); outline: 0; }.annual-quick-edit-table td input { width: 22px; height: 22px; cursor: pointer; accent-color: var(--accent); }.annual-quick-edit-row-error { display: block; margin-top: 4px; color: #ad3733; font-size: 10px; font-weight: 400; }.annual-quick-edit-row-actions .icon-button { width: 30px; min-height: 30px; padding: 0; }.annual-quick-edit-row-actions svg { width: 15px; }
 .annual-quick-edit-message { display: flex; align-items: center; gap: 10px; padding: 14px 24px 0; }.annual-quick-edit-message .form-error { flex: 1; }.annual-quick-edit-copy-status { flex: 1 1 100%; order: 4; color: var(--muted); font-size: 12px; }.annual-quick-edit-loading { display: grid; min-height: 220px; place-items: center; color: var(--muted); font-size: 13px; }.annual-quick-edit-error { margin: 0 24px 12px; }.annual-quick-edit-dialog > footer { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 24px; border-top: 1px solid var(--line); background: var(--surface); }
 :root[data-theme="dark"] .annual-quick-edit-table thead th { background: #20252b; }
+/* 排序面板（票据 12） */
+.sort-panel { display: block; margin: -5px 0 13px; padding: 10px 14px; }
+.sort-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sort-panel-head small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.sort-panel-actions { display: flex; align-items: center; gap: 6px; }
+.sort-panel-hint { margin: 6px 0 0; color: var(--muted); font-size: 11px; }
+.sort-item-list { margin: 8px 0 0; padding: 0; list-style: none; }
+.sort-item-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line-soft); font-size: 12px; }
+.sort-item-row:last-child { border-bottom: 0; }
+.sort-item-rank { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 10px; font-weight: 650; }
+.sort-item-row button { display: inline-flex; align-items: center; gap: 3px; min-height: 26px; padding: 0 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 11px; cursor: pointer; }
+.sort-item-row button:disabled { opacity: 0.45; cursor: not-allowed; }
+.sort-item-row button svg { width: 12px; }
+.sort-item-row .column-order-actions { margin-left: auto; display: flex; gap: 4px; }
+.sort-add-row { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.sort-add-row select { height: 32px; min-width: 180px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text); font-size: 12px; }
+.sort-add-row small { color: var(--muted); font-size: 11px; }
+.table-pagination { display: inline-flex; align-items: center; gap: 6px; }
+:root[data-theme="dark"] .sort-item-row button { background: #23282e; }
+:root[data-theme="dark"] .sort-add-row select { background: #23282e; }

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { CustomFieldDefinition, ExportTemplate, MonthlyGoal, WorkPlan } from "@workplan/contracts";
-import { MemoryRouter } from "react-router-dom";
+import { compareWorkPlansBySchedule } from "@workplan/contracts";
+import type { CustomFieldDefinition, ExportTemplate, MonthlyGoal, WorkPlan, WorkPlanQueryRequest, WorkPlanQueryResponse } from "@workplan/contracts";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../components/ToastProvider";
 import WorkPlansPage from "./WorkPlansPage";
@@ -14,7 +16,7 @@ const fileToBase64Mock = vi.hoisted(() => vi.fn());
 const drawerPropsMock = vi.hoisted(() => vi.fn());
 const ganttPropsMock = vi.hoisted(() => vi.fn());
 const sessionMock = vi.hoisted(() => ({
-  user: { username: "lxj", role: "admin" as "admin" | "editor" | "viewer", loginMode: "password" as "password" | "token" },
+  user: { id: "user-lxj", username: "lxj", role: "admin" as "admin" | "editor" | "viewer", loginMode: "password" as "password" | "token" },
 }));
 
 vi.mock("../App", () => ({
@@ -125,17 +127,18 @@ const monthlyGoal: MonthlyGoal = {
 };
 
 beforeEach(() => {
-  sessionMock.user = { username: "lxj", role: "admin", loginMode: "password" };
+  sessionMock.user = { id: "user-lxj", username: "lxj", role: "admin", loginMode: "password" };
   localStorage.clear();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 7, 8, 9));
   apiMock.mockClear();
-  apiMock.mockImplementation(async (path: string) => {
+  apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === "/export-templates") return [exportTemplate];
     if (path === "/owner-account-mappings") return [{ ownerName: "冯铭倩", account: "fengmingqian@zh.gd.csg.cn" }];
     if (path === "/work-plans/import.xls") return { imported: 1 };
     if (path.startsWith("/work-plan-series")) return [];
     if (path === "/monthly-goals") return [monthlyGoal];
+    if (path === "/work-plans/query" && init?.method === "POST") return emulateQuery([plan], init);
     if (path.startsWith("/work-plans")) return [plan];
     if (path.startsWith("/custom-fields")) return [ownerField, effortField];
     throw new Error(`Unexpected API path: ${path}`);
@@ -153,12 +156,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderPage(initialEntry = "/work-plans") {
+function LocationProbe({ locationRef }: { locationRef: { current: string } }) {
+  const location = useLocation();
+  locationRef.current = location.search;
+  return null;
+}
+
+function renderPage(initialEntry = "/work-plans", locationRef?: { current: string }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <ToastProvider>
+          {locationRef ? <LocationProbe locationRef={locationRef} /> : null}
           <WorkPlansPage />
         </ToastProvider>
       </MemoryRouter>
@@ -170,6 +180,46 @@ function headerLabels(container: HTMLElement) {
   return Array.from(container.querySelectorAll(".planner-columns > span"), (node) => node.textContent ?? "");
 }
 
+// 最小引擎仿真：与统一查询一致的范围/筛选语义与排期兜底顺序，供页面测试使用。
+function emulateQuery(storedPlans: WorkPlan[], init?: RequestInit): WorkPlanQueryResponse {
+  const body = init?.body
+    ? JSON.parse(String(init.body)) as WorkPlanQueryRequest
+    : { filters: [], range: {}, sort: [], limit: 100 } as WorkPlanQueryRequest;
+  const needle = body.q?.toLocaleLowerCase();
+  const filtered = storedPlans.filter((candidate) => {
+    if (needle && !`${candidate.title} ${candidate.description}`.toLocaleLowerCase().includes(needle)) return false;
+    for (const filter of body.filters) {
+      const actual = filter.field.startsWith("custom.")
+        ? candidate.customFields[filter.field.slice("custom.".length)]
+        : (candidate as unknown as Record<string, unknown>)[filter.field];
+      if (filter.op === "eq" && actual !== filter.value) return false;
+      if (filter.op === "neq" && actual === filter.value) return false;
+      if (filter.op === "contains" && !String(actual ?? "").toLocaleLowerCase().includes(String(filter.value ?? "").toLocaleLowerCase())) return false;
+      if (filter.op === "any") {
+        const actualList = Array.isArray(actual) ? actual : [actual];
+        const expected = Array.isArray(filter.value) ? filter.value : [filter.value];
+        if (!expected.some((value) => actualList.includes(value))) return false;
+      }
+      if (["gt", "gte", "lt", "lte"].includes(filter.op)) {
+        const left = Date.parse(String(actual));
+        const right = Date.parse(String(filter.value));
+        if (Number.isNaN(left) || Number.isNaN(right)) return false;
+        if (filter.op === "gt" && !(left > right)) return false;
+        if (filter.op === "gte" && !(left >= right)) return false;
+        if (filter.op === "lt" && !(left < right)) return false;
+        if (filter.op === "lte" && !(left <= right)) return false;
+      }
+    }
+    const from = body.range.from ? Date.parse(body.range.from) : null;
+    const to = body.range.to ? Date.parse(body.range.to) : null;
+    if (from !== null && !(Date.parse(candidate.endAt) > from)) return false;
+    if (to !== null && !(Date.parse(candidate.startAt) < to)) return false;
+    return true;
+  });
+  const items = [...filtered].sort(compareWorkPlansBySchedule);
+  return { items, total: items.length, evaluatedAt: new Date(2026, 7, 8, 9).toISOString(), nextCursor: null };
+}
+
 function mockMutableWorkPlans(initialPlans: WorkPlan[] = [plan]) {
   let storedPlans = initialPlans;
   apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
@@ -178,7 +228,7 @@ function mockMutableWorkPlans(initialPlans: WorkPlan[] = [plan]) {
     if (path.startsWith("/work-plan-series")) return [];
     if (path.startsWith("/custom-fields")) return [ownerField, effortField];
     if (path === "/monthly-goals") return [monthlyGoal];
-    if (path === "/work-plans?limit=500") return storedPlans;
+    if (path === "/work-plans/query" && init?.method === "POST") return emulateQuery(storedPlans, init);
     if (path === "/work-plans" && init?.method === "POST") {
       const input = JSON.parse(String(init.body)) as Partial<WorkPlan>;
       const copied = { ...plan, ...input, id: copiedPlanId, sortOrder: storedPlans.length, version: 1 };
@@ -198,7 +248,7 @@ function mockMutableWorkPlans(initialPlans: WorkPlan[] = [plan]) {
 
 describe("editor permissions", () => {
   it("keeps work plan export and editing while hiding import and template management", async () => {
-    sessionMock.user = { username: "测试", role: "editor", loginMode: "password" };
+    sessionMock.user = { id: "user-editor", username: "测试", role: "editor", loginMode: "password" };
     const view = renderPage();
     await screen.findByText("示例计划");
 
@@ -215,7 +265,7 @@ describe("editor permissions", () => {
 
 describe("viewer read-only workbench", () => {
   it("hides write entries, shows the read-only hint and keeps search and export usable", async () => {
-    sessionMock.user = { username: "审计", role: "viewer", loginMode: "password" };
+    sessionMock.user = { id: "user-shenji", username: "审计", role: "viewer", loginMode: "password" };
     const view = renderPage();
     await screen.findByText("示例计划");
 
@@ -241,7 +291,7 @@ describe("viewer read-only workbench", () => {
   });
 
   it("opens the plan drawer in read-only mode without mutation callbacks", async () => {
-    sessionMock.user = { username: "审计", role: "viewer", loginMode: "password" };
+    sessionMock.user = { id: "user-shenji", username: "审计", role: "viewer", loginMode: "password" };
     const view = renderPage();
     await screen.findByText("示例计划");
 
@@ -1136,6 +1186,130 @@ describe("timeline reminder bells", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "下一时间范围" }));
     await waitFor(() => expect(fetchRemindersMock).toHaveBeenCalledWith("2026-08-10", "2026-08-16"));
+    view.unmount();
+  });
+});
+
+
+function queryBodies(): WorkPlanQueryRequest[] {
+  return apiMock.mock.calls
+    .filter(([path, init]) => path === "/work-plans/query" && init?.method === "POST")
+    .map(([, init]) => JSON.parse(String(init?.body)) as WorkPlanQueryRequest);
+}
+
+async function openSortPanel() {
+  fireEvent.click(screen.getByRole("button", { name: "排序设置" }));
+  await screen.findByRole("dialog", { name: "排序设置" });
+}
+
+describe("工作计划页排序体验", () => {
+  it("默认显示排期顺序，不写 URL 排序参数", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    expect(view.container.querySelector(".plan-rows .plan-row .plan-title-button")!.textContent).toBe("示例计划");
+    await openSortPanel();
+    expect(screen.getByText("当前：排期顺序（默认）")).toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get("sort")).toBeNull();
+    view.unmount();
+  });
+
+  it("添加排序字段：写入 URL 与账户偏好，查询请求携带排序", async () => {
+    const locationRef = { current: "" };
+    const view = renderPage("/work-plans", locationRef);
+    await screen.findByText("示例计划");
+    await openSortPanel();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "添加排序字段" }), { target: { value: "title" } });
+    await waitFor(() => expect(new URLSearchParams(locationRef.current).get("sort")).toBe("title:asc"));
+    await waitFor(() => expect(queryBodies().some((body) => body.sort.length === 1 && body.sort[0]?.field === "title" && body.sort[0]?.direction === "asc")).toBe(true));
+    expect(JSON.parse(window.localStorage.getItem("workplan:list-sort:v1:user-lxj")!).sort).toEqual([{ field: "title", direction: "asc" }]);
+    view.unmount();
+  });
+
+  it("URL 直达排序：页面直接使用且不反向写偏好，方向可切换", async () => {
+    const locationRef = { current: "" };
+    const view = renderPage("/work-plans?sort=title:desc", locationRef);
+    await screen.findByText("示例计划");
+    expect(window.localStorage.getItem("workplan:list-sort:v1:user-lxj")).toBeNull();
+    await openSortPanel();
+    const toggle = screen.getByRole("button", { name: /工作内容 方向 降序/ });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(new URLSearchParams(locationRef.current).get("sort")).toBe("title:asc"));
+    // 用户主动修改后才保存偏好
+    expect(JSON.parse(window.localStorage.getItem("workplan:list-sort:v1:user-lxj")!).sort).toEqual([{ field: "title", direction: "asc" }]);
+    view.unmount();
+  });
+
+  it("非法 URL 整体回退默认并提示一次，查询请求不带排序", async () => {
+    const locationRef = { current: "" };
+    const view = renderPage("/work-plans?sort=bogus:asc,title:desc", locationRef);
+    await screen.findByText("示例计划");
+    expect(await screen.findByText("链接中的排序参数无效，已恢复默认排期顺序")).toBeInTheDocument();
+    await waitFor(() => expect(new URLSearchParams(locationRef.current).get("sort")).toBeNull());
+    await waitFor(() => expect(queryBodies().every((body) => body.sort.length === 0)).toBe(true));
+    view.unmount();
+  });
+
+  it("账户偏好逐项清理失效字段并提示一次", async () => {
+    window.localStorage.setItem("workplan:list-sort:v1:user-lxj", JSON.stringify({
+      version: 1,
+      sort: [{ field: "custom.gone", direction: "asc" }, { field: "updatedAt", direction: "desc" }],
+    }));
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    expect(await screen.findByText("浏览器偏好中的失效排序字段已清理")).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem("workplan:list-sort:v1:user-lxj")!).sort).toEqual([{ field: "updatedAt", direction: "desc" }]);
+    view.unmount();
+  });
+
+  it("账户隔离：不同账户读取各自偏好", async () => {
+    window.localStorage.setItem("workplan:list-sort:v1:user-a", JSON.stringify({ version: 1, sort: [{ field: "title", direction: "asc" }] }));
+    sessionMock.user = { id: "user-a", username: "甲", role: "admin", loginMode: "password" };
+    const first = renderPage();
+    await screen.findByText("示例计划");
+    expect(queryBodies().some((body) => body.sort.length === 1 && body.sort[0]?.field === "title")).toBe(true);
+    first.unmount();
+
+    sessionMock.user = { id: "user-b", username: "乙", role: "admin", loginMode: "password" };
+    const second = renderPage();
+    await screen.findByText("示例计划");
+    expect(queryBodies().at(-1)?.sort).toEqual([]);
+    second.unmount();
+  });
+
+  it("排序面板支持最多五项、上移/下移/移除与恢复默认", async () => {
+    const locationRef = { current: "" };
+    const view = renderPage("/work-plans", locationRef);
+    await screen.findByText("示例计划");
+    await openSortPanel();
+
+    const add = screen.getByRole("combobox", { name: "添加排序字段" });
+    for (const field of ["title", "status", "startAt"]) {
+      fireEvent.change(add, { target: { value: field } });
+    }
+    await waitFor(() => expect(new URLSearchParams(locationRef.current).get("sort")).toBe("title:asc,status:asc,startAt:asc"));
+
+    // 方向切换
+    fireEvent.click(screen.getByRole("button", { name: "状态 方向 升序，点击改为降序" }));
+    await waitFor(() => expect(new URLSearchParams(locationRef.current).get("sort")).toBe("title:asc,status:desc,startAt:asc"));
+    // 上移
+    fireEvent.click(screen.getByRole("button", { name: "下移 开始时间" }));
+    fireEvent.click(screen.getByRole("button", { name: "上移 开始时间" }));
+    // 移除
+    fireEvent.click(screen.getByRole("button", { name: "移除 状态" }));
+    await waitFor(() => expect(new URLSearchParams(locationRef.current).get("sort")).toBe("title:asc,startAt:asc"));
+    // 超过五项被禁用
+    const addAgain = screen.getByRole("combobox", { name: "添加排序字段" });
+    fireEvent.change(addAgain, { target: { value: "endAt" } });
+    fireEvent.change(addAgain, { target: { value: "duration" } });
+    fireEvent.change(addAgain, { target: { value: "createdAt" } });
+    expect(screen.getByRole("combobox", { name: "添加排序字段" }).hasAttribute("disabled")).toBe(true);
+    // 恢复默认
+    fireEvent.click(screen.getByRole("button", { name: /恢复默认/ }));
+    await waitFor(() => expect(new URLSearchParams(locationRef.current).get("sort")).toBeNull());
+    expect(screen.getByText("当前：排期顺序（默认）")).toBeInTheDocument();
     view.unmount();
   });
 });

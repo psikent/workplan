@@ -1,7 +1,7 @@
 # 12 — 实现工作计划页排序体验
 
 Type: task
-Status: ready-for-agent
+Status: done
 Blocked by: 10
 Spec: ../spec.md
 Scope: `apps/web/src/pages/WorkPlansPage.tsx`、相关组件、API 客户端、样式与 Web 测试
@@ -30,4 +30,15 @@ Scope: `apps/web/src/pages/WorkPlansPage.tsx`、相关组件、API 客户端、�
 - Web typecheck/test 通过。
 
 ## Comments
+
+## 实施记录（2026-09-03）
+
+- **页面改用 `/work-plans/query`**：搜索（q）、状态、自定义字段筛选（multi→any、boolean/number→eq、其余→contains）、周/月时间范围（半开 ISO）与排序全部交服务端；表格与甘特共享 `items`；`compareWorkPlansBySchedule` 客户端排序、`matchesVisibleWorkPlan` 客户端过滤删除；`/work-plans?limit=500` 不再被页面调用。
+- **游标分页**：页大小 200，表格页脚"上一页/下一页"（游标栈），`共 N 条` 为服务端准确总数；查询条件变化自动回第一页重新同步。
+- **排序面板**：默认"排期顺序（默认）"；添加（内置 7 字段 + 可排序自定义字段，归档/长文本/多选不出现）、逐项方向切换、上移/下移、移除、最多五项、恢复默认；全部控件可聚焦且带明确 aria 标签；键盘可完成全部操作；桌面与窄屏同构。
+- **URL 规范** `sort=<field>:<direction>,...`：直达/刷新/Back-Forward（push 导航）；默认不写参数；非法参数整体回退排期顺序、移除参数并提示。
+- **账户偏好**：`workplan:list-sort:v1:<accountId>`（带版本，按稳定账户 id 隔离）；优先级 URL → 偏好 → 默认；URL 直达不写偏好，用户主动修改才同时更新两者；偏好加载后逐项清理未知/归档/不支持字段并写回、仅提示一次。
+- **加载/失败**：`keepPreviousData` 保留上次成功结果并显示"正在加载…"；失败保留现场、排序选择与上下文，内联错误 + 重试按钮；`appliedSort` 只由最近一次成功查询固化，导出与展示用已应用排序（"选择的排序"与"已应用的排序"区分展示于面板）。
+- **三角色一致**：Administrator/Editor/Viewer 均可排序；导出入口在失败或加载中禁用（票据 13 接管导出请求体）。
+- 测试：WorkPlansPage 50 项（原 43 项迁移到引擎仿真取数 + 新增 7 项：默认态/添加写 URL 与偏好与请求/URL 直达不写偏好/非法回退/偏好清理/账户隔离/五项上限与上移下移移除恢复默认）；web 266/266、全仓 typecheck 通过。
 
