@@ -204,7 +204,6 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .gantt-mount .lower-text, .gantt-mount .upper-text { fill: #536078; font-family: inherit; font-size: 11px; }
 /* 月份信息改由 .timeline-range-title 居中展示；上层标签仅保留在 DOM 中供 frappe-gantt 内部定位。 */
 .gantt-mount .upper-text { display: none; }
-.gantt-mount .today-highlight { fill: #edf2ff; opacity: .75; }
 .gantt-mount .bar { fill: #8ea3d8; stroke: none; rx: 4px; }
 .gantt-mount .bar-progress { fill: #6f87c4; }
 .gantt-mount .bar-label,
@@ -586,7 +585,11 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 :root[data-theme="dark"] .gantt-mount .lower-text { fill: var(--muted); }
 :root[data-theme="dark"] .gantt-mount .bar-label,
 :root[data-theme="dark"] .gantt-mount .bar-label.big { fill: #fff !important; stroke: rgb(10 14 20 / 70%); stroke-width: 2px; }
-:root[data-theme="dark"] .gantt-mount .today-highlight { fill: var(--accent-soft); opacity: .72; }
+/* 暗色下「今天」高亮：frappe 默认灰底白字对比不足，改用强调蓝实底 + 深色数字，竖线/圆点同步 */
+:root[data-theme="dark"] .gantt-mount .current-date-highlight { background: var(--accent); color: #101316; }
+:root[data-theme="dark"] .gantt-mount .current-highlight,
+:root[data-theme="dark"] .gantt-mount .current-ball-highlight { background: var(--accent); }
+:root[data-theme="dark"] .gantt-mount .current-date-highlight .timeline-reminder-bell:hover { color: var(--text); }
 
 @media (max-width: 1120px) {
   .app-shell { grid-template-columns: 76px minmax(0, 1fr); }
