@@ -501,7 +501,8 @@ export function systemdUnitSpec(input = {}) {
     group: systemdServiceGroup,
     host: systemdHost,
     port: systemdPort,
-    executable: path.resolve(input.nodeExecutable ?? input.executable ?? defaultSystemdNodeExecutable),
+    // systemd 单元永远运行在 Linux：可执行文件按 POSIX 路径解析，避免 Windows（本地测试）把 /usr/bin/node 拼成 C:\usr\bin\node。
+    executable: path.posix.resolve(input.nodeExecutable ?? input.executable ?? defaultSystemdNodeExecutable),
     workingDirectory: root,
     environmentFile: path.join(root, ".env"),
     entryPoint: path.join(root, "apps/server/dist/index.js"),

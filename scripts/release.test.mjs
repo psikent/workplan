@@ -7,6 +7,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "./runtime-core.mjs";
 
+// 这些用例断言 Linux systemd 产物（POSIX 路径字面量与 0o600 权限位），Windows 文件系统无法建模。
+const onWindows = process.platform === "win32";
+const skipOnWindows = { skip: onWindows && "仅适用于 Linux systemd 产物，Windows 跳过" };
+
 import {
   assertInstallSystemdPreconditions,
   buildSystemdOwnershipPlan,
@@ -122,7 +126,7 @@ test("requires --no-start for an isolated sibling release target", () => {
 
 const formalSpec = { targetRoot: "/var/opt/workplan-release" };
 
-test("renders the managed unit with fixed topology and the hardening baseline", () => {
+test("renders the managed unit with fixed topology and the hardening baseline", skipOnWindows, () => {
   const text = renderSystemdUnit(formalSpec);
   assert.match(text, /^Type=simple$/m);
   assert.match(text, /^User=workplan$/m);
@@ -149,7 +153,7 @@ test("renders the managed unit with fixed topology and the hardening baseline", 
   assert.doesNotMatch(text, /workplan\.mjs/);
 });
 
-test("round-trips the rendered unit through the parser and validates clean", () => {
+test("round-trips the rendered unit through the parser and validates clean", skipOnWindows, () => {
   const spec = systemdUnitSpec(formalSpec);
   const parsed = parseSystemdUnit(renderSystemdUnit(spec));
   assert.equal(parsed.get("Service.User"), "workplan");
@@ -159,7 +163,7 @@ test("round-trips the rendered unit through the parser and validates clean", () 
   assert.deepEqual(validateSystemdUnit(parsed, spec), []);
 });
 
-test("rejects every unsafe or unrelated unit mutation", () => {
+test("rejects every unsafe or unrelated unit mutation", skipOnWindows, () => {
   const spec = systemdUnitSpec(formalSpec);
   const rendered = renderSystemdUnit(spec);
   const expectMismatch = (text, pattern) => {
@@ -301,7 +305,7 @@ function conformingEvidence() {
   };
 }
 
-test("accepts a fully conforming release", () => {
+test("accepts a fully conforming release", skipOnWindows, () => {
   const verdict = evaluateSystemdReleaseEvidence(conformingEvidence(), formalSpec);
   assert.deepEqual(verdict, { ok: true, errors: [] });
 });
@@ -520,7 +524,7 @@ test("systemd setup forces only HOST while preserving secrets and unrelated entr
   }
 });
 
-test("systemd setup preserves an existing valid secret and unrelated configuration", () => {
+test("systemd setup preserves an existing valid secret and unrelated configuration", skipOnWindows, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wp-setup-"));
   try {
     fs.writeFileSync(path.join(root, ".env"), [
@@ -751,7 +755,7 @@ async function runRelease({ workspace, targetRoot, installSystemd = false, noSta
   return { error, io, spec };
 }
 
-test("first install creates the account, installs a verified unit and starts the service", async () => {
+test("first install creates the account, installs a verified unit and starts the service", skipOnWindows, async () => {
   const workspace = makeFixtureWorkspace();
   const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wp-rel-"));
   const unitPath = path.join(targetRoot, "workplan.service");
@@ -1074,7 +1078,7 @@ test("rollback failures are reported separately while the original failure is pr
   }
 });
 
-test("a successful normal update preserves data, logs and retains one previous release", async () => {
+test("a successful normal update preserves data, logs and retains one previous release", skipOnWindows, async () => {
   const workspace = makeFixtureWorkspace();
   const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wp-rel-"));
   const unitPath = path.join(targetRoot, "workplan.service");
