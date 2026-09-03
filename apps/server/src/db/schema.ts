@@ -76,6 +76,8 @@ export const workPlans = sqliteTable(
     isException: integer("is_exception", { mode: "boolean" }).notNull().default(false),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
+    // 统一排序键（票据 08 方案 A）：由服务写入路径与迁移维护，数据库以 BINARY 比较。
+    titleSortKey: text("title_sort_key"),
   },
   (table) => [
     index("work_plans_schedule_idx").on(table.startAt, table.endAt),
@@ -129,6 +131,8 @@ export const customFieldValues = sqliteTable(
     dateValue: text("date_value"),
     dateTimeValue: text("datetime_value"),
     urlValue: text("url_value"),
+    textSortKey: text("text_sort_key"),
+    datetimeSortKey: text("datetime_sort_key"),
   },
   (table) => [
     primaryKey({ columns: [table.workPlanId, table.fieldId] }),

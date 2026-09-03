@@ -12,13 +12,17 @@ describe("database migrations", () => {
       CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, csrf_token TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE INDEX sessions_expires_idx ON sessions(expires_at);
       CREATE TABLE access_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT, last_used_at TEXT, created_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1);
+      CREATE TABLE work_plan_series (id TEXT PRIMARY KEY);
+      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, priority TEXT NOT NULL, start_at TEXT NOT NULL, end_at TEXT NOT NULL, sort_order INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 1, series_id TEXT REFERENCES work_plan_series(id) ON DELETE SET NULL, occurrence_key TEXT, is_exception INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, status_mode TEXT NOT NULL DEFAULT 'automatic');
+      CREATE TABLE custom_field_definitions (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'short_text');
+      CREATE TABLE custom_field_values (work_plan_id TEXT NOT NULL REFERENCES work_plans(id) ON DELETE CASCADE, field_id TEXT NOT NULL REFERENCES custom_field_definitions(id) ON DELETE CASCADE, text_value TEXT, number_value REAL, boolean_value INTEGER, date_value TEXT, datetime_value TEXT, url_value TEXT, PRIMARY KEY(work_plan_id, field_id));
       INSERT INTO users(id, username, password_hash, created_at) VALUES ('user-1', 'lxj', 'argon-hash', '2026-08-08T05:53:04.073Z');
       INSERT INTO access_tokens(id, user_id, name, token_hash, created_at, version) VALUES ('token-1', 'user-1', '测试', 'sha256-hash', '2026-08-09T03:56:06.507Z', 1);
     `);
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 10 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 11 });
     expect(database.prepare("SELECT id, username, role, login_mode AS loginMode, disabled_at AS disabledAt, version FROM users").get()).toEqual({
       id: "user-1",
       username: "lxj",
@@ -42,7 +46,9 @@ describe("database migrations", () => {
       CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, csrf_token TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE INDEX sessions_expires_idx ON sessions(expires_at);
       CREATE TABLE access_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT, last_used_at TEXT, created_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1);
-      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL);
+      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', start_at TEXT NOT NULL DEFAULT '', end_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
+      CREATE TABLE custom_field_definitions (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'short_text');
+      CREATE TABLE custom_field_values (work_plan_id TEXT NOT NULL, field_id TEXT NOT NULL, text_value TEXT, number_value REAL, boolean_value INTEGER, date_value TEXT, datetime_value TEXT, url_value TEXT, PRIMARY KEY(work_plan_id, field_id));
       CREATE TABLE export_templates (id TEXT PRIMARY KEY, name TEXT NOT NULL);
       INSERT INTO users(id, username, password_hash, role, created_at) VALUES ('user-1', 'lxj', 'argon-hash', 'admin', '2026-08-09T04:40:05.266Z');
       INSERT INTO work_plans(id, title) VALUES ('plan-1', '保留计划');
@@ -51,7 +57,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 10 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 11 });
     expect(database.prepare("SELECT id, title FROM work_plans").get()).toEqual({ id: "plan-1", title: "保留计划" });
     expect(database.prepare("SELECT id, name FROM export_templates").get()).toEqual({ id: "template-1", name: "保留模板" });
     expect(database.prepare("SELECT id, username, role FROM users").get()).toEqual({ id: "user-1", username: "lxj", role: "admin" });
@@ -70,6 +76,10 @@ describe("database migrations", () => {
       CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, csrf_token TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE INDEX sessions_expires_idx ON sessions(expires_at);
       CREATE TABLE access_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT, last_used_at TEXT, created_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1);
+      CREATE TABLE work_plan_series (id TEXT PRIMARY KEY);
+      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', start_at TEXT NOT NULL DEFAULT '', end_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
+      CREATE TABLE custom_field_definitions (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'short_text');
+      CREATE TABLE custom_field_values (work_plan_id TEXT NOT NULL, field_id TEXT NOT NULL, text_value TEXT, number_value REAL, boolean_value INTEGER, date_value TEXT, datetime_value TEXT, url_value TEXT, PRIMARY KEY(work_plan_id, field_id));
       INSERT INTO users(id, username, password_hash, role, login_mode, disabled_at, version, created_at) VALUES
         ('user-admin', 'lxj', 'argon-admin-hash', 'admin', 'password', NULL, 3, '2026-08-08T05:53:04.073Z'),
         ('user-editor', 'editor-1', 'argon-editor-hash', 'editor', 'password', NULL, 2, '2026-08-10T08:00:00.000Z');
@@ -81,7 +91,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 10 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 11 });
     expect(database.prepare("SELECT id, username, password_hash AS passwordHash, role, login_mode AS loginMode, disabled_at AS disabledAt, version, created_at AS createdAt FROM users ORDER BY created_at").all()).toEqual([
       { id: "user-admin", username: "lxj", passwordHash: "argon-admin-hash", role: "admin", loginMode: "password", disabledAt: null, version: 3, createdAt: "2026-08-08T05:53:04.073Z" },
       { id: "user-editor", username: "editor-1", passwordHash: "argon-editor-hash", role: "editor", loginMode: "password", disabledAt: null, version: 2, createdAt: "2026-08-10T08:00:00.000Z" },
@@ -130,8 +140,9 @@ describe("database migrations", () => {
     database.exec(`
       CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL);
       INSERT INTO schema_migrations(version, name, applied_at) VALUES (8, 'monthly_goal_series', '2026-08-26T00:00:00.000Z');
-      CREATE TABLE work_plans (id TEXT PRIMARY KEY);
-      CREATE TABLE custom_field_values (work_plan_id TEXT NOT NULL REFERENCES work_plans(id) ON DELETE CASCADE, field_id TEXT NOT NULL, text_value TEXT, PRIMARY KEY(work_plan_id, field_id));
+      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', start_at TEXT NOT NULL DEFAULT '', end_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
+      CREATE TABLE custom_field_definitions (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'short_text');
+      CREATE TABLE custom_field_values (work_plan_id TEXT NOT NULL REFERENCES work_plans(id) ON DELETE CASCADE, field_id TEXT NOT NULL REFERENCES custom_field_definitions(id) ON DELETE CASCADE, text_value TEXT, number_value REAL, boolean_value INTEGER, date_value TEXT, datetime_value TEXT, url_value TEXT, PRIMARY KEY(work_plan_id, field_id));
       CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'admin' CHECK(role IN ('admin', 'editor')), login_mode TEXT NOT NULL DEFAULT 'password' CHECK(login_mode IN ('password', 'token')), disabled_at TEXT, version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
       CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, csrf_token TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE access_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT, last_used_at TEXT, created_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1);
@@ -147,7 +158,7 @@ describe("database migrations", () => {
     // 迁移 9 只校验它重建的 auth 三表；custom_field_values 的历史悬挂引用不阻断升级。
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 10 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 11 });
     expect(database.prepare("SELECT COUNT(*) AS count FROM custom_field_values").get()).toEqual({ count: 2 });
     expect(database.pragma("foreign_key_check(users)")).toEqual([]);
     expect(database.pragma("foreign_key_check(sessions)")).toEqual([]);
@@ -159,15 +170,15 @@ describe("database migrations", () => {
     const database = new Database(":memory:");
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 10 });
-    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 10").get()).toEqual({ count: 1 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 11 });
+    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 11").get()).toEqual({ count: 1 });
 
     // 空库迁移后即可写入单行配置；第二次 migrate 不重跑、不报错。
     database
       .prepare("INSERT INTO bark_config(id, server_url, device_key, updated_at) VALUES (1, 'https://api.day.app', NULL, '2026-08-30T00:00:00.000Z')")
       .run();
     migrate(database);
-    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 10").get()).toEqual({ count: 1 });
+    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 11").get()).toEqual({ count: 1 });
     expect(database.prepare("SELECT id, server_url AS serverUrl, device_key AS deviceKey FROM bark_config").get()).toEqual({
       id: 1,
       serverUrl: "https://api.day.app",

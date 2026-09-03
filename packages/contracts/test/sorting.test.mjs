@@ -81,18 +81,9 @@ function referenceCompareText(leftInput, rightInput) {
 }
 
 describe("工作计划排序契约", () => {
-  it("接受内置字段、方向与 custom.<key> 字段", () => {
-    const parsed = workPlanSortItemsSchema.safeParse([
-      { field: "title", direction: "asc" },
-      { field: "custom.risk", direction: "desc" },
-    ]);
-    assert.equal(parsed.success, true);
-  });
-
-  it("拒绝白名单之外的字段并拒绝超过五项与重复字段", () => {
-    assert.equal(workPlanSortItemsSchema.safeParse([{ field: "ownerAccount", direction: "asc" }]).success, false);
-    assert.equal(workPlanSortItemsSchema.safeParse([{ field: "description", direction: "asc" }]).success, false);
-    assert.equal(workPlanSortItemsSchema.safeParse([{ field: "seriesId", direction: "asc" }]).success, false);
+  it("结构层面接受任意字段；白名单与重复由服务端引擎校验（稳定错误码）", () => {
+    assert.equal(workPlanSortItemsSchema.safeParse([{ field: "title", direction: "asc" }]).success, true);
+    assert.equal(workPlanSortItemsSchema.safeParse([{ field: "bogus", direction: "asc" }]).success, true);
     const five = ["title", "status", "startAt", "endAt", "duration"].map((field) => ({ field, direction: "asc" }));
     assert.equal(workPlanSortItemsSchema.safeParse(five).success, true);
     assert.equal(workPlanSortItemsSchema.safeParse([...five, { field: "createdAt", direction: "asc" }]).success, false);
@@ -101,7 +92,7 @@ describe("工作计划排序契约", () => {
         { field: "title", direction: "asc" },
         { field: "title", direction: "desc" },
       ]).success,
-      false,
+      true,
     );
   });
 
@@ -116,7 +107,8 @@ describe("工作计划排序契约", () => {
     const withCursor = workPlanQueryRequestSchema.parse({ cursor: "abc", limit: 50 });
     assert.equal(withCursor.cursor, "abc");
     // 契约不含 offset 字段；未知键被剥离，游标与 offset 的互斥由“不存在 offset 参数”保证
-    assert.equal(workPlanQueryRequestSchema.safeParse({ sort: [{ field: "bogus", direction: "asc" }] }).success, false);
+    // 字段白名单不在 zod 层：引擎校验产生 SORT_FIELD_INVALID 稳定错误码
+    assert.equal(workPlanQueryRequestSchema.safeParse({ sort: [{ field: "bogus", direction: "asc" }] }).success, true);
   });
 
   it("查询响应契约固定为 items/total/evaluatedAt/nextCursor", () => {

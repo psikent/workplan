@@ -151,36 +151,18 @@ export const workPlanSortDirections = ["asc", "desc"] as const;
 export const workPlanSortDirectionSchema = z.enum(workPlanSortDirections);
 export type WorkPlanSortDirection = (typeof workPlanSortDirections)[number];
 
-// 静态白名单；custom.<key> 的存在性、归档状态与类型由服务端字段目录校验。
+// 静态白名单由服务端查询引擎执行（产生 SORT_FIELD_INVALID 稳定错误码）；
+// 这里只做结构与规模约束；custom.<key> 的存在性、归档状态与类型同样由服务端字段目录校验。
 export const workPlanSortBuiltinFields = ["title", "status", "startAt", "endAt", "duration", "createdAt", "updatedAt"] as const;
 export type WorkPlanSortBuiltinField = (typeof workPlanSortBuiltinFields)[number];
 
-const workPlanSortFieldSchema = z
-  .string()
-  .min(1)
-  .max(130)
-  .refine((field) => (workPlanSortBuiltinFields as readonly string[]).includes(field) || field.startsWith("custom."), {
-    message: "非法排序字段",
-  });
-
 export const workPlanSortItemSchema = z.object({
-  field: workPlanSortFieldSchema,
+  field: z.string().min(1).max(130),
   direction: workPlanSortDirectionSchema,
 });
 export type WorkPlanSortItem = z.infer<typeof workPlanSortItemSchema>;
 
-export const workPlanSortItemsSchema = z
-  .array(workPlanSortItemSchema)
-  .max(5)
-  .superRefine((items, context) => {
-    const seen = new Set<string>();
-    for (const [index, item] of items.entries()) {
-      if (seen.has(item.field)) {
-        context.addIssue({ code: "custom", path: [index, "field"], message: `排序字段重复：${item.field}` });
-      }
-      seen.add(item.field);
-    }
-  });
+export const workPlanSortItemsSchema = z.array(workPlanSortItemSchema).max(5);
 
 // 时间范围采用半开相交语义：startAt < to 且 endAt > from；from/to 均可省略。
 export const workPlanQueryRangeSchema = z.object({
@@ -188,7 +170,8 @@ export const workPlanQueryRangeSchema = z.object({
   to: isoDateTimeSchema.optional(),
 });
 
-// POST /api/v1/work-plans/query 请求：游标与 offset 互斥——本契约只提供游标。
+// POST /api/v1/work-plans/query 请求：游标与 offset 互斥——本契约只提供游标；
+// strict 使未知键（如 offset）在路由校验层即被拒绝。
 export const workPlanQueryRequestSchema = z.object({
   q: z.string().max(200).optional(),
   filters: z.array(workPlanFilterSchema).max(30).default([]),
@@ -196,7 +179,7 @@ export const workPlanQueryRequestSchema = z.object({
   sort: workPlanSortItemsSchema.default([]),
   limit: z.number().int().min(1).max(500).default(100),
   cursor: z.string().max(4096).optional(),
-});
+}).strict();
 export type WorkPlanQueryRequest = z.infer<typeof workPlanQueryRequestSchema>;
 
 export const workPlanQueryResponseSchema = z.object({
@@ -235,6 +218,8 @@ export function parseWorkPlanSortParam(value: string | null | undefined): WorkPl
     if (separator <= 0) return null;
     const field = part.slice(0, separator);
     const direction = part.slice(separator + 1);
+    const sortable = (workPlanSortBuiltinFields as readonly string[]).includes(field) || field.startsWith("custom.");
+    if (!sortable) return null;
     const parsed = workPlanSortItemSchema.safeParse({ field, direction });
     if (!parsed.success) return null;
     if (seen.has(field)) return null;
@@ -926,6 +911,7 @@ export type UpdateOwnerAccountMapping = z.infer<typeof updateOwnerAccountMapping
 export type CustomFieldType = z.infer<typeof customFieldTypeSchema>;
 export type CustomFieldDefinition = z.infer<typeof customFieldDefinitionSchema>;
 export type WorkPlanSearch = z.infer<typeof searchWorkPlansSchema>;
+export type WorkPlanFilter = z.infer<typeof workPlanFilterSchema>;
 export type ReminderType = z.infer<typeof reminderTypeSchema>;
 export type ReminderPlan = z.infer<typeof reminderPlanSchema>;
 export type Reminder = z.infer<typeof reminderSchema>;
@@ -1037,6 +1023,12 @@ export function naturalSortKey(input: string): string {
     key += run.isDigit ? encodeNaturalNumberRun(run.text) : naturalTextTag + run.text;
   }
   return key;
+}
+
+// 任意可解析时间（含时区偏移）→ UTC ISO 字符串；不可解析返回 null（视为缺失值）。
+export function normalizeDateTimeForSort(value: string): string | null {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
 export function compareNaturalSortKeys(a: string, b: string): number {

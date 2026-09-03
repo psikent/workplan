@@ -89,7 +89,7 @@ async function createOwnerField(context: TestContext) {
 }
 
 describe("work plan API", () => {
-  it("lists plans by start ascending, end descending, then recurring first", async () => {
+  it("lists plans by start ascending, end descending, then creation and id as fallback", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2027-08-08T00:00:00.000Z"));
     const context = await createContext();
@@ -115,14 +115,15 @@ describe("work plan API", () => {
     expect(recurring.statusCode).toBe(201);
 
     const listed = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
-    expect(listed.json<Array<{ title: string }>>().map((item) => item.title)).toEqual([
-      "最早开始",
-      "同起点较晚结束",
-      "同时间重复",
-      "同时间单次",
-      "同起点较早结束",
-      "最晚开始",
-    ]);
+    // 排期兜底：开始升序、结束降序、创建升序、ID 升序；重复来源不再优先。
+    // 冻结时钟下同时间计划 created_at 相同，其相对次序由随机 ID 决定，因此断言集合而非序列。
+    const titles = listed.json<Array<{ title: string }>>().map((item) => item.title);
+
+    expect(titles[0]).toBe("最早开始");
+    expect(titles[1]).toBe("同起点较晚结束");
+    expect(new Set(titles.slice(2, 4))).toEqual(new Set(["同时间单次", "同时间重复"]));
+    expect(titles[4]).toBe("同起点较早结束");
+    expect(titles[5]).toBe("最晚开始");
   });
 
   it("derives automatic statuses from time and preserves manual overrides", async () => {

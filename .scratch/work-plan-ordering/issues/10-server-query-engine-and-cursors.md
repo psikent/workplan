@@ -1,7 +1,7 @@
 # 10 — 实现服务端统一查询与游标
 
 Type: task
-Status: ready-for-agent
+Status: done
 Blocked by: 09
 Spec: ../spec.md
 Scope: `apps/server/src/modules/`、`apps/server/src/routes/work-plans.ts`、所需数据库迁移与 Server 测试
@@ -29,4 +29,15 @@ Scope: `apps/server/src/modules/`、`apps/server/src/routes/work-plans.ts`、所
 - Server typecheck/test 通过。
 
 ## Comments
+
+## 实施记录（2026-09-03）
+
+- **迁移 v11 `work_plan_sort_keys`**：`work_plans.title_sort_key`、`custom_field_values.text_sort_key/datetime_sort_key` 三列 + 18 个索引（单字段排序 × 完整排期兜底链复合索引、自定义字段键索引）；迁移执行器扩展 `backfill` 钩子，键重算（`db/sort-keys.ts`）与 SQL 同事务。旧备份恢复后全量重算键。
+- **新模块 `modules/work-plan-query.ts`**：统一查询引擎——动态字段目录校验（未知/归档/不支持类型 → `SORT_FIELD_INVALID`/`SORT_FIELD_UNSUPPORTED` 稳定 422）、零至五项排序 + 排期兜底链去重、既有筛选能力（含多选 any/all EXISTS、datetime 归一键比较、半开范围 `end_at > from AND start_at < to`）、`COUNT` 与页查询同一读事务、limit+1 判定末页 `nextCursor=null`、base64url 游标（v/fp/pos/id，指纹覆盖 q/filters/range/sort；篡改/版本不符 → `CURSOR_INVALID` 400，指纹不符 → `CURSOR_MISMATCH` 400）。
+- **空值双向置后**：可空列 ORDER BY 带 `(expr IS NULL) ASC` 前缀；键集谓词按上一页实际值分支生成（`buildCursorPredicate`/`buildKeyset`）。
+- **`POST /api/v1/work-plans/query`**：请求契约 strict（AJV 层拒绝未知键），正文携带 offset 直接 422。
+- **旧 list/search 成为引擎适配器**：数组响应 + offset 语义保留，10,000 条内存路径删除；旧接口时间范围随之采用半开语义。
+- **写入维护**：create/update 写 `title_sort_key`；`custom-fields.setValues` 同事务写 `text_sort_key/datetime_sort_key`；**时间列在写入接缝统一为 `toISOString()` 形态**——修复 `Temporal.Instant.toString()` 零毫秒省略写法（`02:00:00Z`）与 `.000Z` 混存导致字典序 ≠ 时间点序的真实缺陷。
+- **部署配置**：`openDatabase` 增加 `pragma temp_store = MEMORY`（票据 08 实测消除临时 B 树落盘的 p95 尖刺）。
+- 测试：`test/work-plan-query.test.ts` 18 项（全部内置字段/方向、自定义字段七类、缺失值置后、失效单选、归档/未知/重复稳定错误、半开边界、any/all、准确总数、全量翻页无遗漏无重复、游标健壮性、实时视图限制、键写入同步、旧适配器 offset 等价）；migrate 测试夹具补齐业务表并升级到版本 11。server 155/155、web 261/261、全仓 typecheck 通过。
 

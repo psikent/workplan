@@ -29,6 +29,7 @@ import { ReminderService } from "./modules/reminders.js";
 import { TransferService } from "./modules/transfer.js";
 import { SpreadsheetTransferService } from "./modules/spreadsheet-transfer.js";
 import { WorkPlanService } from "./modules/work-plans.js";
+import { WorkPlanQueryEngine } from "./modules/work-plan-query.js";
 import { registerAuthRoutes, cookieName } from "./routes/auth.js";
 import { registerBarkSettingsRoutes } from "./routes/settings.js";
 import { registerCustomFieldRoutes } from "./routes/custom-fields.js";
@@ -115,7 +116,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const ownerAccounts = new OwnerAccountService(database);
   const monthlyGoals = new MonthlyGoalService(database);
   const monthlyGoalSeries = new MonthlyGoalSeriesService(database, monthlyGoals);
-  const workPlans = new WorkPlanService(database, customFields, ownerAccounts, monthlyGoals);
+  const workPlanQueryEngine = new WorkPlanQueryEngine(database, customFields, ownerAccounts, monthlyGoals);
+  const workPlans = new WorkPlanService(database, customFields, ownerAccounts, monthlyGoals, workPlanQueryEngine);
   const reminders = new ReminderService(database, customFields, config.timeZone);
   const recurrence = new RecurrenceService(database, workPlans);
   const transfer = new TransferService(database);

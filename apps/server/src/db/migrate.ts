@@ -1,6 +1,15 @@
 import type Database from "better-sqlite3";
+import { recomputeWorkPlanSortKeys } from "./sort-keys.js";
 
-type Migration = { version: number; name: string; sql: string; requiresForeignKeysOff?: boolean; verifyTables?: string[] };
+type Migration = {
+  version: number;
+  name: string;
+  sql: string;
+  requiresForeignKeysOff?: boolean;
+  verifyTables?: string[];
+  // 需要在 Node 侧计算的数据回填（如自然排序键），与 SQL 在同一事务内执行。
+  backfill?: (database: Database.Database) => void;
+};
 
 const migrations: Migration[] = [
   {
@@ -219,6 +228,40 @@ const migrations: Migration[] = [
       CREATE UNIQUE INDEX bark_push_log_unique_idx ON bark_push_log(push_date, reminder_type, plan_id);
     `,
   },
+  {
+    // 工作计划统一排序键（票据 08 方案 A）：标题自然序键、自定义字段文本/日期时间归一键，
+    // 以及单字段排序 × 排期兜底链的复合索引。回填与 SQL 在同一事务内完成。
+    // 排序键算法变更时以新迁移全量重算（见 sort-keys.ts），游标自带版本号隔离。
+    version: 11,
+    name: "work_plan_sort_keys",
+    sql: `
+      ALTER TABLE work_plans ADD COLUMN title_sort_key TEXT;
+      ALTER TABLE custom_field_values ADD COLUMN text_sort_key TEXT;
+      ALTER TABLE custom_field_values ADD COLUMN datetime_sort_key TEXT;
+      CREATE INDEX idx_work_plans_title_key_asc ON work_plans(title_sort_key, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_title_key_desc ON work_plans(title_sort_key DESC, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_status_order_asc ON work_plans(CASE status WHEN 'pending' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_status_order_desc ON work_plans(CASE status WHEN 'pending' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END DESC, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_duration_asc ON work_plans(julianday(end_at) - julianday(start_at), start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_duration_desc ON work_plans(julianday(end_at) - julianday(start_at) DESC, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_schedule_full ON work_plans(start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_start_desc ON work_plans(start_at DESC, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_end_asc ON work_plans(end_at, start_at, created_at, id);
+      CREATE INDEX idx_work_plans_end_desc ON work_plans(end_at DESC, start_at, created_at, id);
+      CREATE INDEX idx_work_plans_created_asc ON work_plans(created_at, start_at, end_at DESC, id);
+      CREATE INDEX idx_work_plans_created_desc ON work_plans(created_at DESC, start_at, end_at DESC, id);
+      CREATE INDEX idx_work_plans_updated_asc ON work_plans(updated_at, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_updated_desc ON work_plans(updated_at DESC, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_custom_values_text_key ON custom_field_values(field_id, text_sort_key, work_plan_id);
+      CREATE INDEX idx_custom_values_datetime_key ON custom_field_values(field_id, datetime_sort_key, work_plan_id);
+      CREATE INDEX idx_custom_values_number_wp ON custom_field_values(field_id, number_value, work_plan_id);
+      CREATE INDEX idx_custom_values_boolean_wp ON custom_field_values(field_id, boolean_value, work_plan_id);
+      CREATE INDEX idx_custom_values_date_wp ON custom_field_values(field_id, date_value, work_plan_id);
+    `,
+    backfill: (database) => {
+      recomputeWorkPlanSortKeys(database);
+    },
+  },
 ];
 
 export function migrate(database: Database.Database): void {
@@ -235,6 +278,7 @@ export function migrate(database: Database.Database): void {
 function applyInTransaction(database: Database.Database, migration: Migration): void {
   database.transaction(() => {
     database.exec(migration.sql);
+    migration.backfill?.(database);
     recordMigration(database, migration);
   })();
 }

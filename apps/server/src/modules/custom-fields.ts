@@ -1,5 +1,6 @@
 import type { CustomFieldDefinition, CustomFieldType } from "@workplan/contracts";
 import type { DatabaseBundle } from "../db/index.js";
+import { naturalSortKey, normalizeDateTimeForSort } from "@workplan/contracts";
 import { AppError, invalidInput, notFound, versionConflict } from "../errors.js";
 import { newId, nowIso, parseJson } from "../utils.js";
 
@@ -317,9 +318,15 @@ export class CustomFieldService {
         if (field.type === "date") columns.date = String(value);
         if (field.type === "datetime") columns.datetime = String(value);
         if (field.type === "url") columns.url = String(value);
+        // 统一排序键与值在同一事务内维护（票据 08 方案 A）
+        let textSortKey: string | null = null;
+        if (field.type === "short_text") textSortKey = naturalSortKey(String(value));
+        if (field.type === "url") textSortKey = naturalSortKey(String(value));
+        let datetimeSortKey: string | null = null;
+        if (field.type === "datetime") datetimeSortKey = normalizeDateTimeForSort(String(value));
         this.database.sqlite
-          .prepare("INSERT INTO custom_field_values(work_plan_id, field_id, text_value, number_value, boolean_value, date_value, datetime_value, url_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(workPlanId, field.id, columns.text, columns.number, columns.boolean, columns.date, columns.datetime, columns.url);
+          .prepare("INSERT INTO custom_field_values(work_plan_id, field_id, text_value, number_value, boolean_value, date_value, datetime_value, url_value, text_sort_key, datetime_sort_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(workPlanId, field.id, columns.text, columns.number, columns.boolean, columns.date, columns.datetime, columns.url, textSortKey, datetimeSortKey);
       }
     }
     return finalValues;

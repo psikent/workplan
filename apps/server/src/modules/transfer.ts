@@ -1,4 +1,5 @@
 import type { DatabaseBundle } from "../db/index.js";
+import { recomputeWorkPlanSortKeys } from "../db/sort-keys.js";
 import { invalidInput } from "../errors.js";
 import { nowIso } from "../utils.js";
 
@@ -127,6 +128,8 @@ export class TransferService {
           .run(...entries.map(([, value]) => value));
       }
     }
+    // 旧备份不含排序键列（允许列为过滤），恢复后全量重算（票据 08 方案 A）。
+    recomputeWorkPlanSortKeys(this.database.sqlite);
   }
 
   private importCounts(payload: ImportPayload): Record<string, number> {
