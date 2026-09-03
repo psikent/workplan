@@ -120,7 +120,6 @@ describe("工作计划排序契约", () => {
       statusMode: "automatic",
       startAt: "2026-01-01T00:00:00.000Z",
       endAt: "2026-01-02T00:00:00.000Z",
-      sortOrder: 1,
       version: 1,
       seriesId: null,
       occurrenceKey: null,

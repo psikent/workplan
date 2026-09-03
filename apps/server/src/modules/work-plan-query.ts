@@ -588,7 +588,6 @@ export class WorkPlanQueryEngine {
       statusMode: row.status_mode,
       startAt: row.start_at,
       endAt: row.end_at,
-      sortOrder: row.sort_order,
       version: row.version,
       seriesId: row.series_id,
       occurrenceKey: row.occurrence_key,

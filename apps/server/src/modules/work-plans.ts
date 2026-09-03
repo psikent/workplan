@@ -19,6 +19,9 @@ export type { WorkPlanRow };
 
 export type UpdateWorkPlanInput = { [K in keyof CreateWorkPlan]?: CreateWorkPlan[K] | undefined } & { version: number };
 
+// 遗留 NOT NULL 列的中性兼容值：统一排序的所有路径都不读取该列（票据 14）。
+export const WORK_PLAN_SORT_ORDER_NEUTRAL = 0;
+
 export class WorkPlanService {
   constructor(
     readonly database: DatabaseBundle,
@@ -96,9 +99,6 @@ export class WorkPlanService {
     const status = statusMode === "manual"
       ? input.status!
       : deriveWorkPlanStatus(startAt, endAt, Date.parse(timestamp));
-    const order = this.database.sqlite.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS value FROM work_plans").get() as {
-      value: number;
-    };
     const execute = this.database.sqlite.transaction(() => {
       this.database.sqlite
         .prepare("INSERT INTO work_plans(id, title, title_sort_key, description, status, status_mode, priority, start_at, end_at, sort_order, version, series_id, occurrence_key, is_exception, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)")
@@ -112,7 +112,7 @@ export class WorkPlanService {
           "none",
           startAt,
           endAt,
-          order.value,
+          WORK_PLAN_SORT_ORDER_NEUTRAL,
           seriesId,
           occurrenceKey,
           timestamp,
@@ -187,19 +187,6 @@ export class WorkPlanService {
       if (!exists) throw notFound("工作计划不存在");
       throw versionConflict();
     }
-  }
-
-  // 遗留人工序号：统一排序已不再读取该值；重排契约由票据 14 退役。
-  reorder(orderedIds: string[]): WorkPlan[] {
-    const known = this.database.sqlite.prepare(`SELECT id FROM work_plans WHERE id IN (${orderedIds.map(() => "?").join(",")})`).all(...orderedIds) as Array<{ id: string }>;
-    if (known.length !== orderedIds.length) throw invalidInput("排序列表包含不存在的工作计划");
-    const execute = this.database.sqlite.transaction(() => {
-      orderedIds.forEach((id, index) => {
-        this.database.sqlite.prepare("UPDATE work_plans SET sort_order = ?, version = version + 1, updated_at = ? WHERE id = ?").run(index, nowIso(), id);
-      });
-    });
-    execute();
-    return this.list({ limit: 500 });
   }
 
   private assertTimeRange(startAt: string, endAt: string): void {

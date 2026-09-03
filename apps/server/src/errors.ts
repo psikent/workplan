@@ -18,3 +18,5 @@ export const cursorInvalid = (message = "游标无效或版本不受支持") => 
 export const cursorMismatch = (message = "游标与当前查询条件不匹配") => new AppError(400, "CURSOR_MISMATCH", message);
 export const sortFieldError = (code: "SORT_FIELD_INVALID" | "SORT_FIELD_DUPLICATED" | "SORT_FIELD_UNSUPPORTED", message: string) =>
   new AppError(422, code, message);
+// 工作计划人工重排已退役：无副作用墓碑（票据 14），code 供 14 天零调用观察统计。
+export const reorderRetired = () => new AppError(410, "WORK_PLAN_REORDER_RETIRED", "工作计划人工排序已退役，请使用查询排序与筛选");

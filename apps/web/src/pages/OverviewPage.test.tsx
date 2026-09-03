@@ -6,6 +6,7 @@ import type { ListRemindersResponse, Reminder, WorkPlan, WorkbenchOverview } fro
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import OverviewPage from "./OverviewPage";
+import { toLocalDateString } from "../lib/format";
 
 const apiMock = vi.hoisted(() => vi.fn());
 const fetchRemindersMock = vi.hoisted(() => vi.fn());
@@ -21,7 +22,6 @@ function makePlan(overrides: Partial<WorkPlan> & { id: string; title: string }):
     statusMode: "automatic",
     startAt: new Date(now + 86_400_000).toISOString(),
     endAt: new Date(now + 172_800_000).toISOString(),
-    sortOrder: 0,
     version: 1,
     seriesId: null,
     occurrenceKey: null,
@@ -35,7 +35,7 @@ function makePlan(overrides: Partial<WorkPlan> & { id: string; title: string }):
   };
 }
 
-const today = new Date().toISOString().slice(0, 10);
+const today = toLocalDateString(new Date());
 
 function emptyOverview(): WorkbenchOverview {
   return {

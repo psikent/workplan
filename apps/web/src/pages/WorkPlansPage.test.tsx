@@ -52,7 +52,6 @@ const plan: WorkPlan = {
   statusMode: "automatic",
   startAt: new Date(2026, 7, 8, 10).toISOString(),
   endAt: new Date(2026, 7, 8, 12).toISOString(),
-  sortOrder: 0,
   version: 1,
   seriesId: null,
   occurrenceKey: null,
@@ -68,7 +67,6 @@ const trailingPlan: WorkPlan = {
   ...plan,
   id: "ec718abc-5257-490a-b30f-daa8b86f7ed9",
   title: "后续计划",
-  sortOrder: 1,
 };
 
 const ownerField: CustomFieldDefinition = {
@@ -78,8 +76,8 @@ const ownerField: CustomFieldDefinition = {
   description: "",
   type: "short_text",
   required: false,
-  defaultValue: null,
   sortOrder: 0,
+  defaultValue: null,
   archivedAt: null,
   version: 1,
   options: [],
@@ -93,7 +91,6 @@ const effortField: CustomFieldDefinition = {
   key: "effort",
   label: "工时",
   type: "number",
-  sortOrder: 1,
 };
 
 const exportTemplate: ExportTemplate = {
@@ -234,12 +231,6 @@ function mockMutableWorkPlans(initialPlans: WorkPlan[] = [plan]) {
       const copied = { ...plan, ...input, id: copiedPlanId, sortOrder: storedPlans.length, version: 1 };
       storedPlans = [...storedPlans, copied];
       return copied;
-    }
-    if (path === "/work-plans/reorder" && init?.method === "POST") {
-      const { orderedIds } = JSON.parse(String(init.body)) as { orderedIds: string[] };
-      const byId = new Map(storedPlans.map((item) => [item.id, item]));
-      storedPlans = orderedIds.map((id, index) => ({ ...byId.get(id)!, sortOrder: index, version: byId.get(id)!.version + 1 }));
-      return storedPlans;
     }
     if (path.startsWith("/work-plans")) return storedPlans;
     throw new Error(`Unexpected API path: ${path}`);

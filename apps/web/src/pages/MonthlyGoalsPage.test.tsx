@@ -30,7 +30,6 @@ const linkedPlan: WorkPlan = {
   statusMode: "automatic",
   startAt: "2026-08-10T02:00:00.000Z",
   endAt: "2026-08-20T03:00:00.000Z",
-  sortOrder: 0,
   version: 1,
   seriesId: null,
   occurrenceKey: null,

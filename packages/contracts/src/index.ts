@@ -36,7 +36,6 @@ export const workPlanSchema = z.object({
   statusMode: workPlanStatusModeSchema,
   startAt: isoDateTimeSchema,
   endAt: isoDateTimeSchema,
-  sortOrder: z.number().int(),
   version: z.number().int().positive(),
   seriesId: z.string().uuid().nullable(),
   occurrenceKey: z.string().nullable(),
@@ -105,10 +104,6 @@ export const updateScheduleSchema = z
     version: z.number().int().positive(),
   })
   .superRefine(validateTimeRange);
-
-export const reorderWorkPlansSchema = z.object({
-  orderedIds: z.array(z.string().uuid()).min(1),
-});
 
 export const listWorkPlansQuerySchema = z.object({
   q: z.string().max(200).optional(),

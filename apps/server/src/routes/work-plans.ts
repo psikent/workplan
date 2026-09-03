@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify";
 import {
   createWorkPlanSchema,
   listWorkPlansQuerySchema,
-  reorderWorkPlansSchema,
   searchWorkPlansSchema,
   updateScheduleSchema,
   updateWorkPlanSchema,
@@ -10,7 +9,7 @@ import {
 } from "@workplan/contracts";
 import { z } from "zod";
 import type { WorkPlanService } from "../modules/work-plans.js";
-import { invalidInput } from "../errors.js";
+import { invalidInput, reorderRetired } from "../errors.js";
 
 const idParams = z.object({ id: z.string().uuid() });
 
@@ -76,9 +75,15 @@ export async function registerWorkPlanRoutes(app: FastifyInstance, workPlans: Wo
     },
   );
 
+  // 重排墓碑（票据 14）：无副作用，返回 410 与稳定错误类别。
+  // 结构化日志只含时间、请求 id 与路由标识，不记录认证凭据或请求正文；
+  // 14 天零调用观察按 `event":"work_plan_reorder_tombstone"` 计数。
   app.post(
     "/api/v1/work-plans/reorder",
-    { schema: { body: reorderWorkPlansSchema }, config: { authorization: "write" } },
-    async (request) => workPlans.reorder(reorderWorkPlansSchema.parse(request.body).orderedIds),
+    { config: { authorization: "write" } },
+    async (request) => {
+      request.log.info({ event: "work_plan_reorder_tombstone", route: "/api/v1/work-plans/reorder" }, "工作计划重排已退役");
+      throw reorderRetired();
+    },
   );
 }
