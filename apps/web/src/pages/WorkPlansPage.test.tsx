@@ -306,7 +306,7 @@ describe("work plan table columns", () => {
 });
 
 describe("work plan ordering and copying", () => {
-  it("forces start ascending, end descending, then recurring first", async () => {
+  it("forces start ascending, end descending, then creation and id as fallback", async () => {
     const early = { ...plan, id: "10000000-0000-4000-8000-000000000001", title: "最早开始", startAt: new Date(2026, 7, 8, 9).toISOString(), endAt: new Date(2026, 7, 8, 10).toISOString() };
     const longer = { ...plan, id: "10000000-0000-4000-8000-000000000002", title: "同起点较晚结束", endAt: new Date(2026, 7, 8, 14).toISOString() };
     const shorter = { ...plan, id: "10000000-0000-4000-8000-000000000003", title: "同起点较早结束", endAt: new Date(2026, 7, 8, 11).toISOString() };
@@ -317,7 +317,8 @@ describe("work plan ordering and copying", () => {
     const view = renderPage();
     await screen.findByText("最早开始");
 
-    const expected = ["最早开始", "同起点较晚结束", "同时间重复", "同时间单次", "同起点较早结束", "最晚开始"];
+    // 排期兜底：开始升序、结束降序、创建升序、ID 升序；重复来源不再优先
+    const expected = ["最早开始", "同起点较晚结束", "同时间单次", "同时间重复", "同起点较早结束", "最晚开始"];
     expect(Array.from(view.container.querySelectorAll(".plan-title-button"), (node) => node.textContent)).toEqual(expected);
     await waitFor(() => expect((ganttPropsMock.mock.calls.at(-1)?.[0] as { plans: WorkPlan[] }).plans.map((item) => item.title)).toEqual(expected));
     expect(screen.queryByRole("button", { name: /拖动排序/ })).toBeNull();

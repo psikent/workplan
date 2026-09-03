@@ -1,7 +1,7 @@
 # 09 — 建立统一排序与查询契约
 
 Type: task
-Status: ready-for-agent
+Status: done
 Blocked by: 08
 Spec: ../spec.md
 Scope: `packages/contracts/src/index.ts`、契约测试及由 08 选定的共享排序基础
@@ -28,4 +28,12 @@ Scope: `packages/contracts/src/index.ts`、契约测试及由 08 选定的共享
 - 现有 contracts 测试及全仓 typecheck 通过。
 
 ## Comments
+
+## 实施记录（2026-09-03）
+
+- `packages/contracts/src/index.ts`：新增 `workPlanQueryRequestSchema`（q/filters/range/sort/limit/cursor，游标契约无 offset）、`workPlanQueryResponseSchema`（items/total/evaluatedAt/nextCursor）、`workPlanSortItemSchema`（静态白名单 title/status/startAt/endAt/duration/createdAt/updatedAt + `custom.<key>`，最多五项、superRefine 拒绝重复）、`workPlanQueryErrorCodes`（六类稳定错误）、URL 参数 `format/parseWorkPlanSortParam`。
+- `compareWorkPlansBySchedule` 重写为开始升序、结束降序、创建升序、ID 升序（码点序，返回值归一化 -1/0/1），Pick 类型不再含 `seriesId`/`sortOrder`；Web 旧断言"重复优先"已按新规格更新。
+- 票据 08 排序键方案 A 的共享实现入库：`normalizeTextForSort`/`naturalSortKey`/`compareNaturalSortKeys`/`compareNaturalText`（码点序等价 UTF-8 字节序，无 Buffer 依赖，Web/Server 共用）与 `workPlanStatusOrder`。
+- 公共 Work Plan 契约暂保留 `sortOrder`（票据 14 移除）。
+- 测试：`packages/contracts/test/sorting.test.mjs` 21 项（五项上限、重复、白名单、请求/响应契约、错误类别、URL 参数、排期比较器四级、金样 12 组与独立参考比较器交叉验证）；contracts 21/21、server 137/137、web 261/261、全仓 typecheck 通过。
 

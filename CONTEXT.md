@@ -8,6 +8,10 @@ This context describes a personal system for scheduling and following work. Ever
 A single scheduled piece of work with its own status, time range, extensible properties, and recurrence.
 _Avoid_: Task, project, child plan
 
+**Work Plan Time Range (工作计划时间范围)**:
+The half-open interval from a Work Plan's inclusive start instant to its exclusive end instant. A local calendar day uses the same half-open boundary in Asia/Shanghai, so an item ending exactly at midnight does not occupy the new day.
+_Avoid_: Inclusive end range, end-day occupancy
+
 **Work Content (工作内容)**:
 The required single-line title of a Work Plan; it is the Work Plan's primary identity in the plan list, exports, and Gantt displays. Distinct from the long-text Description field.
 _Avoid_: Description, 说明, long text
@@ -136,13 +140,13 @@ The output channel that repeats a Work Order Reminder to the single Bark device 
 _Avoid_: 推送通知, notification, push notification
 
 **Starting Today (今日新开工)**:
-A Work Plan whose start day (local) is today, listed in the workbench group of the same name. Mutually exclusive with Continuing Today.
+A non-cancelled Work Plan whose local start day is today, including one already completed later that day. It is listed in the workbench group of the same name and is mutually exclusive with the other plan groups.
 _Avoid_: New task today, first-day plan
 
 **Continuing Today (今日继续开工)**:
-A Work Plan that started before today and whose time range still covers today (end day may be today); listed in the workbench group of the same name.
+A non-completed, non-cancelled Work Plan that started before today and whose Work Plan Time Range intersects today. It leaves the group at its exclusive end instant and is mutually exclusive with the other plan groups.
 _Avoid_: Ongoing work, in-progress filter
 
 **Upcoming Window (接下来的窗口)**:
-The calendar range after today through the seventh Working Day from today (inclusive). The workbench 接下来的计划 group lists active Work Plans whose start day falls in this window, regardless of end day.
+The calendar range after today through the seventh Working Day from today, including the boundary and intervening weekends. The workbench 接下来的计划 group lists non-completed, non-cancelled Work Plans whose local start day falls in this window, regardless of end day.
 _Avoid_: Next week, seven-day window

@@ -145,6 +145,105 @@ export const searchWorkPlansSchema = z.object({
   offset: z.number().int().min(0).default(0),
 });
 
+// ---------- 工作计划统一查询与排序契约 ----------
+
+export const workPlanSortDirections = ["asc", "desc"] as const;
+export const workPlanSortDirectionSchema = z.enum(workPlanSortDirections);
+export type WorkPlanSortDirection = (typeof workPlanSortDirections)[number];
+
+// 静态白名单；custom.<key> 的存在性、归档状态与类型由服务端字段目录校验。
+export const workPlanSortBuiltinFields = ["title", "status", "startAt", "endAt", "duration", "createdAt", "updatedAt"] as const;
+export type WorkPlanSortBuiltinField = (typeof workPlanSortBuiltinFields)[number];
+
+const workPlanSortFieldSchema = z
+  .string()
+  .min(1)
+  .max(130)
+  .refine((field) => (workPlanSortBuiltinFields as readonly string[]).includes(field) || field.startsWith("custom."), {
+    message: "非法排序字段",
+  });
+
+export const workPlanSortItemSchema = z.object({
+  field: workPlanSortFieldSchema,
+  direction: workPlanSortDirectionSchema,
+});
+export type WorkPlanSortItem = z.infer<typeof workPlanSortItemSchema>;
+
+export const workPlanSortItemsSchema = z
+  .array(workPlanSortItemSchema)
+  .max(5)
+  .superRefine((items, context) => {
+    const seen = new Set<string>();
+    for (const [index, item] of items.entries()) {
+      if (seen.has(item.field)) {
+        context.addIssue({ code: "custom", path: [index, "field"], message: `排序字段重复：${item.field}` });
+      }
+      seen.add(item.field);
+    }
+  });
+
+// 时间范围采用半开相交语义：startAt < to 且 endAt > from；from/to 均可省略。
+export const workPlanQueryRangeSchema = z.object({
+  from: isoDateTimeSchema.optional(),
+  to: isoDateTimeSchema.optional(),
+});
+
+// POST /api/v1/work-plans/query 请求：游标与 offset 互斥——本契约只提供游标。
+export const workPlanQueryRequestSchema = z.object({
+  q: z.string().max(200).optional(),
+  filters: z.array(workPlanFilterSchema).max(30).default([]),
+  range: workPlanQueryRangeSchema.default({}),
+  sort: workPlanSortItemsSchema.default([]),
+  limit: z.number().int().min(1).max(500).default(100),
+  cursor: z.string().max(4096).optional(),
+});
+export type WorkPlanQueryRequest = z.infer<typeof workPlanQueryRequestSchema>;
+
+export const workPlanQueryResponseSchema = z.object({
+  items: z.array(workPlanSchema),
+  total: z.number().int().min(0),
+  evaluatedAt: isoDateTimeSchema,
+  nextCursor: z.string().nullable(),
+});
+export type WorkPlanQueryResponse = z.infer<typeof workPlanQueryResponseSchema>;
+
+// 稳定错误类别：响应外壳沿用 problemDetailsSchema（code 字段取以下值之一）。
+export const workPlanQueryErrorCodes = [
+  "SORT_FIELD_INVALID",
+  "SORT_FIELD_DUPLICATED",
+  "SORT_FIELD_UNSUPPORTED",
+  "CURSOR_INVALID",
+  "CURSOR_MISMATCH",
+  "WORK_PLAN_REORDER_RETIRED",
+] as const;
+export type WorkPlanQueryErrorCode = (typeof workPlanQueryErrorCodes)[number];
+
+// 工作计划页 URL 排序参数：sort=<field>:<direction>,<field>:<direction>；默认排期顺序不写参数。
+export function formatWorkPlanSortParam(items: readonly WorkPlanSortItem[]): string {
+  return items.map((item) => `${item.field}:${item.direction}`).join(",");
+}
+
+// 解析失败（非法字段、方向、超限、重复）返回 null，调用方整体回退到排期顺序并提示。
+export function parseWorkPlanSortParam(value: string | null | undefined): WorkPlanSortItem[] | null {
+  if (value == null || value === "") return null;
+  const parts = value.split(",");
+  if (parts.length > 5) return null;
+  const seen = new Set<string>();
+  const items: WorkPlanSortItem[] = [];
+  for (const part of parts) {
+    const separator = part.lastIndexOf(":");
+    if (separator <= 0) return null;
+    const field = part.slice(0, separator);
+    const direction = part.slice(separator + 1);
+    const parsed = workPlanSortItemSchema.safeParse({ field, direction });
+    if (!parsed.success) return null;
+    if (seen.has(field)) return null;
+    seen.add(field);
+    items.push(parsed.data);
+  }
+  return items;
+}
+
 export const reminderTypes = ["work-order", "plan-submission"] as const;
 export const reminderTypeSchema = z.enum(reminderTypes);
 
@@ -863,13 +962,96 @@ export function deriveWorkPlanStatus(startAt: string, endAt: string, now = Date.
   return "completed";
 }
 
-export function compareWorkPlansBySchedule(
-  left: Pick<WorkPlan, "id" | "startAt" | "endAt" | "sortOrder" | "seriesId">,
-  right: Pick<WorkPlan, "id" | "startAt" | "endAt" | "sortOrder" | "seriesId">,
-): number {
-  return Date.parse(left.startAt) - Date.parse(right.startAt)
-    || Date.parse(right.endAt) - Date.parse(left.endAt)
-    || Number(right.seriesId !== null) - Number(left.seriesId !== null)
-    || left.sortOrder - right.sortOrder
-    || left.id.localeCompare(right.id);
+// ---------- 排期顺序与自然文本排序键（票据 08 选定方案的共享实现） ----------
+
+function compareCodePointStrings(a: string, b: string): number {
+  // 码点序比较，等价于 UTF-8 字节序 / SQLite BINARY；不能用 JS 字符串 `<`（UTF-16 序）。
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < a.length && rightIndex < b.length) {
+    const leftPoint = a.codePointAt(leftIndex) ?? 0;
+    const rightPoint = b.codePointAt(rightIndex) ?? 0;
+    if (leftPoint !== rightPoint) return leftPoint < rightPoint ? -1 : 1;
+    leftIndex += leftPoint > 0xffff ? 2 : 1;
+    rightIndex += rightPoint > 0xffff ? 2 : 1;
+  }
+  if (leftIndex < a.length) return 1;
+  if (rightIndex < b.length) return -1;
+  return 0;
 }
+
+// 排期顺序：开始升序、结束降序、创建升序、ID 升序；不含重复来源或人工序号。
+// 返回值归一化为 -1/0/1。
+export type WorkPlanScheduleInput = Pick<WorkPlan, "id" | "startAt" | "endAt" | "createdAt">;
+
+export function compareWorkPlansBySchedule(left: WorkPlanScheduleInput, right: WorkPlanScheduleInput): number {
+  const byStart = Date.parse(left.startAt) - Date.parse(right.startAt);
+  if (byStart !== 0) return byStart < 0 ? -1 : 1;
+  const byEnd = Date.parse(right.endAt) - Date.parse(left.endAt);
+  if (byEnd !== 0) return byEnd < 0 ? -1 : 1;
+  const byCreated = Date.parse(left.createdAt) - Date.parse(right.createdAt);
+  if (byCreated !== 0) return byCreated < 0 ? -1 : 1;
+  return compareCodePointStrings(left.id, right.id);
+}
+
+const naturalControlChars = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u200B-\u200F\u2028\u2029\uFEFF]/g;
+const naturalNumberTag = "\u0001";
+const naturalTextTag = "\u0002";
+const naturalNumberLengthWidth = 6;
+
+// 规范化：NFKC（全角→半角、组合字符合成）→ 大写折叠 → 剔除控制字符。
+export function normalizeTextForSort(input: string): string {
+  return input.normalize("NFKC").toUpperCase().replace(naturalControlChars, "");
+}
+
+function tokenizeNaturalText(normalized: string): Array<{ isDigit: boolean; text: string }> {
+  const runs: Array<{ isDigit: boolean; text: string }> = [];
+  let current = "";
+  let currentIsDigit: boolean | null = null;
+  for (const character of normalized) {
+    const isDigit = character >= "0" && character <= "9";
+    if (currentIsDigit === null || isDigit === currentIsDigit) {
+      current += character;
+    } else {
+      runs.push({ isDigit: currentIsDigit, text: current });
+      current = character;
+    }
+    currentIsDigit = isDigit;
+  }
+  if (current !== "") runs.push({ isDigit: currentIsDigit as boolean, text: current });
+  return runs;
+}
+
+function encodeNaturalNumberRun(run: string): string {
+  const stripped = run.replace(/^0+/, "") || "0";
+  const length = String(stripped.length).padStart(naturalNumberLengthWidth, "0");
+  return naturalNumberTag + length + stripped;
+}
+
+// 规范化排序键：数字段按数值、文本段按码点；键的码点序 = 稳定全序，同值并列由排期兜底决定。
+export function naturalSortKey(input: string): string {
+  const normalized = normalizeTextForSort(input);
+  if (normalized === "") return "";
+  let key = "";
+  for (const run of tokenizeNaturalText(normalized)) {
+    key += run.isDigit ? encodeNaturalNumberRun(run.text) : naturalTextTag + run.text;
+  }
+  return key;
+}
+
+export function compareNaturalSortKeys(a: string, b: string): number {
+  return compareCodePointStrings(a, b);
+}
+
+// 自然文本比较（基于排序键）；数据库侧以同键的 BINARY 比较执行，语义一致。
+export function compareNaturalText(a: string, b: string): number {
+  return compareCodePointStrings(naturalSortKey(a), naturalSortKey(b));
+}
+
+// 状态比较基准：升序 待开始 → 进行中 → 已完成 → 已取消。
+export const workPlanStatusOrder: Record<WorkPlanStatus, number> = {
+  pending: 0,
+  in_progress: 1,
+  completed: 2,
+  cancelled: 3,
+};
