@@ -22,7 +22,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 11 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 12 });
     expect(database.prepare("SELECT id, username, role, login_mode AS loginMode, disabled_at AS disabledAt, version FROM users").get()).toEqual({
       id: "user-1",
       username: "lxj",
@@ -57,7 +57,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 11 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 12 });
     expect(database.prepare("SELECT id, title FROM work_plans").get()).toEqual({ id: "plan-1", title: "保留计划" });
     expect(database.prepare("SELECT id, name FROM export_templates").get()).toEqual({ id: "template-1", name: "保留模板" });
     expect(database.prepare("SELECT id, username, role FROM users").get()).toEqual({ id: "user-1", username: "lxj", role: "admin" });
@@ -91,7 +91,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 11 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 12 });
     expect(database.prepare("SELECT id, username, password_hash AS passwordHash, role, login_mode AS loginMode, disabled_at AS disabledAt, version, created_at AS createdAt FROM users ORDER BY created_at").all()).toEqual([
       { id: "user-admin", username: "lxj", passwordHash: "argon-admin-hash", role: "admin", loginMode: "password", disabledAt: null, version: 3, createdAt: "2026-08-08T05:53:04.073Z" },
       { id: "user-editor", username: "editor-1", passwordHash: "argon-editor-hash", role: "editor", loginMode: "password", disabledAt: null, version: 2, createdAt: "2026-08-10T08:00:00.000Z" },
@@ -158,7 +158,7 @@ describe("database migrations", () => {
     // 迁移 9 只校验它重建的 auth 三表；custom_field_values 的历史悬挂引用不阻断升级。
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 11 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 12 });
     expect(database.prepare("SELECT COUNT(*) AS count FROM custom_field_values").get()).toEqual({ count: 2 });
     expect(database.pragma("foreign_key_check(users)")).toEqual([]);
     expect(database.pragma("foreign_key_check(sessions)")).toEqual([]);
@@ -170,15 +170,15 @@ describe("database migrations", () => {
     const database = new Database(":memory:");
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 11 });
-    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 11").get()).toEqual({ count: 1 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 12 });
+    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 12").get()).toEqual({ count: 1 });
 
     // 空库迁移后即可写入单行配置；第二次 migrate 不重跑、不报错。
     database
       .prepare("INSERT INTO bark_config(id, server_url, device_key, updated_at) VALUES (1, 'https://api.day.app', NULL, '2026-08-30T00:00:00.000Z')")
       .run();
     migrate(database);
-    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 11").get()).toEqual({ count: 1 });
+    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 12").get()).toEqual({ count: 1 });
     expect(database.prepare("SELECT id, server_url AS serverUrl, device_key AS deviceKey FROM bark_config").get()).toEqual({
       id: 1,
       serverUrl: "https://api.day.app",

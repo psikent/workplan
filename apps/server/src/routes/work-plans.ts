@@ -23,13 +23,7 @@ export async function registerWorkPlanRoutes(app: FastifyInstance, workPlans: Wo
   app.post(
     "/api/v1/work-plans/query",
     { schema: { body: workPlanQueryRequestSchema } },
-    async (request) => {
-      // 统一查询仅支持游标分页；显式携带 offset 的请求直接拒绝（稳定 422）。
-      if (request.body && typeof request.body === "object" && "offset" in (request.body as Record<string, unknown>)) {
-        throw invalidInput("统一查询使用游标分页，不支持 offset 参数");
-      }
-      return workPlans.query(workPlanQueryRequestSchema.parse(request.body));
-    },
+    async (request) => workPlans.query(workPlanQueryRequestSchema.parse(request.body)),
   );
 
   app.post(

@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, ExportTemplateColumn, ExportWorkPlansQuery, WorkPlan, WorkPlanStatus } from "@workplan/contracts";
+import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, ExportTemplateColumn, ExportWorkPlansQuery, WorkPlan, WorkPlanQueryRequest, WorkPlanStatus } from "@workplan/contracts";
 import type { WorkPlanQueryEngine } from "./work-plan-query.js";
 import type { DatabaseBundle } from "../db/index.js";
 import { invalidInput, notFound, versionConflict } from "../errors.js";
@@ -57,10 +57,10 @@ export class SpreadsheetTransferService {
 
   // 旧扁平查询参数 → 统一查询描述（兼容 GET 模板导出与旧调用方）。
   private toEngineQuery(query: { q?: string; status?: WorkPlanStatus; from?: string; to?: string; sort?: ExportWorkPlansQuery["sort"] }): ExportWorkPlansQuery {
-    const filters: Array<{ field: string; op: string; value: unknown }> = [];
+    const filters: ExportWorkPlansQuery["filters"] = [];
     if (query.status) filters.push({ field: "status", op: "eq", value: query.status });
     const request: ExportWorkPlansQuery = {
-      filters: filters as ExportWorkPlansQuery["filters"],
+      filters,
       range: { from: query.from, to: query.to },
       sort: query.sort ?? [],
     };
@@ -114,13 +114,14 @@ export class SpreadsheetTransferService {
     return this.buildXls(this.getTemplate(templateId), this.toEngineQuery(query));
   }
 
+  // query 为统一查询描述；旧扁平 q/status/from/to 在兼容期由 toEngineQuery 转换。
   exportXlsCustom(
     input: { columns: ExportTemplateColumn[]; sheetName: string; name?: string },
     query: ExportWorkPlansQuery | { q?: string; status?: WorkPlanStatus; from?: string; to?: string },
   ): { fileName: string; data: Buffer } {
     this.validateColumns(input.columns);
     const engineQuery: ExportWorkPlansQuery = "filters" in query && Array.isArray(query.filters)
-      ? query as ExportWorkPlansQuery
+      ? query
       : this.toEngineQuery(query as { q?: string; status?: WorkPlanStatus; from?: string; to?: string });
     return this.buildXls({ name: input.name ?? "导出", sheetName: input.sheetName, columns: input.columns }, engineQuery);
   }
@@ -137,9 +138,9 @@ export class SpreadsheetTransferService {
     const readTransaction = this.database.sqlite.transaction(() => {
       let cursor: string | null = null;
       for (;;) {
-        const request = { ...query, limit: 1_000 };
-        if (cursor) (request as { cursor?: string }).cursor = cursor;
-        const page = this.queryEngine.query(request as Parameters<WorkPlanQueryEngine["query"]>[0]);
+        const request: WorkPlanQueryRequest = { ...query, limit: 1_000 };
+        if (cursor) request.cursor = cursor;
+        const page = this.queryEngine.query(request);
         if (cursor && page.items.length === 0) break; // 传入游标首页为空说明已到末页
         const rows = page.items.map((plan) => template.columns.map((column) => this.exportValue(plan, column, fields)));
         XLSX.utils.sheet_add_aoa(sheet, rows, { origin: -1 });

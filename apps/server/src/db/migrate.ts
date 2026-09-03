@@ -262,6 +262,16 @@ const migrations: Migration[] = [
       recomputeWorkPlanSortKeys(database);
     },
   },
+  {
+    // 状态排序改用与展示一致的派生状态表达式（票据 15 审查修正），
+    // v11 的两条存量状态表达式索引不再可用，予以移除。
+    version: 12,
+    name: "drop_stored_status_order_indexes",
+    sql: `
+      DROP INDEX IF EXISTS idx_work_plans_status_order_asc;
+      DROP INDEX IF EXISTS idx_work_plans_status_order_desc;
+    `,
+  },
 ];
 
 export function migrate(database: Database.Database): void {

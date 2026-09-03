@@ -320,8 +320,7 @@ export class CustomFieldService {
         if (field.type === "url") columns.url = String(value);
         // 统一排序键与值在同一事务内维护（票据 08 方案 A）
         let textSortKey: string | null = null;
-        if (field.type === "short_text") textSortKey = naturalSortKey(String(value));
-        if (field.type === "url") textSortKey = naturalSortKey(String(value));
+        if ((field.type === "short_text" || field.type === "url") && String(value).trim() !== "") textSortKey = naturalSortKey(String(value));
         let datetimeSortKey: string | null = null;
         if (field.type === "datetime") datetimeSortKey = normalizeDateTimeForSort(String(value));
         this.database.sqlite

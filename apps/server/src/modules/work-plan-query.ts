@@ -58,7 +58,9 @@ type SortLevel = {
 
 type CustomRef = { alias: string; optionsAlias: string | null };
 
-const STATUS_CASE = "CASE wp.status WHEN 'pending' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END";
+// 状态排序与展示一致：自动状态按求值时刻派生，手动状态用存量；统一映射为整数序（待开始→进行中→已完成→已取消）。
+const STATUS_CASE =
+  "CASE WHEN wp.status_mode = 'manual' THEN CASE wp.status WHEN 'pending' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END WHEN julianday(wp.start_at) > julianday(@now) THEN 0 WHEN julianday(wp.end_at) <= julianday(@now) THEN 2 ELSE 1 END";
 const DURATION_EXPR = "(julianday(wp.end_at) - julianday(wp.start_at))";
 
 const CURSOR_VERSION = 1;
@@ -343,7 +345,8 @@ export class WorkPlanQueryEngine {
     switch (definition.type) {
       case "short_text":
       case "url":
-        return { identity: `custom:${definition.id}:text_key`, expr: `${ref.alias}.text_sort_key`, dir, nullable: true, numeric: false };
+        // 空白文本视为缺失值：NULLIF 让空串进入空值区（写入侧同时归一化为 NULL）
+        return { identity: `custom:${definition.id}:text_key`, expr: `NULLIF(${ref.alias}.text_sort_key, '')`, dir, nullable: true, numeric: false };
       case "number":
         return { identity: `custom:${definition.id}:number`, expr: `${ref.alias}.number_value`, dir, nullable: true, numeric: true };
       case "boolean":
@@ -489,21 +492,6 @@ export class WorkPlanQueryEngine {
           return `${ref.optionsAlias}.sort_order`;
       }
     };
-
-    if (definition.type === "multi_select") {
-      if (filter.op !== "any" && filter.op !== "all") throw invalidInput(`多选字段仅支持 any/all 筛选：custom.${definition.key}`);
-      const expected = Array.isArray(filter.value) ? filter.value : [filter.value];
-      const optionIds = expected.map((value) => {
-        const option = definition.options.find((item) => item.value === value);
-        if (!option) throw invalidInput(`多选字段包含未知选项：custom.${definition.key}`);
-        return option.id;
-      });
-      const exists = (optionId: string) => {
-        const placeholder = bind(optionId);
-        return `EXISTS (SELECT 1 FROM custom_field_multi_values mv WHERE mv.work_plan_id = wp.id AND mv.field_id = ${ref.alias}.field_id AND mv.option_id = ${placeholder})`;
-      };
-      return optionIds.map(exists).join(" AND ");
-    }
 
     const kind =
       definition.type === "number"

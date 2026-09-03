@@ -23,8 +23,8 @@ export function recomputeWorkPlanSortKeys(database: Database.Database): { plans:
   for (const row of rows) {
     let textKey: string | null = null;
     let datetimeKey: string | null = null;
-    if (row.type === "short_text" && row.textValue != null) textKey = naturalSortKey(row.textValue);
-    if (row.type === "url" && row.urlValue != null) textKey = naturalSortKey(row.urlValue);
+    if (row.type === "short_text" && row.textValue != null && row.textValue.trim() !== "") textKey = naturalSortKey(row.textValue);
+    if (row.type === "url" && row.urlValue != null && row.urlValue.trim() !== "") textKey = naturalSortKey(row.urlValue);
     if (row.type === "datetime" && row.datetimeValue != null) datetimeKey = normalizeDateTimeForSort(row.datetimeValue);
     updateValue.run(textKey, datetimeKey, row.workPlanId, row.fieldId);
     values += 1;

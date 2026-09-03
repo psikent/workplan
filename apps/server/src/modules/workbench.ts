@@ -1,7 +1,6 @@
 import { Temporal } from "@js-temporal/polyfill";
 import type { WorkPlanQueryRequest, WorkPlanStatus, WorkbenchBlock, WorkbenchOverview } from "@workplan/contracts";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
-import type { DatabaseBundle } from "../db/index.js";
 import type { WorkPlanQueryEngine } from "./work-plan-query.js";
 
 export const WORKBENCH_TIME_ZONE = "Asia/Shanghai";
@@ -26,7 +25,6 @@ function workingDaysAfter(date: Temporal.PlainDate, count: number): Temporal.Pla
 
 export class WorkbenchService {
   constructor(
-    readonly database: DatabaseBundle,
     readonly queryEngine: WorkPlanQueryEngine,
   ) {}
 
@@ -88,9 +86,9 @@ export class WorkbenchService {
     );
 
     const countByStatus = (status: WorkPlanStatus) =>
-      this.queryEngine.query({ filters: [{ field: "status", op: "eq", value: status }], range: {}, sort: [], limit: 1 }, { offset: 0 }).total;
+      this.queryEngine.queryAt({ filters: [{ field: "status", op: "eq", value: status }], range: {}, sort: [], limit: 1 }, evaluatedAt, { offset: 0 }).total;
     const summary = {
-      all: this.queryEngine.query({ filters: [], range: {}, sort: [], limit: 1 }, { offset: 0 }).total,
+      all: this.queryEngine.queryAt({ filters: [], range: {}, sort: [], limit: 1 }, evaluatedAt, { offset: 0 }).total,
       pending: countByStatus("pending"),
       inProgress: countByStatus("in_progress"),
       completed: countByStatus("completed"),
