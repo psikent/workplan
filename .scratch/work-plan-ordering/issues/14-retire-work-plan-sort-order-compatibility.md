@@ -1,7 +1,7 @@
 # 14 — 启动工作计划 sortOrder 兼容退役
 
 Type: task
-Status: ready-for-agent
+Status: done
 Blocked by: 11, 12, 13
 Spec: ../spec.md
 Scope: Work Plan contracts/service/route、兼容日志、JSON 备份兼容及全仓测试固定数据
@@ -27,4 +27,14 @@ Scope: Work Plan contracts/service/route、兼容日志、JSON 备份兼容及�
 - 旧 JSON 备份仍可校验和导入，旧二进制回退所需列仍存在。
 
 ## Comments
+
+## 实施记录（2026-09-03）
+
+- **公共契约**：`workPlanSchema` 移除 `sortOrder`（自定义字段/选项同名字段保留）；删除公开 `reorderWorkPlansSchema`。全仓 Work Plan 固定字段与序列化清理（WorkPlanQuery 序列化、web 夹具）。
+- **重排墓碑**：`POST /api/v1/work-plans/reorder` 保留路由（Viewer 仍 403，写权限角色 410），返回 `AppError(410, "WORK_PLAN_REORDER_RETIRED")`，无任何数据副作用；服务端只输出结构化日志 `event=work_plan_reorder_tombstone`（时间、请求 id、路由），不含凭据或请求正文；14 天零调用观察按该关键字计数。
+- **中性写入**：新建工作计划向遗留 `NOT NULL sort_order` 写固定中性值 `WORK_PLAN_SORT_ORDER_NEUTRAL = 0`（常量导出），删除 MAX+1 逻辑；查询、比较、导出全部不读取该列。
+- **备份兼容**：JSON 备份版本 1–4 与 `sort_order` 列原样保留（v11 排序键列经 allowedColumns 过滤自动兼容），旧备份导入/校验测试保持通过；旧值不迁移为偏好。
+- **保护测试** `test/sort-order-retirement.test.ts` 3 项——墓碑 410 + 无副作用 + 版本不变；四种读取路径（list/query/search/get）响应均无 sortOrder 且新建仅写中性值；自定义字段定义（sort_order 0）、选项（0/1）与配置包往返排序不受影响。
+- 附带加固：web vitest 单测超时 15s、worker 上限，RTL cleanup 防级联，OverviewPage 本地日期夹具修复（跨零点稳定）。
+- 全仓验证：contracts 20、server 165、web 266、根 `pnpm test` 并行负载下全绿、typecheck 通过。
 
