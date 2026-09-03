@@ -158,11 +158,13 @@ export class SpreadsheetTransferService {
         if (cell) cell.z = "yyyy-mm-dd hh:mm";
       }
     });
+    // 容器为 xlsx：biff8（.xls）存在 65,536 行硬上限，且十万行写入实测 137-147s、RSS ~750MiB，
+    // 均违反规格预算；xlsx 全路径实测 38s / RSS 达标（票据 15 基准）。导入仍接受 .xls。
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, template.sheetName);
-    const data = XLSX.write(workbook, { type: "buffer", bookType: "biff8", cellDates: true }) as Buffer;
+    const data = XLSX.write(workbook, { type: "buffer", bookType: "xlsx", cellDates: true }) as Buffer;
     const safeName = template.name.replace(/[\\/:*?"<>|]/g, "-");
-    return { fileName: `${safeName}-${formatFileTimestamp(new Date())}.xls`, data };
+    return { fileName: `${safeName}-${formatFileTimestamp(new Date())}.xlsx`, data };
   }
 
   importXls(templateId: string, fileData: Buffer): { imported: number } {

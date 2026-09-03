@@ -978,9 +978,9 @@ describe("work plan API", () => {
 
     const exported = await context.request({ method: "GET", url: `/api/v1/work-plans/export.xls?templateId=${template.id}` });
     expect(exported.statusCode).toBe(200);
-    expect(exported.headers["content-type"]).toContain("application/vnd.ms-excel");
-    expect(exportedFileName(exported.headers["content-disposition"])).toMatch(/^排程导出-\d{8}-\d{6}\.xls$/);
-    expect(exported.rawPayload.subarray(0, 4).toString("hex")).toBe("d0cf11e0");
+    expect(exported.headers["content-type"]).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(exportedFileName(exported.headers["content-disposition"])).toMatch(/^排程导出-\d{8}-\d{6}\.xlsx$/);
+    expect(exported.rawPayload.subarray(0, 2).toString("latin1")).toBe("PK");
     const workbook = XLSX.read(exported.rawPayload, { type: "buffer", cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]!]!;
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
@@ -1020,9 +1020,9 @@ describe("work plan API", () => {
       },
     });
     expect(exported.statusCode).toBe(200);
-    expect(exported.headers["content-type"]).toContain("application/vnd.ms-excel");
-    expect(exportedFileName(exported.headers["content-disposition"])).toMatch(/^自定义导出-\d{8}-\d{6}\.xls$/);
-    expect(exported.rawPayload.subarray(0, 4).toString("hex")).toBe("d0cf11e0");
+    expect(exported.headers["content-type"]).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(exportedFileName(exported.headers["content-disposition"])).toMatch(/^自定义导出-\d{8}-\d{6}\.xlsx$/);
+    expect(exported.rawPayload.subarray(0, 2).toString("latin1")).toBe("PK");
     const workbook = XLSX.read(exported.rawPayload, { type: "buffer", cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]!]!;
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);

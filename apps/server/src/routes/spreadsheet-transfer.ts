@@ -63,7 +63,7 @@ export async function registerSpreadsheetTransferRoutes(app: FastifyInstance, sp
         ...(query.to ? { to: query.to } : {}),
         ...(query.sort ? { sort: parseWorkPlanSortParam(query.sort) ?? [] } : {}),
       });
-      reply.header("Content-Type", "application/vnd.ms-excel");
+      reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`);
       return reply.send(result.data);
     },
@@ -84,7 +84,7 @@ export async function registerSpreadsheetTransferRoutes(app: FastifyInstance, sp
         { columns: body.columns, sheetName: body.sheetName, ...(body.name ? { name: body.name } : {}) },
         query,
       );
-      reply.header("Content-Type", "application/vnd.ms-excel");
+      reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`);
       return reply.send(result.data);
     },

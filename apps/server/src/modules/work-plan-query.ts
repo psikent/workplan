@@ -214,6 +214,9 @@ export class WorkPlanQueryEngine {
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
     const joinSql = joins.length > 0 ? joins.join(" ") : "";
+    // 无筛选引用 JOIN 别名时，纯 1:1 LEFT JOIN 不改变行数——计数省去 JOIN 与排序输入。
+    const joinsReferencedByWhere = joins.length > 0 && /\b(cfv\d|cfo\d)\b/.test(whereSql);
+    const countJoinSql = joinsReferencedByWhere ? joinSql : "";
     const keysetPredicate = this.buildCursorPredicate(request, levels, params, options.offset === undefined);
     // 总数按完整过滤集合计数（不含游标）；分页在过滤之上追加键集谓词。
     const pageConditions = keysetPredicate ? [...where, keysetPredicate] : where;
@@ -226,7 +229,7 @@ export class WorkPlanQueryEngine {
 
     const runInReadTransaction = this.database.sqlite.transaction(() => {
       const total = this.database.sqlite
-        .prepare(`SELECT COUNT(*) AS total FROM work_plans wp ${joinSql} ${countWhereSql}`)
+        .prepare(`SELECT COUNT(*) AS total FROM work_plans wp ${countJoinSql} ${countWhereSql}`)
         .get(params) as { total: number };
 
       const limitClause = "LIMIT @limit";

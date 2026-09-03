@@ -93,7 +93,7 @@ export async function downloadWorkPlansXlsCustom(
   const href = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = href;
-  link.download = encodedName ? decodeURIComponent(encodedName) : `${name}-${new Date().toISOString().slice(0, 10)}.xls`;
+  link.download = encodedName ? decodeURIComponent(encodedName) : `${name}-${new Date().toISOString().slice(0, 10)}.xlsx`;
   link.click();
   URL.revokeObjectURL(href);
 }

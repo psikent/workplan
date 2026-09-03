@@ -324,7 +324,7 @@ describe("viewer authorization", () => {
     }
 
     const xls = await session.request({ method: "POST", url: "/api/v1/work-plans/export.xls", payload: { columns: [{ source: "title", header: "工作内容" }] } });
-    expect(xls.headers["content-type"]).toBe("application/vnd.ms-excel");
+    expect(xls.headers["content-type"]).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     const jsonExport = await session.request({ method: "GET", url: "/api/v1/export" });
     expect(jsonExport.json()).toHaveProperty("data");
 
