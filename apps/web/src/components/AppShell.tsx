@@ -4,7 +4,7 @@ import { NavLink } from "react-router-dom";
 import { useSession } from "../App";
 import { useOnline } from "../lib/useOnline";
 import { roleLabel } from "../lib/permissions";
-import { applyTheme, useSystemTheme, type Theme } from "../lib/theme";
+import { applyTheme, loadThemePreference, themePreferenceKey, useSystemTheme, type ThemePreference } from "../lib/theme";
 import BrandMark from "./BrandMark";
 
 const navItems = [
@@ -15,8 +15,6 @@ const navItems = [
 ] as const;
 
 const sidebarPreferenceKey = "workplan:sidebar:v1";
-const themePreferenceKey = "workplan:theme:v1";
-type ThemePreference = Theme | "system";
 
 function loadSidebarCollapsed() {
   if (typeof window === "undefined") return false;
@@ -25,18 +23,6 @@ function loadSidebarCollapsed() {
     return Boolean(saved && typeof saved === "object" && (saved as { version?: unknown }).version === 1 && (saved as { collapsed?: unknown }).collapsed === true);
   } catch {
     return false;
-  }
-}
-
-function loadThemePreference(): ThemePreference {
-  if (typeof window === "undefined") return "system";
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(themePreferenceKey) ?? "null") as unknown;
-    if (!saved || typeof saved !== "object" || (saved as { version?: unknown }).version !== 1) return "system";
-    const preference = (saved as { preference?: unknown }).preference;
-    return preference === "light" || preference === "dark" || preference === "system" ? preference : "system";
-  } catch {
-    return "system";
   }
 }
 

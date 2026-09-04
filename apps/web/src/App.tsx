@@ -2,7 +2,7 @@ import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useState
 import { Navigate, Route, Routes } from "react-router-dom";
 import type { LoginMode, UserRole } from "@workplan/contracts";
 import { api, setCsrfToken } from "./lib/api";
-import { applyTheme, useSystemTheme } from "./lib/theme";
+import { applyTheme, loadThemePreference, useSystemTheme } from "./lib/theme";
 import AppShell from "./components/AppShell";
 import AuthPage from "./pages/AuthPage";
 import BrandMark from "./components/BrandMark";
@@ -59,11 +59,14 @@ type BootstrapState =
   | { status: "anonymous"; setupRequired: boolean; setupTokenExpiresAt: string | null }
   | { status: "authenticated"; user: User };
 
-function SystemTheme({ children }: { children: ReactNode }) {
+function StoredTheme({ children }: { children: ReactNode }) {
   const systemTheme = useSystemTheme();
+  // 渲染期重读存储偏好：登出回到匿名路由时，AppShell 期间切换的主题要立即生效
+  const preference = loadThemePreference();
+  const activeTheme = preference === "system" ? systemTheme : preference;
   useEffect(() => {
-    applyTheme(systemTheme);
-  }, [systemTheme]);
+    applyTheme(activeTheme);
+  }, [activeTheme]);
   return <>{children}</>;
 }
 
@@ -146,5 +149,5 @@ export default function App() {
     );
   }
 
-  return <SystemTheme>{content}</SystemTheme>;
+  return <StoredTheme>{content}</StoredTheme>;
 }

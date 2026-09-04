@@ -95,6 +95,27 @@ describe("login screen theme", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
     view.unmount();
   });
+
+  it("honors a stored dark preference even when the operating system is light", async () => {
+    localStorage.setItem("workplan:theme:v1", JSON.stringify({ version: 1, preference: "dark" }));
+    const view = await renderLoginScreen();
+    expect(document.documentElement.dataset.theme).toBe("dark");
+
+    systemThemeIsDark = true;
+    act(() => {
+      systemThemeListeners.forEach((listener) => listener({ matches: true } as MediaQueryListEvent));
+    });
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    view.unmount();
+  });
+
+  it("honors a stored light preference even when the operating system is dark", async () => {
+    localStorage.setItem("workplan:theme:v1", JSON.stringify({ version: 1, preference: "light" }));
+    systemThemeIsDark = true;
+    const view = await renderLoginScreen();
+    expect(document.documentElement.dataset.theme).toBe("light");
+    view.unmount();
+  });
 });
 
 describe("bootstrap offline", () => {
