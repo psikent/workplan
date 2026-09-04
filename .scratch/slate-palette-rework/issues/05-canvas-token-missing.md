@@ -25,3 +25,7 @@ Scope: apps/web/src/styles.css
 ## Comments
 
 - 2026-09-05 创建并随修复提交闭环。
+
+## Comments（追加）
+
+- 2026-09-05 复发记录（ba89837）：`.search-control input` 同样从未设置背景（wrapper 有 --surface 底，input 露 UA 控件灰）。已补 `background: transparent` 并发布；同时全文件扫描 input/select/textarea 规则，确认这是最后一处无背景的文本输入（其余或显式设背景、或为 checkbox 仅用 accent-color）。经验：迁移 wrapper 背景时，内部原生 input 的 UA 默认底要显式置 transparent。
