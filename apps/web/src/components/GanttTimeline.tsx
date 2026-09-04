@@ -680,6 +680,14 @@ function trimGanttToPlanRows(mount: HTMLElement, planCount: number) {
 
   ganttContainer.style.height = "100%";
   svg.setAttribute("height", String(contentHeight));
+  // frappe 的 grid-background 高度公式（表头 + padding + 行高×行数 − 10）比实际行底
+  // 多出 padding−10 的残差；.current-highlight 按该内部值定高且直接挂在滚动容器上，
+  // 会把甘特侧最大滚动量撑得比左侧计划列表长，到底后滚动同步每刻度回拽抖动。
+  // 这里把标记底边钳到裁剪后的行底，保证两侧可滚动高度一致。
+  const currentHighlight = ganttContainer.querySelector<HTMLElement>(".current-highlight");
+  if (currentHighlight) {
+    currentHighlight.style.height = `${Math.max(0, contentHeight - PLANNER_HEADER_HEIGHT)}px`;
+  }
 }
 
 export function timelineDateAtPosition(position: number, rangeStart: Date, columnWidth: number, dayCount: number) {

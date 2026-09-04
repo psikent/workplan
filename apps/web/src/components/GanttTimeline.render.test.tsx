@@ -471,6 +471,47 @@ describe("GanttTimeline rendered grid", () => {
     expect(gantt.highlight_current).not.toHaveBeenCalled();
   });
 
+  it("caps the today marker at the trimmed row bottom so the gantt scroll extent matches the plan list", async () => {
+    // frappe 的 grid-background 高度公式（表头 + padding + 行高×行数 − 10）比实际行底
+    // 多出 padding−10 = 22px；.current-highlight 按该内部值定高且直接挂在滚动容器上，
+    // 会把甘特侧最大滚动量撑得比左侧列表长。到底后继续滚动时 scroll 同步会把甘特
+    // 拽回列表的钳制位置，滚轮每个刻度抖动一次。标记底边必须钳在裁剪后的行底。
+    const today = new Date();
+    const rangeStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 2);
+    const rangeEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 5);
+    const dayIso = (day: Date) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10).toISOString();
+    const plans = [0, 1, 2].map((index) => ({
+      ...plan,
+      id: `today-marker-plan-${index}`,
+      startAt: dayIso(rangeStart),
+      endAt: dayIso(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2)),
+    }));
+    const { container } = render(
+      <GanttTimeline
+        plans={plans}
+        view="week"
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const svg = await waitFor(() => {
+      const element = container.querySelector<SVGSVGElement>("svg.gantt");
+      expect(element?.getAttribute("height")).toBeTruthy();
+      return element!;
+    });
+    const marker = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>(".current-highlight");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    const svgHeight = Number(svg.getAttribute("height"));
+    const markerBottom = Number.parseFloat(marker.style.top) + Number.parseFloat(marker.style.height);
+    expect(markerBottom).toBeLessThanOrEqual(svgHeight);
+  });
+
   it("centers each date number inside its matching day column", async () => {
     const midnightPlan = {
       ...plan,
