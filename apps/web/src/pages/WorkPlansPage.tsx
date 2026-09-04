@@ -1124,7 +1124,7 @@ function SortSettings({ items, fields, appliedItems, queryFailed, onChange, onCl
         {items.map((item, index) => (
           <li className="sort-item-row" key={item.field}>
             <span className="sort-item-rank" aria-hidden>{index + 1}</span>
-            <span>{labelOf(item.field)}</span>
+            <span className="sort-item-label">{labelOf(item.field)}</span>
             <button
               type="button"
               aria-label={`${labelOf(item.field)} 方向 ${item.direction === "asc" ? "升序，点击改为降序" : "降序，点击改为升序"}`}
