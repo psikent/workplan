@@ -556,6 +556,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 :root[data-theme="dark"] .plan-row.gantt-row-hovered,
 :root[data-theme="dark"] .upcoming-list > a:hover,
 :root[data-theme="dark"] .reminder-list > a:hover { background: #22272d; }
+:root[data-theme="dark"] .upcoming-date { background: #262d35; }
 
 :root[data-theme="dark"] .view-switch,
 :root[data-theme="dark"] .fields-table.table-head,
