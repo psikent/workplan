@@ -732,7 +732,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .annual-quick-edit-message { display: flex; align-items: center; gap: 10px; padding: 14px 24px 0; }.annual-quick-edit-message .form-error { flex: 1; }.annual-quick-edit-copy-status { flex: 1 1 100%; order: 4; color: var(--muted); font-size: 12px; }.annual-quick-edit-loading { display: grid; min-height: 220px; place-items: center; color: var(--muted); font-size: 13px; }.annual-quick-edit-error { margin: 0 24px 12px; }.annual-quick-edit-dialog > footer { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 24px; border-top: 1px solid var(--line); background: var(--surface); }
 :root[data-theme="dark"] .annual-quick-edit-table thead th { background: #20252b; }
 /* 排序面板（票据 12） */
-.sort-panel { display: block; margin: -5px 0 13px; padding: 10px 14px; }
+.sort-panel { display: block; flex: 0 0 auto; margin: -5px 0 13px; padding: 10px 14px; }
 .sort-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .sort-panel-head small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
 .sort-panel-actions { display: flex; align-items: center; gap: 6px; }
