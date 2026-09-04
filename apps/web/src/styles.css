@@ -28,6 +28,7 @@
   --surface-muted: #f6f8fa;
   --surface-veil: rgb(255 255 255 / 60%);
   --backdrop: rgb(15 23 42 / 20%);
+  --canvas: #f8fafc;
   --stripe: #f8fafc;
   --green: #059669;
   --green-text: #065f46;
@@ -519,6 +520,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
   --surface-muted: #162032;
   --surface-veil: rgb(2 6 23 / 50%);
   --backdrop: rgb(0 0 0 / 55%);
+  --canvas: #020617;
   --stripe: #131c2f;
   --green: #34d399;
   --green-text: #6ee7b7;
