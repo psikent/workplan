@@ -616,9 +616,11 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
   .sidebar-footer { width: 58px; margin-top: 0; padding: 0 10px; border-top: 0; border-left: 1px solid var(--line); }.sidebar-footer .user-chip, .sidebar-footer .user-meta, .sidebar-footer .theme-toggle, .sidebar-footer .auto-theme-toggle { display: none; }.sidebar-footer .signout-button { display: inline-flex; }
   .work-plans-page, .content-page { padding: 18px 16px; }
   .work-plans-page { height: 100%; }
-  .page-header { align-items: center; }.page-header h1 { font-size: 24px; }.page-header p { display: none; }
+  .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }.page-header h1 { font-size: 24px; white-space: nowrap; }.page-header p { display: none; }
+  .header-actions { flex-wrap: wrap; }.work-plan-header-actions { justify-content: flex-start; }
   .primary-button { padding-inline: 11px; }
-  .filter-toolbar { overflow-x: auto; padding-bottom: 3px; }.search-control { flex: 0 0 210px; }.filter-toolbar select { flex: 0 0 130px; }
+  .filter-toolbar { overflow-x: auto; padding-bottom: 3px; }.search-control { flex: 1 1 160px; min-width: 0; }.filter-toolbar select { flex: 0 0 130px; }
+  .filter-toolbar .compact-button, .filter-toolbar .text-button { flex: 0 0 auto; white-space: nowrap; }
   .advanced-filter-panel { overflow-x: auto; }.advanced-filter-panel strong { flex: 0 0 auto; }
   .planner-panel { grid-template-columns: minmax(0, var(--planner-list-width, 44%)) 8px minmax(0, 1fr); }
   .editor-drawer { width: 100vw; }
