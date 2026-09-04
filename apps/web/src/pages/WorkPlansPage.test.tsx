@@ -1254,6 +1254,19 @@ describe("工作计划页排序体验", () => {
     view.unmount();
   });
 
+  it("有效的自定义字段排序加载后保留，不提示清理", async () => {
+    window.localStorage.setItem("workplan:list-sort:v1:user-lxj", JSON.stringify({
+      version: 1,
+      sort: [{ field: "custom.owner", direction: "asc" }],
+    }));
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    expect(screen.queryByText("浏览器偏好中的失效排序字段已清理")).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem("workplan:list-sort:v1:user-lxj")!).sort).toEqual([{ field: "custom.owner", direction: "asc" }]);
+    await waitFor(() => expect(queryBodies().some((body) => body.sort.length === 1 && body.sort[0]?.field === "custom.owner" && body.sort[0]?.direction === "asc")).toBe(true));
+    view.unmount();
+  });
+
   it("账户隔离：不同账户读取各自偏好", async () => {
     window.localStorage.setItem("workplan:list-sort:v1:user-a", JSON.stringify({ version: 1, sort: [{ field: "title", direction: "asc" }] }));
     sessionMock.user = { id: "user-a", username: "甲", role: "admin", loginMode: "password" };

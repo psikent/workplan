@@ -291,10 +291,12 @@ export default function WorkPlansPage() {
     setPreferenceItems(loadSortPreference(accountId));
   }, [accountId]);
 
-  const cleanedPreference = useMemo(
-    () => (preferenceItems ? cleanSortItems(preferenceItems, fieldsQuery.data ?? []) : null),
-    [fieldsQuery.data, preferenceItems],
-  );
+  const cleanedPreference = useMemo(() => {
+    // 字段定义就绪前不做逐项清理：加载期间的空字段列表会把有效的自定义字段排序误判为失效并写回偏好。
+    if (!preferenceItems) return null;
+    if (!fieldsQuery.isSuccess) return preferenceItems;
+    return cleanSortItems(preferenceItems, fieldsQuery.data ?? []);
+  }, [fieldsQuery.data, fieldsQuery.isSuccess, preferenceItems]);
   useEffect(() => {
     // 本地偏好逐项清理失效字段：写回并只提示一次。
     if (!preferenceItems || !cleanedPreference) return;
