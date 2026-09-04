@@ -993,7 +993,7 @@ export default function WorkPlansPage() {
         </div>
         <div className="planner-table">
           <div className="plan-grid-scroll" style={planGridStyle}>
-            <div className="planner-columns"><span>工作内容</span>{visibleColumns.map((column) => <span className={isTextPlanColumn(column) ? undefined : "plan-column-centered"} key={column.id}>{column.label}</span>)}</div>
+            <div className="planner-columns"><span>工作内容</span>{visibleColumns.map((column) => <span key={column.id}>{column.label}</span>)}</div>
             <div ref={planRowsRef} className="plan-rows">
               {plans.map((plan) => <PlanRow key={plan.id} plan={plan} columns={visibleColumns} goalsById={goalsById} onSelect={handleSelect} />)}
               {!plansQuery.isLoading && plans.length === 0 ? <div className="plan-list-empty">这个时间范围还没有工作计划</div> : null}

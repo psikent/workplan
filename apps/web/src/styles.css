@@ -162,8 +162,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .plan-grid-scroll { min-width: 0; min-height: 0; display: grid; grid-template-rows: 46px minmax(0, 1fr); overflow-x: auto; overflow-y: hidden; }
 .planner-columns, .plan-row { min-width: var(--plan-grid-min-width); display: grid; grid-template-columns: var(--plan-grid-template); align-items: center; }
 .planner-columns { border-bottom: 1px solid var(--line); color: #556177; font-size: 12px; font-weight: 600; }
-.planner-columns span { height: 100%; display: flex; align-items: center; padding: 0 10px; border-right: 1px solid var(--line-soft); }
-.planner-columns .plan-column-centered { justify-content: center; text-align: center; }
+.planner-columns span { height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 10px; border-right: 1px solid var(--line-soft); }
 .plan-rows { min-width: var(--plan-grid-min-width); min-height: 0; overflow-y: auto; }
 .planner-panel.view-month .plan-rows { scrollbar-width: none; -ms-overflow-style: none; }
 .planner-panel.view-month .plan-rows::-webkit-scrollbar { display: none; width: 0; height: 0; }

@@ -330,14 +330,6 @@ describe("work plan table columns", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "工时" }));
 
     await waitFor(() => expect(headerLabels(view.container)).toContain("工时"));
-    const headers = Array.from(view.container.querySelectorAll<HTMLElement>(".planner-columns > span"));
-    const header = (label: string) => headers.find((element) => element.textContent === label);
-    expect(header("工作内容")?.classList.contains("plan-column-centered")).toBe(false);
-    expect(header("状态")?.classList.contains("plan-column-centered")).toBe(true);
-    expect(header("开始时间")?.classList.contains("plan-column-centered")).toBe(true);
-    expect(header("结束时间")?.classList.contains("plan-column-centered")).toBe(true);
-    expect(header("负责人")?.classList.contains("plan-column-centered")).toBe(false);
-    expect(header("工时")?.classList.contains("plan-column-centered")).toBe(true);
 
     expect(view.container.querySelector(".status-badge")?.parentElement?.classList.contains("plan-cell-centered")).toBe(true);
     expect(Array.from(view.container.querySelectorAll(".plan-row time")).every((element) => element.classList.contains("plan-cell-centered"))).toBe(true);
