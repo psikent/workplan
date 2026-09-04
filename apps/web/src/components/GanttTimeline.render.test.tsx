@@ -92,6 +92,29 @@ describe("GanttTimeline rendered grid", () => {
     expect(timelineDateAtPosition(32 * 28 - 0.01, rangeStart, 32, 28)).toEqual(new Date(2026, 1, 28));
   });
 
+  it("starts gantt rows at the 46px planner list header height so both sides align", async () => {
+    const { container } = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    // frappe-gantt 表头总高 = lower + upper + 10（库内建常量，写死在其样式表）。
+    // 首个 .grid-row 的 y 即表头总高，必须等于列表表头行高 46px（styles.css），
+    // 否则每一行计划与甘特条都会错位。
+    const row = await waitFor(() => {
+      const element = container.querySelector<SVGRectElement>(".grid-row");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(Number(row.getAttribute("y"))).toBe(46);
+  });
+
   it("renders today's marker when today is the final day of the weekly range", () => {
     const mount = document.createElement("div");
     const originalEnd = new Date(2026, 7, 9);

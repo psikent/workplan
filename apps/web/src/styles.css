@@ -183,7 +183,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .status-completed { color: #4f6686; background: var(--slate-soft); }.status-completed i { background: var(--slate); }
 .status-cancelled { color: #68758a; background: #f0f2f5; }.status-cancelled i { background: #97a0af; }
 .plan-list-empty { min-height: 230px; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
-.timeline-empty { position: absolute; z-index: 2; inset: 40px 0 0; display: grid; place-items: center; min-height: 0; color: var(--muted); font-size: 13px; pointer-events: none; }
+.timeline-empty { position: absolute; z-index: 2; inset: 46px 0 0; display: grid; place-items: center; min-height: 0; color: var(--muted); font-size: 13px; pointer-events: none; }
 .table-footer { display: flex; align-items: center; justify-content: space-between; padding: 0 17px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 
 .planner-timeline { position: relative; grid-column: 3; grid-row: 2; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) 46px; overflow: hidden; }

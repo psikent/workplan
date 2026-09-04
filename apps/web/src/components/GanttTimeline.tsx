@@ -41,6 +41,12 @@ type RangedGantt = {
 };
 
 const MIN_DAY_COLUMN_WIDTH = 32;
+// 甘特表头总高必须等于左侧列表表头行高（styles.css .plan-grid-scroll 首行 46px），
+// 否则下方每一行的计划与甘特条错位。frappe-gantt 的表头总高 =
+// lower + upper + 10（库内建常量，其样式表 .grid-header 的 calc 同样写死 +10px），
+// 因此 lower 需预先扣除这 10px。
+const PLANNER_HEADER_HEIGHT = 46;
+const FRAPPE_HEADER_HEIGHT_PADDING = 10;
 // Lucide "Bell" outline path, injected as a small inline SVG so the header
 // buttons match the app's 18px rounded-outline icon baseline.
 const REMINDER_BELL_ICON = '<svg class="reminder-bell-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
@@ -154,7 +160,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
         // 高度归零以省出空白行，但 upper_text 标签仍须渲染（display:none 隐藏）：
         // frappe-gantt 内部按标签文字定位滚动位置，缺标签会抛错。
         upper_header_height: 0,
-        lower_header_height: 40,
+        lower_header_height: PLANNER_HEADER_HEIGHT - FRAPPE_HEADER_HEIGHT_PADDING,
         column_width: columnWidth,
         snap_at: "1d",
         infinite_padding: false,
