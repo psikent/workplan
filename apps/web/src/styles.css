@@ -162,7 +162,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .filter-toolbar select { min-width: 138px; padding: 0 34px 0 12px; color: var(--text-soft); }
 .search-control { width: min(280px, 30vw); display: flex; align-items: center; gap: 8px; padding: 0 11px; }
 .search-control svg { color: var(--muted); }
-.search-control input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--text); }
+.search-control input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text); }
 .search-control input::placeholder { color: var(--muted); }
 
 .planner-panel { width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, var(--planner-list-width, 44%)) 8px minmax(0, 1fr); grid-template-rows: 54px minmax(0, 1fr); overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 6px var(--shadow-soft); }
