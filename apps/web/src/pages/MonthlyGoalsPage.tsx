@@ -421,7 +421,7 @@ export default function MonthlyGoalsPage() {
                   const isCurrent = plan.id === linkingGoal.linkedWorkPlan?.id;
                   return (
                     <button className={`goal-link-option ${occupied ? "disabled" : ""}`} type="button" key={plan.id} disabled={occupied || isCurrent || saving} title={occupied ? "该工作计划已关联该目标" : isCurrent ? "当前已关联" : plan.title} onClick={() => linkMutation.mutate({ goal: linkingGoal, workPlanId: plan.id })}>
-                      <span>{plan.title}</span><StatusBadge status={plan.status} />
+                      <span className="goal-link-option-title">{plan.title}</span><StatusBadge status={plan.status} />
                     </button>
                   );
                 })}
