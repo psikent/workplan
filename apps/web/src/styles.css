@@ -634,7 +634,13 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
   .work-plans-page, .content-page { padding: 18px 16px; }
   .work-plans-page { height: 100%; }
   .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }.page-header h1 { font-size: 24px; white-space: nowrap; }.page-header p { display: none; }
-  .header-actions { flex-wrap: wrap; }.work-plan-header-actions { justify-content: flex-start; }
+  .work-plans-page .page-header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); align-items: center; gap: 8px; min-height: 38px; margin-bottom: 13px; }
+  .work-plans-page .page-header > div:first-child, .work-plans-page .work-plan-header-actions { min-width: 0; }
+  .work-plans-page .work-plan-header-actions { width: 100%; flex-wrap: nowrap; justify-content: flex-end; gap: 6px; }
+  .work-plans-page .work-plan-header-actions > select { width: 0; min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .work-plans-page .work-plan-header-actions > .export-popover-wrap, .work-plans-page .work-plan-header-actions > .export-popover-wrap > .secondary-button { flex: 0 0 auto; }
+  .work-plans-page .work-plan-header-actions > .export-popover-wrap > .secondary-button { padding-inline: 9px; white-space: nowrap; }
+  .work-plans-page .work-plan-header-actions .export-popover { max-width: calc(100vw - 32px); }
   .primary-button { padding-inline: 11px; }
   .filter-toolbar { flex-wrap: wrap; padding-bottom: 3px; }.search-control { flex: 1 1 160px; min-width: 0; }.filter-toolbar select { flex: 0 0 130px; }
   .filter-toolbar .compact-button, .filter-toolbar .text-button { flex: 0 0 auto; white-space: nowrap; }

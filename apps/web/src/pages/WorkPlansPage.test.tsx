@@ -283,6 +283,20 @@ describe("plan create split button", () => {
   });
 });
 
+describe("mobile work plan header layout", () => {
+  it("keeps the template and export controls in the page header", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    const pageHeader = view.container.querySelector<HTMLElement>(".work-plans-page > .page-header")!;
+    expect(pageHeader.querySelector('select[aria-label="Excel 导入导出模板"]')).not.toBeNull();
+    expect(within(pageHeader).getByRole("button", { name: "导出 XLS" })).toBeTruthy();
+    expect(view.container.querySelector(".filter-toolbar select[aria-label=\"Excel 导入导出模板\"]")).toBeNull();
+    expect(view.container.querySelector(".filter-toolbar")!.contains(screen.getByRole("button", { name: "新建工作计划" }))).toBe(true);
+    view.unmount();
+  });
+});
+
 describe("viewer read-only workbench", () => {
   it("hides write entries, shows the read-only hint and keeps search and export usable", async () => {
     sessionMock.user = { id: "user-shenji", username: "审计", role: "viewer", loginMode: "password" };
