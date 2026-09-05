@@ -6,11 +6,19 @@ import {
   createManagedUserSchema,
   createPasswordManagedUserSchema,
   createTokenOnlyManagedUserSchema,
+  createWorkPlanSchema,
   manageableUserRoles,
+  ownerConflictSchema,
   updateBarkConfigSchema,
   userRoleSchema,
   userRoles,
+  workPlanConflictCheckRequestSchema,
+  workPlanConflictCheckResponseSchema,
 } from "../src/index.ts";
+
+const planUuid = "123e4567-e89b-42d3-a456-426614174000";
+const otherUuid = "123e4567-e89b-42d3-a456-426614174001";
+const counterpart = { id: otherUuid, label: "乙", startAt: "2026-05-01T04:00:00.000Z", endAt: "2026-05-01T08:00:00.000Z" };
 
 describe("user role contracts", () => {
   it("exposes viewer as a user role", () => {
@@ -72,5 +80,41 @@ describe("bark config contracts", () => {
     assert.equal(barkTestPushResponseSchema.safeParse({ success: true, message: "推送成功" }).success, true);
     assert.equal(barkTestPushResponseSchema.safeParse({ success: false, message: "Bark 服务器返回 500" }).success, true);
     assert.equal(barkTestPushResponseSchema.safeParse({ success: true }).success, false);
+  });
+});
+
+describe("owner conflict contracts", () => {
+  it("derived ownerConflict requires a non-empty owner and at least one counterpart", () => {
+    assert.equal(ownerConflictSchema.safeParse({ owner: "zhangsan", counterparts: [counterpart] }).success, true);
+    // 派生字段语义：无冲突时整体为 null，而不是空 counterparts
+    assert.equal(ownerConflictSchema.safeParse({ owner: "zhangsan", counterparts: [] }).success, false);
+    assert.equal(ownerConflictSchema.safeParse({ owner: "", counterparts: [counterpart] }).success, false);
+    assert.equal(ownerConflictSchema.safeParse({ owner: "zhangsan", counterparts: [{ ...counterpart, id: "not-a-uuid" }] }).success, false);
+    assert.equal(ownerConflictSchema.safeParse({ owner: "zhangsan", counterparts: [{ ...counterpart, endAt: "2026-05-01 08:00:00" }] }).success, false);
+  });
+
+  it("conflict-check request accepts an optional uuid id and rejects bad input strictly", () => {
+    const valid = { owner: "zhangsan", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" };
+    assert.equal(workPlanConflictCheckRequestSchema.safeParse({ ...valid, id: planUuid }).success, true);
+    assert.equal(workPlanConflictCheckRequestSchema.safeParse(valid).success, true);
+    assert.equal(workPlanConflictCheckRequestSchema.safeParse({ ...valid, id: "not-a-uuid" }).success, false);
+    // superRefine：结束时间必须晚于开始时间
+    assert.equal(workPlanConflictCheckRequestSchema.safeParse({ ...valid, endAt: valid.startAt }).success, false);
+    assert.equal(workPlanConflictCheckRequestSchema.safeParse({ ...valid, owner: "" }).success, false);
+    // strict：未知键在契约层即被拒绝
+    assert.equal(workPlanConflictCheckRequestSchema.safeParse({ ...valid, extra: 1 }).success, false);
+  });
+
+  it("conflict-check response allows an empty counterparts list (= 无冲突)", () => {
+    assert.equal(workPlanConflictCheckResponseSchema.safeParse({ owner: "zhangsan", counterparts: [] }).success, true);
+    assert.equal(workPlanConflictCheckResponseSchema.safeParse({ owner: "zhangsan", counterparts: [counterpart] }).success, true);
+    assert.equal(workPlanConflictCheckResponseSchema.safeParse({ owner: "zhangsan" }).success, false);
+  });
+
+  it("create input (strict) rejects the derived ownerConflict field", () => {
+    const input = { title: "计划", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" };
+    assert.equal(createWorkPlanSchema.safeParse(input).success, true);
+    // 派生只读字段不可经入参写入（ADR 0008）
+    assert.equal(createWorkPlanSchema.safeParse({ ...input, ownerConflict: { owner: "zhangsan", counterparts: [counterpart] } }).success, false);
   });
 });

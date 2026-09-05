@@ -231,6 +231,8 @@ export const workPlanConflictCheckRequestSchema = z
   });
 export type WorkPlanConflictCheckRequest = z.infer<typeof workPlanConflictCheckRequestSchema>;
 
+// 实时校核响应：counterparts 允许空数组（= 无冲突），与派生字段"无冲突整体为 null"
+// 的形状不同，前端需归一化后展示；owner 与派生字段一致不做 min(1)（入参侧已校验）。
 export const workPlanConflictCheckResponseSchema = z.object({
   owner: z.string(),
   counterparts: z.array(ownerConflictCounterpartSchema),
@@ -243,6 +245,8 @@ export function formatWorkPlanSortParam(items: readonly WorkPlanSortItem[]): str
 }
 
 // 解析失败（非法字段、方向、超限、重复）返回 null，调用方整体回退到排期顺序并提示。
+// custom.<key> 只做前缀放行：key 的存在性/归档状态由服务端字段目录校验（SORT_FIELD_INVALID），
+// Web 客户端在字段目录就绪后会按目录先行清洗（见 WorkPlansPage cleanSortItems），使该承诺在 URL 场景同样成立。
 export function parseWorkPlanSortParam(value: string | null | undefined): WorkPlanSortItem[] | null {
   if (value == null || value === "") return null;
   const parts = value.split(",");
