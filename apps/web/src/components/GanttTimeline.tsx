@@ -20,7 +20,7 @@ type Props = {
   reminders?: ReminderDay[];
   displayProperties?: GanttDisplayProperty[];
   tooltipProperties?: GanttDisplayProperty[];
-  ownerField?: CustomFieldDefinition;
+  ownerField?: CustomFieldDefinition | undefined;
   view: "week" | "month";
   rangeStart: Date;
   rangeEnd: Date;
