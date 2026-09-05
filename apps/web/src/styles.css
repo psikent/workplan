@@ -604,13 +604,13 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
   --gantt-handle-stroke: rgb(255 255 255 / 90%);
 }
 
-/* 暗色下「今天」高亮：frappe 默认灰底白字对比不足，改用强调蓝实底 + 深色数字，竖线/圆点同步 */
-:root[data-theme="dark"] .gantt-mount .current-date-highlight { background: var(--accent); color: var(--accent-contrast); }
-:root[data-theme="dark"] .gantt-mount .current-highlight,
-:root[data-theme="dark"] .gantt-mount .current-ball-highlight { background: var(--accent); }
-/* 亮青药丸上铃铛与日期统一深藏青，琥珀在青底上撞色 */
-:root[data-theme="dark"] .gantt-mount .current-date-highlight .timeline-reminder-bell { color: var(--accent-contrast); }
-:root[data-theme="dark"] .gantt-mount .current-date-highlight .timeline-reminder-bell:hover { opacity: .72; }
+/* 「今天」高亮：frappe 默认灰黑药丸与两套主题都不符，统一改强调色实底——
+   暗色亮青 + 深藏青内容，浅色深青 + 白字；提醒铃铛随内容色（琥珀在青底撞色） */
+.gantt-mount .current-date-highlight { background: var(--accent); color: var(--accent-contrast); }
+.gantt-mount .current-highlight,
+.gantt-mount .current-ball-highlight { background: var(--accent); }
+.gantt-mount .current-date-highlight .timeline-reminder-bell { color: var(--accent-contrast); }
+.gantt-mount .current-date-highlight .timeline-reminder-bell:hover { opacity: .72; }
 
 @media (max-width: 1120px) {
   .app-shell { grid-template-columns: 76px minmax(0, 1fr); }
