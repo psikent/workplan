@@ -2,7 +2,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, ty
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { arrayMove } from "@dnd-kit/sortable";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
-import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, MonthlyGoal, OwnerAccountMapping, WorkPlan, WorkPlanQueryRequest, WorkPlanQueryResponse, WorkPlanSeries, WorkPlanSortItem, WorkPlanStatus } from "@workplan/contracts";
+import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, MonthlyGoal, OwnerAccountMapping, ReminderDay, WorkPlan, WorkPlanQueryRequest, WorkPlanQueryResponse, WorkPlanSeries, WorkPlanSortItem, WorkPlanStatus } from "@workplan/contracts";
 import { formatWorkPlanSortParam, parseWorkPlanSortParam } from "@workplan/contracts";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -60,6 +60,9 @@ const builtInColumns: PlanColumn[] = [
   { id: "startAt", label: "开始时间", width: 96 },
   { id: "endAt", label: "结束时间", width: 96 },
 ];
+// 稳定空数组：加载期的 `?? []` 字面量每次渲染都是新引用，会让 memo 化的 GanttTimeline 失效。
+const EMPTY_PLANS: WorkPlan[] = [];
+const EMPTY_REMINDER_DAYS: ReminderDay[] = [];
 
 function sortPreferencesKey(accountId: string) {
   return `${sortPreferencesKeyPrefix}:${accountId}`;
@@ -242,7 +245,7 @@ function initialTimelineAnchor(value: string | null) {
 export default function WorkPlansPage() {
   const { user } = useSession();
   const canWrite = canWriteBusinessData(user.role);
-  const { showSuccess } = useToast();
+  const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPlanId = searchParams.get("plan");
@@ -273,7 +276,8 @@ export default function WorkPlansPage() {
   const [exporting, setExporting] = useState(false);
   const [showSortSettings, setShowSortSettings] = useState(false);
   const [pageCursors, setPageCursors] = useState<string[]>([]);
-  const [sortNotice, setSortNotice] = useState("");
+  const [pageNotice, setPageNotice] = useState("");
+  const [ganttRebuildKey, setGanttRebuildKey] = useState(0);
   const [preferenceItems, setPreferenceItems] = useState<WorkPlanSortItem[] | null>(null);
   const sortNoticeShownRef = useRef(false);
   const plannerPanelRef = useRef<HTMLDivElement>(null);
@@ -285,7 +289,16 @@ export default function WorkPlansPage() {
   const accountId = user.id;
   const sortParam = searchParams.get("sort");
   const parsedUrlSort = useMemo(() => (sortParam === null ? undefined : parseWorkPlanSortParam(sortParam)), [sortParam]);
-  const urlSortInvalid = sortParam !== null && parsedUrlSort === null;
+  // URL 排序同样按字段目录逐项清理：未知/已归档/类型不支持的 custom.* 键整体回退排期顺序，
+  // 而不是等服务端返回 SORT_FIELD_INVALID 400（契约注释承诺解析失败回退）。
+  const cleanedUrlSort = useMemo(() => {
+    if (!parsedUrlSort) return parsedUrlSort;
+    // 字段定义就绪前不做清理：加载期的空字段列表会把有效的自定义字段排序误判为失效。
+    if (!fieldsQuery.isSuccess) return parsedUrlSort;
+    return cleanSortItems(parsedUrlSort, fieldsQuery.data ?? []);
+  }, [fieldsQuery.data, fieldsQuery.isSuccess, parsedUrlSort]);
+  const urlSortInvalid = sortParam !== null && (parsedUrlSort === null
+    || (parsedUrlSort !== undefined && cleanedUrlSort !== undefined && cleanedUrlSort !== null && cleanedUrlSort.length < parsedUrlSort.length));
 
   useEffect(() => {
     setPreferenceItems(loadSortPreference(accountId));
@@ -305,26 +318,26 @@ export default function WorkPlansPage() {
     setPreferenceItems(cleanedPreference);
     if (!sortNoticeShownRef.current) {
       sortNoticeShownRef.current = true;
-      setSortNotice("浏览器偏好中的失效排序字段已清理");
+      setPageNotice("浏览器偏好中的失效排序字段已清理");
     }
   }, [accountId, cleanedPreference, preferenceItems]);
 
   useEffect(() => {
-    // 非法 URL 整体回退到排期顺序：移除参数并说明。
+    // 非法 URL（解析失败或含失效字段）整体回退到排期顺序：移除参数并说明。
     if (!urlSortInvalid) return;
     const params = new URLSearchParams(searchParams);
     params.delete("sort");
     setSearchParams(params, { replace: true });
-    setSortNotice("链接中的排序参数无效，已恢复默认排期顺序");
+    setPageNotice("链接中的排序参数无效，已恢复默认排期顺序");
   }, [searchParams, setSearchParams, urlSortInvalid]);
 
-  const sortItems: WorkPlanSortItem[] = parsedUrlSort ?? cleanedPreference ?? [];
+  const sortItems: WorkPlanSortItem[] = cleanedUrlSort ?? cleanedPreference ?? [];
 
   const applySort = useCallback((next: WorkPlanSortItem[]) => {
     const unique = next.filter((item, index) => next.findIndex((candidate) => candidate.field === item.field) === index);
     saveSortPreference(accountId, unique);
     setPreferenceItems(unique);
-    setSortNotice("");
+    setPageNotice("");
     const params = new URLSearchParams(searchParams);
     if (unique.length === 0) params.delete("sort");
     else params.set("sort", formatWorkPlanSortParam(unique));
@@ -421,11 +434,14 @@ export default function WorkPlansPage() {
     if (cursor) request.cursor = cursor;
     return request;
   }, [deferredSearch, pageCursors, queryFilters, requestRange, sortItems]);
-  const querySignature = JSON.stringify({ ...queryRequest, cursor: null });
-  useEffect(() => {
-    // 查询条件变化时回到第一页重新同步实时结果。
+  // 查询条件变化时在同一提交内回到第一页：渲染期直接重置游标（React 官方"渲染时调整状态"
+  // 模式），避免"新条件 + 旧 cursor"先发一次注定 CURSOR_MISMATCH 的请求。
+  const conditionsKey = JSON.stringify({ q: deferredSearch, filters: queryFilters, range: requestRange, sort: sortItems });
+  const [renderedConditionsKey, setRenderedConditionsKey] = useState(conditionsKey);
+  if (renderedConditionsKey !== conditionsKey) {
+    setRenderedConditionsKey(conditionsKey);
     setPageCursors([]);
-  }, [querySignature]);
+  }
   const plansQuery = useQuery({
     queryKey: ["work-plans", "query", queryRequest],
     queryFn: () => api<WorkPlanQueryResponse>("/work-plans/query", { method: "POST", ...jsonBody(queryRequest) }),
@@ -437,7 +453,7 @@ export default function WorkPlansPage() {
   if (plansQuery.isSuccess) appliedQueryRef.current = queryRequest;
   const appliedQuery = appliedQueryRef.current;
   const appliedSort = appliedQuery?.sort ?? [];
-  const plans = plansQuery.data?.items ?? [];
+  const plans = plansQuery.data?.items ?? EMPTY_PLANS;
   const canExportPlans = plansQuery.isSuccess && !plansQuery.isFetching;
   const templates = templatesQuery.data ?? [];
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null;
@@ -481,7 +497,11 @@ export default function WorkPlansPage() {
         setAnchor(new Date(plan.startAt));
         setSelected(plan);
         setDrawerOpen(true);
-      }).catch(() => undefined);
+      }).catch(() => {
+        // 深链计划可能已被删除或无权访问：清空标记允许后续重试，并给出可见反馈。
+        openedRequestedPlanIdRef.current = null;
+        setPageNotice("链接中的工作计划不存在或加载失败");
+      });
       return;
     }
     openedRequestedPlanIdRef.current = requestedPlanId;
@@ -629,6 +649,12 @@ export default function WorkPlansPage() {
   const scheduleMutation = useMutation({
     mutationFn: ({ plan, startAt, endAt }: { plan: WorkPlan; startAt: string; endAt: string }) =>
       api<WorkPlan>(`/work-plans/${plan.id}/schedule`, { method: "PATCH", ...jsonBody({ startAt, endAt, version: plan.version }) }),
+    onError: () => {
+      // 拖动已乐观改写甘特 SVG 几何：保存失败时数据不变、签名不变、甘特不会自行重建，
+      // 必须 bump rebuildKey 强制按服务端数据还原，否则脏几何无提示残留。
+      setGanttRebuildKey((current) => current + 1);
+      showError("排程保存失败，甘特图已还原为已保存的排程");
+    },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: ["work-plans"] });
     },
@@ -947,7 +973,7 @@ export default function WorkPlansPage() {
           <button className={`secondary-button compact-button ${showSortSettings ? "selected" : ""}`} type="button" aria-label="排序设置" aria-haspopup="dialog" aria-expanded={showSortSettings} onClick={() => setShowSortSettings((value) => !value)}><ArrowUpDown />排序</button>
         </div>
       </div>
-      {sortNotice ? <div className="spreadsheet-transfer-message" role="status">{sortNotice}</div> : null}
+      {pageNotice ? <div className="spreadsheet-transfer-message" role="status">{pageNotice}</div> : null}
       {plansQuery.isError ? (
         <div className="spreadsheet-transfer-message" role="alert">
           加载工作计划失败，当前显示的是最近一次成功结果。
@@ -1012,7 +1038,7 @@ export default function WorkPlansPage() {
               <button className="text-button" type="button" disabled={pageCursors.length === 0 || plansQuery.isFetching} onClick={() => setPageCursors((current) => current.slice(0, -1))}>上一页</button>
               <button className="text-button" type="button" disabled={!plansQuery.data?.nextCursor || plansQuery.isFetching} onClick={() => setPageCursors((current) => (plansQuery.data?.nextCursor ? [...current, plansQuery.data.nextCursor] : current))}>下一页</button>
             </span>
-            <span>{plansQuery.isFetching ? "正在加载…" : plansQuery.isError ? "加载失败" : scheduleMutation.isPending ? "正在保存排程…" : "所有更改已保存"}</span>
+            <span>{plansQuery.isFetching ? "正在加载…" : plansQuery.isError ? "加载失败" : scheduleMutation.isPending ? "正在保存排程…" : scheduleMutation.isError ? "排程保存失败" : "所有更改已保存"}</span>
           </footer>
         </div>
         <div
@@ -1034,7 +1060,7 @@ export default function WorkPlansPage() {
           onDoubleClick={() => setListPercent(defaultListPercent)}
         />
         <div className="planner-timeline">
-          <GanttTimeline plans={plans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} ownerField={ownerField} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} />
+          <GanttTimeline plans={plans} reminders={remindersQuery.data?.days ?? EMPTY_REMINDER_DAYS} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} ownerField={ownerField} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} rebuildKey={ganttRebuildKey} />
         </div>
       </div>
 

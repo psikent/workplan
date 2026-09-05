@@ -31,6 +31,8 @@ type Props = {
   onReminderSelect?: (planId: string) => void;
   onCreateAt?: (date: Date) => void;
   readOnly?: boolean;
+  // 变化即强制整图重建（不入签名）：拖动保存失败后父组件用它还原乐观几何。
+  rebuildKey?: number;
 };
 
 type RangedGantt = {
@@ -56,7 +58,7 @@ const EMPTY_REMINDER_DAYS: ReminderDay[] = [];
 const EMPTY_TIMELINE_TASK_ID = "__empty-timeline__";
 const BAR_DOUBLE_CLICK_WINDOW_MS = 500;
 
-function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, ownerField, view, rangeStart, rangeEnd, verticalScrollPeerRef, taskListCollapsed = false, onScheduleChange, onSelect, onReminderSelect, onCreateAt, readOnly = false }: Props) {
+function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, ownerField, view, rangeStart, rangeEnd, verticalScrollPeerRef, taskListCollapsed = false, onScheduleChange, onSelect, onReminderSelect, onCreateAt, readOnly = false, rebuildKey = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
@@ -93,9 +95,28 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
     const container = containerRef.current;
     if (!container) return;
 
+    // 拖动分隔条/窗口缩放时宽度连续变化，每次变化都会触发整图重建
+    // （replaceChildren + Gantt.render + 全部 DOM 修补）：尾随去抖收敛为
+    // 停止变化后一次重建；首次测量立即应用，不拖慢首屏。
+    let timer: number | null = null;
+    let hasWidth = false;
+    const applyWidth = (nextWidth: number) => {
+      setAvailableWidth((current) => (current === nextWidth ? current : nextWidth));
+    };
     const updateWidth = (width: number) => {
       const nextWidth = Math.floor(width);
-      if (nextWidth > 0) setAvailableWidth((current) => current === nextWidth ? current : nextWidth);
+      if (nextWidth <= 0) return;
+      if (timer !== null) window.clearTimeout(timer);
+      if (!hasWidth) {
+        hasWidth = true;
+        applyWidth(nextWidth);
+        return;
+      }
+      timer = window.setTimeout(() => {
+        timer = null;
+        hasWidth = true;
+        applyWidth(nextWidth);
+      }, 150);
     };
 
     updateWidth(container.clientWidth);
@@ -103,7 +124,10 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
 
     const observer = new ResizeObserver(([entry]) => updateWidth(entry?.contentRect.width ?? container.clientWidth));
     observer.observe(container);
-    return () => observer.disconnect();
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      observer.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -268,7 +292,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
        cleanupDateCellAffordance();
        cleanupReminderBells();
     };
-  }, [columnWidth, ganttInputSignature, remindersSignature, rangeEndTime, rangeStartTime, readOnly, taskListCollapsed, verticalScrollPeerRef]);
+  }, [columnWidth, ganttInputSignature, rebuildKey, remindersSignature, rangeEndTime, rangeStartTime, readOnly, taskListCollapsed, verticalScrollPeerRef]);
 
   return (
     <div className="gantt-shell">

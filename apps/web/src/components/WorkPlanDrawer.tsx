@@ -50,7 +50,6 @@ function isValidPlanRange(startAt: string, endAt: string): boolean {
 }
 
 export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = [], monthlyGoalsLoading = false, initialDate = null, ownerAccountMappings = [], ownerAccountMappingsLoading = false, ownerAccountMappingsError = false, open, saving, readOnly = false, onClose, onSave, onDuplicate, onDelete }: Props) {
-  const defaults = useMemo(() => defaultTimes(initialDate ?? undefined), [initialDate, open]);
   const sortedMonthlyGoals = useMemo(
     () => [...monthlyGoals].sort((left, right) => right.year - left.year || right.month - left.month || left.createdAt.localeCompare(right.createdAt)),
     [monthlyGoals],
@@ -60,8 +59,8 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<WorkPlanStatus>("pending");
   const [statusMode, setStatusMode] = useState<WorkPlanStatusMode>("automatic");
-  const [startAt, setStartAt] = useState(defaults.startAt);
-  const [endAt, setEndAt] = useState(defaults.endAt);
+  const [startAt, setStartAt] = useState(() => defaultTimes(initialDate ?? undefined).startAt);
+  const [endAt, setEndAt] = useState(() => defaultTimes(initialDate ?? undefined).endAt);
   const [customValues, setCustomValues] = useState<Record<string, unknown>>({});
   const [monthlyGoalIds, setMonthlyGoalIds] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
@@ -84,6 +83,8 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   const ownerValue = typeof customValues.owner === "string" ? customValues.owner : "";
   const conflictCheckKey = `${ownerValue}|${startAt}|${endAt}`;
 
+  // 表单重置只依赖 plan/open/initialDate：series 是异步加载的，若纳入此 effect，
+  // 载入完成会把用户正在输入的表单整体打回 plan 快照（丢输入）。
   useEffect(() => {
     const nextDefaults = defaultTimes(initialDate ?? undefined);
     setTitle(plan?.title ?? "");
@@ -94,10 +95,17 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
     setEndAt(plan ? toDateTimeLocal(plan.endAt) : nextDefaults.endAt);
     setCustomValues(plan?.customFields ?? {});
     setMonthlyGoalIds(plan?.monthlyGoalIds ?? []);
+    setRecurrence("none");
+    setIntervalValue(1);
+    setError("");
+  }, [initialDate, open, plan]);
+
+  // 系列计划的周期字段随 series 异步载入回填：只动 recurrence/interval，不重置其他字段。
+  useEffect(() => {
+    if (!open || !plan?.seriesId) return;
     setRecurrence(series?.active ? series.recurrence.frequency : "none");
     setIntervalValue(series?.active ? series.recurrence.interval : 1);
-    setError("");
-  }, [initialDate, open, plan, series]);
+  }, [open, plan, series]);
 
   useEffect(() => {
     if (!open || plan) return;

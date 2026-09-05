@@ -191,16 +191,19 @@ export default function MonthlyGoalQuickEditDialog({ initialYear, onClose, onSav
     applySnapshot(goalsQuery.data, year);
   }, [goalsQuery.data, goalsQuery.isFetching, loadedYear, year]);
 
+  // Escape 监听只注册一次；requestClose 依赖 dirty 等最新状态，经 ref 转发最新闭包。
+  const requestCloseRef = useRef<() => void>(() => {});
+  requestCloseRef.current = requestClose;
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        requestClose();
+        requestCloseRef.current();
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  });
+  }, []);
 
   const saveMutation = useMutation({
     mutationFn: (input: MonthlyGoalQuickEdit) => api<MonthlyGoalQuickEditResult>("/monthly-goals/quick-edit", { method: "PUT", ...jsonBody(input) }),

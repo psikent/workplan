@@ -93,7 +93,6 @@ export default function CustomFieldsSettings() {
   const reorderMutation = useMutation({
     mutationFn: (orderedIds: string[]) => api("/custom-fields/reorder", { method: "POST", ...jsonBody({ orderedIds }) }),
     onSuccess: () => showSuccess("字段顺序已保存"),
-    onError: () => queryClient.invalidateQueries({ queryKey: ["custom-fields"] }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["custom-fields"] }),
   });
 

@@ -73,7 +73,7 @@ function seriesBadgeTitle(series: MonthlyGoalSeries | undefined): string {
 
 export default function MonthlyGoalsPage() {
   const queryClient = useQueryClient();
-  const { showSuccess } = useToast();
+  const { showSuccess, showError } = useToast();
   const { user } = useSession();
   const canWrite = canWriteBusinessData(user.role);
   const now = new Date();
@@ -176,7 +176,7 @@ export default function MonthlyGoalsPage() {
       await refreshGoals();
       showSuccess(archived ? "月目标已归档" : "月目标已恢复");
     },
-    onError: (error) => showSuccess(error instanceof Error ? error.message : "操作失败"),
+    onError: (error) => showError(error instanceof Error ? error.message : "操作失败"),
   });
 
   const deleteMutation = useMutation({
@@ -185,7 +185,7 @@ export default function MonthlyGoalsPage() {
       await refreshGoals();
       showSuccess("月目标已删除");
     },
-    onError: (error) => showSuccess(error instanceof Error ? error.message : "删除失败"),
+    onError: (error) => showError(error instanceof Error ? error.message : "删除失败"),
   });
 
   const linkMutation = useMutation({

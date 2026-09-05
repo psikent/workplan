@@ -1222,6 +1222,29 @@ async function openSortPanel() {
   await screen.findByRole("dialog", { name: "排序设置" });
 }
 
+describe("甘特拖动保存失败反馈", () => {
+  it("保存失败时强制重建甘特（还原乐观几何）、弹出错误提示并在页脚标明失败", async () => {
+    const fallback = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.includes("/schedule")) throw new Error("版本冲突，请刷新后重试");
+      return fallback(path, init);
+    });
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    expect((ganttPropsMock.mock.calls.at(-1)?.[0] as { rebuildKey?: number }).rebuildKey).toBe(0);
+
+    const props = ganttPropsMock.mock.calls.at(-1)?.[0] as { onScheduleChange: (plan: WorkPlan, startAt: string, endAt: string) => void };
+    act(() => props.onScheduleChange(plan, plan.startAt, plan.endAt));
+
+    // 甘特收到新的 rebuildKey：整图按服务端数据重建，乐观几何被还原
+    await waitFor(() => expect((ganttPropsMock.mock.calls.at(-1)?.[0] as { rebuildKey?: number }).rebuildKey).toBeGreaterThan(0));
+    expect(await screen.findByRole("alert")).toHaveTextContent("排程保存失败，甘特图已还原为已保存的排程");
+    await waitFor(() => expect(screen.getByText("排程保存失败")).toBeInTheDocument());
+    expect(screen.queryByText("所有更改已保存")).toBeNull();
+    view.unmount();
+  });
+});
+
 describe("工作计划页排序体验", () => {
   it("默认显示排期顺序，不写 URL 排序参数", async () => {
     const view = renderPage();
@@ -1268,6 +1291,17 @@ describe("工作计划页排序体验", () => {
     expect(await screen.findByText("链接中的排序参数无效，已恢复默认排期顺序")).toBeInTheDocument();
     await waitFor(() => expect(new URLSearchParams(locationRef.current).get("sort")).toBeNull());
     await waitFor(() => expect(queryBodies().every((body) => body.sort.length === 0)).toBe(true));
+    view.unmount();
+  });
+
+  it("URL 中未知自定义字段排序按字段目录回退并清理参数，而不是等服务端 400", async () => {
+    const locationRef = { current: "" };
+    const view = renderPage("/work-plans?sort=custom.gone:asc,title:desc", locationRef);
+    await screen.findByText("示例计划");
+    expect(await screen.findByText("链接中的排序参数无效，已恢复默认排期顺序")).toBeInTheDocument();
+    await waitFor(() => expect(new URLSearchParams(locationRef.current).get("sort")).toBeNull());
+    // 字段目录就绪后的查询不再携带失效字段（首个请求可能先于目录就绪发出）
+    await waitFor(() => expect(queryBodies().at(-1)?.sort ?? []).toEqual([]));
     view.unmount();
   });
 

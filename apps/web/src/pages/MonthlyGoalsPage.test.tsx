@@ -828,15 +828,30 @@ describe("MonthlyGoalsPage", () => {
     view.unmount();
   });
 
+  it("归档失败弹错误提示而非成功提示", async () => {
+    const fallback = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.startsWith("/monthly-goals/") && init?.method === "PATCH") throw new Error("归档请求失败");
+      return fallback(path, init);
+    });
+    const view = renderPage();
+    await screen.findByText("完成官网改版");
+
+    fireEvent.click(screen.getByRole("button", { name: /归档 完成官网改版/ }));
+    await waitFor(() => expect(screen.getAllByRole("alert").at(-1)).toHaveTextContent("归档请求失败"));
+    // 失败不能误报成功，目标也仍在列表中
+    expect(screen.queryByText("月目标已归档")).toBeNull();
+    expect(screen.getByText("完成官网改版")).toBeInTheDocument();
+    view.unmount();
+  });
+
   it("archives, restores and deletes a goal with confirmation", async () => {
     const view = renderPage();
     await screen.findByText("完成官网改版");
 
     fireEvent.click(screen.getByRole("button", { name: /归档 完成官网改版/ }));
     await waitFor(() => expect(latestToast()).toHaveTextContent("月目标已归档"));
-    await waitFor(() => expect(screen.queryByText("完成官网改版")).toBeNull());
-
-    fireEvent.click(screen.getByRole("checkbox", { name: "显示已归档" }));
+    await waitFor(() => expect(screen.queryByText("完成官网改版")).toBeNull());    fireEvent.click(screen.getByRole("checkbox", { name: "显示已归档" }));
     await screen.findByText("完成官网改版");
     fireEvent.click(screen.getByRole("button", { name: /恢复 完成官网改版/ }));
     await waitFor(() => expect(latestToast()).toHaveTextContent("月目标已恢复"));

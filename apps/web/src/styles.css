@@ -144,6 +144,11 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .success-toast button { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
 .success-toast button:hover { background: var(--green-soft); color: var(--text); }
 .success-toast button svg { width: 15px; height: 15px; }
+.error-toast { min-height: 48px; display: grid; grid-template-columns: 20px minmax(0, 1fr) 28px; align-items: center; gap: 10px; padding: 9px 9px 9px 13px; border: 1px solid var(--coral-line); border-radius: 9px; background: var(--surface); color: var(--text); box-shadow: 0 14px 36px var(--shadow-medium); font-size: 13px; font-weight: 600; pointer-events: auto; animation: toast-in .18s ease-out; }
+.error-toast > svg { color: var(--coral); }
+.error-toast button { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.error-toast button:hover { background: var(--coral-soft); color: var(--text); }
+.error-toast button svg { width: 15px; height: 15px; }
 @keyframes toast-in { from { transform: translateY(-8px); opacity: 0; } }
 
 .update-prompt { position: fixed; z-index: 210; bottom: 24px; left: 50%; transform: translateX(-50%); display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 28px; align-items: center; gap: 10px; width: min(420px, calc(100vw - 32px)); min-height: 48px; padding: 9px 9px 9px 13px; border: 1px solid var(--accent-line); border-radius: 9px; background: var(--surface); color: var(--text); box-shadow: 0 14px 36px var(--shadow-medium); font-size: 13px; font-weight: 600; animation: toast-in .18s ease-out; }
