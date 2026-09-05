@@ -189,7 +189,12 @@ export class WorkPlanQueryEngine {
   }
 
   // 显式求值时刻版本：工作台三区块等场景要求多个查询共享同一求值时刻。
-  queryAt(request: WorkPlanQueryRequest, evaluatedAt: string, options: { offset?: number } = {}): WorkPlanQueryResult {
+  // options.conflicts 允许调用方注入已算好的全局冲突映射，避免同一请求内重复全量计算。
+  queryAt(
+    request: WorkPlanQueryRequest,
+    evaluatedAt: string,
+    options: { offset?: number; conflicts?: ReadonlyMap<string, OwnerConflict> } = {},
+  ): WorkPlanQueryResult {
     const now = Date.parse(evaluatedAt);
     const catalog = new Map(this.customFields.list(true).map((field) => [field.key, field]));
 
@@ -210,13 +215,19 @@ export class WorkPlanQueryEngine {
       if (compiled) where.push(compiled);
     }
 
+    // range 归一化到 UTC 后再比较：start_at/end_at 统一为 toISOString() 形态，
+    // 带偏移的入参（如 +08:00）字典序与时间点序不一致，直接绑定会漏报/误报。
     if (request.range.from) {
+      const rangeFrom = normalizeDateTimeForSort(request.range.from);
+      if (rangeFrom === null) throw invalidInput("时间范围 from 无效");
       where.push("wp.end_at > @rangeFrom");
-      params.rangeFrom = request.range.from;
+      params.rangeFrom = rangeFrom;
     }
     if (request.range.to) {
+      const rangeTo = normalizeDateTimeForSort(request.range.to);
+      if (rangeTo === null) throw invalidInput("时间范围 to 无效");
       where.push("wp.start_at < @rangeTo");
-      params.rangeTo = request.range.to;
+      params.rangeTo = rangeTo;
     }
 
     const levels = this.resolveSortLevels(request.sort, catalog, customRefs, joins, params);
@@ -257,7 +268,7 @@ export class WorkPlanQueryEngine {
     // 多取一行判定是否存在下一页，保证末页 nextCursor 恰为 null。
     const hasNext = options.offset === undefined ? rows.length > request.limit : false;
     const pageRows = hasNext ? rows.slice(0, request.limit) : rows;
-    const items = this.serializeRows(pageRows, now, this.ownerConflictsAt(evaluatedAt));
+    const items = this.serializeRows(pageRows, now, options.conflicts ?? this.ownerConflictsAt(evaluatedAt));
     const lastRow = pageRows.at(-1);
     const nextCursor =
       hasNext && lastRow
@@ -571,7 +582,11 @@ export class WorkPlanQueryEngine {
   ): WorkPlan[] {
     const ownerAccountByValue = this.ownerAccounts.indexByOwnerValue();
     const goalIdsByWorkPlan = this.monthlyGoals.indexGoalIdsByWorkPlan(rows.map((row) => row.id));
-    return rows.map((row) => this.serializeRow(row, now, ownerAccountByValue, goalIdsByWorkPlan.get(row.id) ?? [], conflictsById));
+    // 自定义字段值批量预取：逐行 getValues 每行 4 次查询，limit 500 时单请求约 2000 次。
+    const customValuesById = this.customFields.getValuesForPlans(rows.map((row) => row.id));
+    return rows.map((row) =>
+      this.serializeRow(row, now, ownerAccountByValue, goalIdsByWorkPlan.get(row.id) ?? [], customValuesById.get(row.id) ?? {}, conflictsById)
+    );
   }
 
   private serializeRow(
@@ -579,9 +594,9 @@ export class WorkPlanQueryEngine {
     now: number,
     ownerAccountByValue: ReadonlyMap<string, string>,
     monthlyGoalIds: string[],
+    customFields: Record<string, unknown>,
     conflictsById: ReadonlyMap<string, OwnerConflict>,
   ): WorkPlan {
-    const customFields = this.customFields.getValues(row.id);
     const ownerValue = typeof customFields.owner === "string" ? customFields.owner : null;
     return {
       id: row.id,

@@ -952,6 +952,44 @@ describe("work plan API", () => {
     expect(plans.json<unknown[]>()).toHaveLength(2);
   });
 
+  it("rebuilds the full until window on rule edits so instances beyond 90 days survive", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2027-08-08T00:00:00.000Z"));
+    const context = await createContext();
+    const create = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plan-series",
+      payload: {
+        workPlan: planInput({ title: "全量重建", startAt: "2027-08-09T02:00:00.000Z", endAt: "2027-08-09T03:00:00.000Z" }),
+        recurrence: { frequency: "daily", interval: 1, timeZone: "Asia/Shanghai", until: "2027-12-31T00:00:00.000Z" },
+      },
+    });
+    expect(create.statusCode).toBe(201);
+    const created = create.json<{ series: { id: string; version: number } }>();
+
+    const countStartingFrom = async (fromIso: string) => {
+      const plans = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
+      return plans.json<Array<{ startAt: string }>>().filter((plan) => plan.startAt >= fromIso).length;
+    };
+
+    // 创建时只生成 90 天增量窗口：2027-11-06 之后的实例尚未生成
+    const horizon = new Date(Date.parse("2027-08-08T00:00:00.000Z") + 90 * 86_400_000).toISOString();
+    expect(await countStartingFrom(horizon)).toBe(0);
+
+    // 编辑规则触发删除+重建：until 之前的全部未来实例应一次性生成，而不是等窗口推进
+    const update = await context.request({
+      method: "PATCH",
+      url: `/api/v1/work-plan-series/${created.series.id}`,
+      payload: { workPlan: { title: "编辑后全量重建" }, version: created.series.version },
+    });
+    expect(update.statusCode).toBe(200);
+
+    // 08-09 至 12-30 每天 02:00Z 一个实例（12-31T02:00Z 已越过 until）共 144 个
+    const plans = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
+    expect(plans.json<unknown[]>()).toHaveLength(144);
+    expect(await countStartingFrom(horizon)).toBe(55);
+  });
+
   it("removes tag, reminder and notification APIs while retaining export validation", async () => {
     const context = await createContext();
     const legacyPriority = await context.request({

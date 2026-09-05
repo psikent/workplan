@@ -108,24 +108,29 @@ export class MonthlyGoalSeriesService {
     const periods = targetPeriods(input.startPeriod, input.frequency, input.interval, input.occurrenceCount ?? null, input.untilPeriod ?? null);
     const id = newId();
     const timestamp = nowIso();
-    this.database.sqlite
-      .prepare(
-        "INSERT INTO monthly_goal_series(id, template_json, frequency, interval, start_year, start_month, occurrence_count, until_year, until_month, active, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)",
-      )
-      .run(
-        id,
-        JSON.stringify(input.template),
-        input.frequency,
-        input.interval,
-        input.startPeriod.year,
-        input.startPeriod.month,
-        input.occurrenceCount ?? null,
-        input.untilPeriod?.year ?? null,
-        input.untilPeriod?.month ?? null,
-        timestamp,
-        timestamp,
-      );
-    const generated = this.insertMissingPeriods(id, input.template, periods);
+    let generated: MonthlyGoal[] = [];
+    // 系列行与实例同一事务：生成中途失败不留下"无实例的系列"。
+    const execute = this.database.sqlite.transaction(() => {
+      this.database.sqlite
+        .prepare(
+          "INSERT INTO monthly_goal_series(id, template_json, frequency, interval, start_year, start_month, occurrence_count, until_year, until_month, active, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)",
+        )
+        .run(
+          id,
+          JSON.stringify(input.template),
+          input.frequency,
+          input.interval,
+          input.startPeriod.year,
+          input.startPeriod.month,
+          input.occurrenceCount ?? null,
+          input.untilPeriod?.year ?? null,
+          input.untilPeriod?.month ?? null,
+          timestamp,
+          timestamp,
+        );
+      generated = this.insertMissingPeriods(id, input.template, periods);
+    });
+    execute();
     return { series: this.get(id), generated };
   }
 
@@ -164,26 +169,31 @@ export class MonthlyGoalSeriesService {
       : input.untilPeriod;
     validateBounds(startPeriod, occurrenceCount, untilPeriod);
     const periods = targetPeriods(startPeriod, frequency, interval, occurrenceCount, untilPeriod);
-    const result = this.database.sqlite
-      .prepare(
-        "UPDATE monthly_goal_series SET template_json = ?, frequency = ?, interval = ?, start_year = ?, start_month = ?, occurrence_count = ?, until_year = ?, until_month = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
-      )
-      .run(
-        JSON.stringify(template),
-        frequency,
-        interval,
-        startPeriod.year,
-        startPeriod.month,
-        occurrenceCount,
-        untilPeriod?.year ?? null,
-        untilPeriod?.month ?? null,
-        nowIso(),
-        id,
-        input.version,
-      );
-    if (result.changes === 0) throw versionConflict();
-    // A stopped series only accepts rule/template edits; generation stays off.
-    const generated = current.active === 1 ? this.insertMissingPeriods(id, template, periods) : [];
+    let generated: MonthlyGoal[] = [];
+    // 规则更新与补齐实例同一事务：中途失败不留下"规则已变、实例未补"的状态。
+    const execute = this.database.sqlite.transaction(() => {
+      const result = this.database.sqlite
+        .prepare(
+          "UPDATE monthly_goal_series SET template_json = ?, frequency = ?, interval = ?, start_year = ?, start_month = ?, occurrence_count = ?, until_year = ?, until_month = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
+        )
+        .run(
+          JSON.stringify(template),
+          frequency,
+          interval,
+          startPeriod.year,
+          startPeriod.month,
+          occurrenceCount,
+          untilPeriod?.year ?? null,
+          untilPeriod?.month ?? null,
+          nowIso(),
+          id,
+          input.version,
+        );
+      if (result.changes === 0) throw versionConflict();
+      // A stopped series only accepts rule/template edits; generation stays off.
+      if (current.active === 1) generated = this.insertMissingPeriods(id, template, periods);
+    });
+    execute();
     return { series: this.get(id), generated };
   }
 

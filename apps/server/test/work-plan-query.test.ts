@@ -200,25 +200,18 @@ describe("统一查询：自定义字段排序", () => {
       "计划A",
       "计划D",
     ]);
-    expect(titles(await query(context, { sort: [{ field: "custom.flag", direction: "asc" }] }))).toEqual([
-      "计划B",
-      "计划A",
-      "计划C",
-      "计划D",
-    ]);
-    expect(titles(await query(context, { sort: [{ field: "custom.day", direction: "desc" }] }))).toEqual([
-      "计划A",
-      "计划B",
-      "计划C",
-      "计划D",
-    ]);
+    // flag：B(false) → A(true)；C/D 均缺失置后——并列由创建时间/ID 决胜，
+    // 同毫秒创建时退化为随机 ID 序，故尾部只断言集合（day/moment 的缺失段同理）。
+    const flagOrder = titles(await query(context, { sort: [{ field: "custom.flag", direction: "asc" }] }));
+    expect(flagOrder.slice(0, 2)).toEqual(["计划B", "计划A"]);
+    expect(new Set(flagOrder.slice(2))).toEqual(new Set(["计划C", "计划D"]));
+    const dayOrder = titles(await query(context, { sort: [{ field: "custom.day", direction: "desc" }] }));
+    expect(dayOrder.slice(0, 2)).toEqual(["计划A", "计划B"]);
+    expect(new Set(dayOrder.slice(2))).toEqual(new Set(["计划C", "计划D"]));
     // 混合时区偏移：+08:00 的 10:00 即 02:00Z，早于 23:00Z；归一键保证按时间点比较
-    expect(titles(await query(context, { sort: [{ field: "custom.moment", direction: "asc" }] }))).toEqual([
-      "计划A",
-      "计划B",
-      "计划C",
-      "计划D",
-    ]);
+    const momentOrder = titles(await query(context, { sort: [{ field: "custom.moment", direction: "asc" }] }));
+    expect(momentOrder.slice(0, 2)).toEqual(["计划A", "计划B"]);
+    expect(new Set(momentOrder.slice(2))).toEqual(new Set(["计划C", "计划D"]));
     expect(titles(await query(context, { sort: [{ field: "custom.risk", direction: "asc" }] }))).toEqual([
       "计划B",
       "计划C",
@@ -323,6 +316,22 @@ describe("统一查询：筛选、范围与总数", () => {
     const boundary = await query(context, { range: { from: "2026-05-19T00:00:00.000Z", to: "2026-06-01T00:00:00.000Z" } });
     // 桥梁改造 startAt == to 被排除；检修/巡检 endAt(05-20) > from(05-19) 仍相交
     expect(new Set(titles(boundary))).toEqual(new Set(["线路巡检", "桥梁检修"]));
+  });
+
+  it("range from/to 接受带时区偏移的 ISO 时间，与 UTC 存量按时间点序比较", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-05-10T00:00:00.000Z"));
+    const context = await createContext();
+    await createPlans(context, [
+      { title: "偏移命中", startAt: "2026-04-30T17:30:00.000Z", endAt: "2026-04-30T19:00:00.000Z" },
+      { title: "偏移之外", startAt: "2026-04-29T00:00:00.000Z", endAt: "2026-04-29T01:00:00.000Z" },
+    ]);
+    // from = 2026-04-30T18:00:00Z：命中计划 endAt(19:00Z) > from；若按字面字符串比较，
+    // "2026-04-30T19:00…Z" > "2026-05-01T02:00…+08:00" 为 false → 漏报
+    const fromOffset = await query(context, { range: { from: "2026-05-01T02:00:00+08:00" } });
+    expect(titles(fromOffset)).toEqual(["偏移命中"]);
+    const bothOffset = await query(context, { range: { from: "2026-05-01T02:00:00+08:00", to: "2026-05-01T10:00:00+08:00" } });
+    expect(titles(bothOffset)).toEqual(["偏移命中"]);
   });
 
   it("自定义字段筛选与多选 any/all", async () => {
@@ -600,5 +609,25 @@ describe("Owner Conflict：全局冲突标记与实时校核（规格 R2/R3）",
       payload: { owner: "zhangsan", startAt: "2026-05-01T06:00:00.000Z", endAt: "2026-05-01T02:00:00.000Z" },
     });
     expect(invalidRange.statusCode).toBe(422);
+  });
+
+  it("automatic 计划按求值时刻派生活跃性后参与冲突判定", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-05-10T00:00:00.000Z"));
+    const context = await createContext();
+    await createField(context, "owner", "single_select", ownerOptions);
+    // 全部 automatic 无手动状态：求值时刻 05-10，乙已结束派生 completed 不参与，甲/丙进行中参与
+    const [a, b, c] = await createPlans(context, [
+      { title: "甲", startAt: "2026-05-09T02:00:00.000Z", endAt: "2026-05-11T02:00:00.000Z", customFields: { owner: "zhangsan" } },
+      { title: "乙", startAt: "2026-05-09T03:00:00.000Z", endAt: "2026-05-09T04:00:00.000Z", customFields: { owner: "zhangsan" } },
+      { title: "丙", startAt: "2026-05-10T00:00:00.000Z", endAt: "2026-05-12T00:00:00.000Z", customFields: { owner: "zhangsan" } },
+    ]);
+    const items = (await query(context, { sort: [], limit: 100 })).json<WorkPlanQueryResponse>().items;
+    const byTitle = new Map(items.map((item) => [item.title, item]));
+    expect(byTitle.get("甲")?.status).toBe("in_progress");
+    expect(counterpartIds(byTitle.get("甲"))).toEqual([c.id]);
+    expect(byTitle.get("乙")?.status).toBe("completed");
+    expect(byTitle.get("乙")?.ownerConflict).toBeNull();
+    expect(counterpartIds(byTitle.get("丙"))).toEqual([a.id]);
   });
 });

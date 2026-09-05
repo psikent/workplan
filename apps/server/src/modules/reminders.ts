@@ -253,6 +253,7 @@ export class ReminderService {
       end_at: string;
       created_at: string;
     }>;
+    const customValuesById = this.customFields.getValuesForPlans(rows.map((row) => row.id));
     const plans: PlanSnapshot[] = rows.map((row) => ({
       id: row.id,
       title: row.title,
@@ -260,7 +261,7 @@ export class ReminderService {
       startAt: row.start_at,
       endAt: row.end_at,
       status: row.status_mode === "automatic" ? deriveWorkPlanStatus(row.start_at, row.end_at, now) : row.status,
-      customFields: this.customFields.getValues(row.id),
+      customFields: customValuesById.get(row.id) ?? {},
     }));
 
     const context: RuleContext = { timeZone: this.timeZone, today, plans, definitions };

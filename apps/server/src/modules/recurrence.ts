@@ -1,5 +1,5 @@
 import { Temporal } from "@js-temporal/polyfill";
-import type { CreateWorkPlan, RecurrenceRule } from "@workplan/contracts";
+import type { CreateWorkPlan, RecurrenceRule, WorkPlan } from "@workplan/contracts";
 import type { DatabaseBundle } from "../db/index.js";
 import { invalidInput, notFound, versionConflict } from "../errors.js";
 import { nowIso, newId, parseJson } from "../utils.js";
@@ -41,21 +41,26 @@ export class RecurrenceService {
   create(workPlan: CreateWorkPlan, recurrence: RecurrenceRule) {
     const id = newId();
     const timestamp = nowIso();
-    this.database.sqlite
-      .prepare("INSERT INTO work_plan_series(id, template_json, frequency, interval, weekdays_json, until_at, occurrence_count, time_zone, active, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)")
-      .run(
-        id,
-        JSON.stringify(workPlan),
-        recurrence.frequency,
-        recurrence.interval,
-        recurrence.weekdays ? JSON.stringify(recurrence.weekdays) : null,
-        recurrence.until ?? null,
-        recurrence.count ?? null,
-        recurrence.timeZone,
-        timestamp,
-        timestamp,
-      );
-    const generated = this.ensureGenerated(id);
+    let generated: WorkPlan[] = [];
+    // 系列行与首个窗口的实例同一事务：生成中途失败不留下"无实例的系列"。
+    const execute = this.database.sqlite.transaction(() => {
+      this.database.sqlite
+        .prepare("INSERT INTO work_plan_series(id, template_json, frequency, interval, weekdays_json, until_at, occurrence_count, time_zone, active, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)")
+        .run(
+          id,
+          JSON.stringify(workPlan),
+          recurrence.frequency,
+          recurrence.interval,
+          recurrence.weekdays ? JSON.stringify(recurrence.weekdays) : null,
+          recurrence.until ?? null,
+          recurrence.count ?? null,
+          recurrence.timeZone,
+          timestamp,
+          timestamp,
+        );
+      generated = this.ensureGenerated(id);
+    });
+    execute();
     return { series: this.get(id), generated };
   }
 
@@ -64,6 +69,7 @@ export class RecurrenceService {
     if (current.seriesId) throw invalidInput("该工作计划已关联计划周期");
     const id = newId();
     const timestamp = nowIso();
+    let generated: WorkPlan[] = [];
     const attach = this.database.sqlite.transaction(() => {
       const occurrence = this.workPlans.update(planId, { ...workPlan, version });
       this.database.sqlite
@@ -83,9 +89,9 @@ export class RecurrenceService {
       this.database.sqlite
         .prepare("UPDATE work_plans SET series_id = ?, occurrence_key = ?, updated_at = ? WHERE id = ? AND version = ?")
         .run(id, Temporal.Instant.from(occurrence.startAt).toString(), timestamp, planId, occurrence.version);
+      generated = this.ensureGenerated(id);
     });
     attach();
-    const generated = this.ensureGenerated(id);
     return { series: this.get(id), occurrence: this.workPlans.get(planId), generated };
   }
 
@@ -110,6 +116,7 @@ export class RecurrenceService {
       count: Object.prototype.hasOwnProperty.call(input.recurrence ?? {}, "count") ? input.recurrence?.count : row.occurrence_count ?? undefined,
       timeZone: input.recurrence?.timeZone ?? row.time_zone,
     };
+    let generated: WorkPlan[] = [];
     const execute = this.database.sqlite.transaction(() => {
       // 编辑不改变 active：已停止的系列保持停止（与月目标系列语义一致），恢复生成走显式操作。
       const result = this.database.sqlite
@@ -130,9 +137,11 @@ export class RecurrenceService {
       this.database.sqlite
         .prepare("DELETE FROM work_plans WHERE series_id = ? AND start_at > ? AND is_exception = 0 AND status_mode = 'automatic'")
         .run(id, nowIso());
+      // 删除与重建同一事务，且重建上界覆盖 until/count 声明的全程：
+      // 若只重建 90 天窗口，更远的未来实例会被删掉后要等窗口推进（最多 90 天）才回来。
+      generated = this.ensureGenerated(id, rebuildHorizonDays(next, nextTemplate.startAt));
     });
     execute();
-    const generated = this.ensureGenerated(id);
     return { series: this.get(id), generated };
   }
 
@@ -259,4 +268,34 @@ function parseWorkPlanTemplate(json: string): CreateWorkPlan {
     }
   }
   return workPlan;
+}
+
+// 编辑重建的窗口上界（天）：规则声明了 until 或 count 时，最后 occurrence 落点可能远超
+// 默认 90 天增量窗口，必须一次性重建到位；无限系列维持 90 天窗口不变。
+// count 上界按 interval 的周期天数保守估算（真正的截断由生成循环的 count/until 判断完成）。
+function rebuildHorizonDays(
+  recurrence: { frequency: RecurrenceRule["frequency"]; interval: number; until?: string | undefined; count?: number | undefined },
+  seriesStartAt: string | undefined,
+): number {
+  const dayMs = 86_400_000;
+  const now = Date.now();
+  let boundMs: number | null = null;
+  if (recurrence.until) {
+    const untilMs = Date.parse(recurrence.until);
+    if (Number.isFinite(untilMs)) boundMs = untilMs;
+  }
+  if (recurrence.count) {
+    const startMs = Date.parse(seriesStartAt ?? "");
+    if (Number.isFinite(startMs)) {
+      const periodDays = recurrence.frequency === "daily"
+        ? recurrence.interval
+        : recurrence.frequency === "weekly"
+          ? recurrence.interval * 7
+          : recurrence.interval * 31;
+      const countBoundMs = startMs + recurrence.count * periodDays * dayMs;
+      boundMs = boundMs == null ? countBoundMs : Math.max(boundMs, countBoundMs);
+    }
+  }
+  if (boundMs == null) return 90;
+  return Math.max(90, Math.ceil((boundMs - now) / dayMs) + 1);
 }

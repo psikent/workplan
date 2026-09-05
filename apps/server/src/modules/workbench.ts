@@ -1,5 +1,5 @@
 import { Temporal } from "@js-temporal/polyfill";
-import type { WorkPlanQueryRequest, WorkPlanStatus, WorkbenchBlock, WorkbenchOverview } from "@workplan/contracts";
+import type { OwnerConflict, WorkPlanQueryRequest, WorkPlanStatus, WorkbenchBlock, WorkbenchOverview } from "@workplan/contracts";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
 import type { WorkPlanQueryEngine } from "./work-plan-query.js";
 
@@ -47,6 +47,9 @@ export class WorkbenchService {
 
     const statusNeq = (value: WorkPlanStatus): WorkPlanQueryRequest["filters"][number] => ({ field: "status", op: "neq", value });
 
+    // 全局冲突映射只算一次：三次 queryAt + 四次计数若各自计算会重复全表扫描 7 遍。
+    const conflicts = this.queryEngine.ownerConflictsAt(evaluatedAt);
+
     const startingToday = this.block(
       {
         filters: [{ field: "startAt", op: "gte", value: todayStart }, { field: "startAt", op: "lt", value: tomorrowStart }, statusNeq("cancelled")],
@@ -55,6 +58,7 @@ export class WorkbenchService {
         limit,
       },
       evaluatedAt,
+      conflicts,
     );
     const continuingToday = this.block(
       {
@@ -69,6 +73,7 @@ export class WorkbenchService {
         limit,
       },
       evaluatedAt,
+      conflicts,
     );
     const upcoming = this.block(
       {
@@ -83,12 +88,13 @@ export class WorkbenchService {
         limit,
       },
       evaluatedAt,
+      conflicts,
     );
 
     const countByStatus = (status: WorkPlanStatus) =>
-      this.queryEngine.queryAt({ filters: [{ field: "status", op: "eq", value: status }], range: {}, sort: [], limit: 1 }, evaluatedAt, { offset: 0 }).total;
+      this.queryEngine.queryAt({ filters: [{ field: "status", op: "eq", value: status }], range: {}, sort: [], limit: 1 }, evaluatedAt, { offset: 0, conflicts }).total;
     const summary = {
-      all: this.queryEngine.queryAt({ filters: [], range: {}, sort: [], limit: 1 }, evaluatedAt, { offset: 0 }).total,
+      all: this.queryEngine.queryAt({ filters: [], range: {}, sort: [], limit: 1 }, evaluatedAt, { offset: 0, conflicts }).total,
       pending: countByStatus("pending"),
       inProgress: countByStatus("in_progress"),
       completed: countByStatus("completed"),
@@ -106,9 +112,9 @@ export class WorkbenchService {
     };
   }
 
-  private block(request: WorkPlanQueryRequest, evaluatedAt: string): WorkbenchBlock {
+  private block(request: WorkPlanQueryRequest, evaluatedAt: string, conflicts: ReadonlyMap<string, OwnerConflict>): WorkbenchBlock {
     // 统一引擎以请求自带的求值时刻推导有效状态，区块成员与总数同源。
-    const result = this.queryEngine.queryAt(request, evaluatedAt, { offset: 0 });
+    const result = this.queryEngine.queryAt(request, evaluatedAt, { offset: 0, conflicts });
     return { items: result.items, total: result.total };
   }
 }

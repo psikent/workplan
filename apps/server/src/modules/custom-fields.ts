@@ -174,26 +174,30 @@ export class CustomFieldService {
       false,
     );
     const archivedAt = input.archived === undefined ? current.archivedAt : input.archived ? nowIso() : null;
-    const result = this.database.sqlite
-      .prepare("UPDATE custom_field_definitions SET label = ?, description = ?, required = ?, default_value_json = ?, archived_at = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?")
-      .run(
-        input.label ?? current.label,
-        input.description ?? current.description,
-        required ? 1 : 0,
-        defaultValue == null ? null : JSON.stringify(defaultValue),
-        archivedAt,
-        nowIso(),
-        id,
-        input.version,
-      );
-    if (result.changes === 0) throw versionConflict();
-    if (required && !current.required && defaultValue != null) {
-      const plans = this.database.sqlite.prepare("SELECT id FROM work_plans").all() as Array<{ id: string }>;
-      for (const plan of plans) {
-        const values = this.getValues(plan.id);
-        if (values[current.key] == null) this.setValues(plan.id, { [current.key]: defaultValue }, false);
+    // 定义更新与存量回填同一事务：回填中途失败不能留下"部分计划缺必填值"的状态。
+    const execute = this.database.sqlite.transaction(() => {
+      const result = this.database.sqlite
+        .prepare("UPDATE custom_field_definitions SET label = ?, description = ?, required = ?, default_value_json = ?, archived_at = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?")
+        .run(
+          input.label ?? current.label,
+          input.description ?? current.description,
+          required ? 1 : 0,
+          defaultValue == null ? null : JSON.stringify(defaultValue),
+          archivedAt,
+          nowIso(),
+          id,
+          input.version,
+        );
+      if (result.changes === 0) throw versionConflict();
+      if (required && !current.required && defaultValue != null) {
+        const plans = this.database.sqlite.prepare("SELECT id FROM work_plans").all() as Array<{ id: string }>;
+        for (const plan of plans) {
+          const values = this.getValues(plan.id);
+          if (values[current.key] == null) this.setValues(plan.id, { [current.key]: defaultValue }, false);
+        }
       }
-    }
+    });
+    execute();
     return this.list(true).find((field) => field.id === id)!;
   }
 
@@ -234,32 +238,49 @@ export class CustomFieldService {
   }
 
   getValues(workPlanId: string): Record<string, unknown> {
+    return this.getValuesForPlans([workPlanId]).get(workPlanId) ?? {};
+  }
+
+  // 批量版 getValues：两次查询取回全部计划的标量与多选值。
+  // 列表/导出/提醒按行调用时，逐行版每次 4 次查询会放大为 4N，这里收敛为常数次。
+  getValuesForPlans(workPlanIds: readonly string[]): Map<string, Record<string, unknown>> {
+    const outputById = new Map<string, Record<string, unknown>>();
+    if (workPlanIds.length === 0) return outputById;
     const fields = this.list(true);
-    const scalarRows = this.database.sqlite
-      .prepare("SELECT * FROM custom_field_values WHERE work_plan_id = ?")
-      .all(workPlanId) as Array<Record<string, unknown> & { field_id: string }>;
-    const multiRows = this.database.sqlite
-      .prepare("SELECT m.field_id, o.value FROM custom_field_multi_values m JOIN custom_field_options o ON o.id = m.option_id WHERE m.work_plan_id = ? ORDER BY o.sort_order")
-      .all(workPlanId) as Array<{ field_id: string; value: string }>;
-    const output: Record<string, unknown> = {};
     const fieldById = new Map(fields.map((field) => [field.id, field]));
+    const placeholders = workPlanIds.map(() => "?").join(",");
+    const scalarRows = this.database.sqlite
+      .prepare(`SELECT * FROM custom_field_values WHERE work_plan_id IN (${placeholders})`)
+      .all(...workPlanIds) as Array<Record<string, unknown> & { field_id: string; work_plan_id: string }>;
+    const multiRows = this.database.sqlite
+      .prepare(`SELECT m.work_plan_id, m.field_id, o.value FROM custom_field_multi_values m JOIN custom_field_options o ON o.id = m.option_id WHERE m.work_plan_id IN (${placeholders}) ORDER BY o.sort_order`)
+      .all(...workPlanIds) as Array<{ work_plan_id: string; field_id: string; value: string }>;
+    const outputFor = (workPlanId: string): Record<string, unknown> => {
+      let output = outputById.get(workPlanId);
+      if (!output) {
+        output = {};
+        outputById.set(workPlanId, output);
+      }
+      return output;
+    };
     for (const row of scalarRows) {
       const field = fieldById.get(row.field_id);
       if (!field) continue;
       const column = scalarColumnByType[field.type];
       const rawValue = column ? row[column] : undefined;
       if (rawValue !== null && rawValue !== undefined) {
-        output[field.key] = field.type === "boolean" ? Boolean(rawValue) : rawValue;
+        outputFor(row.work_plan_id)[field.key] = field.type === "boolean" ? Boolean(rawValue) : rawValue;
       }
     }
     for (const row of multiRows) {
       const field = fieldById.get(row.field_id);
       if (!field) continue;
+      const output = outputFor(row.work_plan_id);
       const values = (output[field.key] as string[] | undefined) ?? [];
       values.push(row.value);
       output[field.key] = values;
     }
-    return output;
+    return outputById;
   }
 
   setValues(workPlanId: string, incoming: Record<string, unknown>, creating: boolean): Record<string, unknown> {
