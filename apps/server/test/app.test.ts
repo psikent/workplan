@@ -497,7 +497,7 @@ describe("work plan API", () => {
     const exportData = await editorRequest({ method: "GET", url: "/api/v1/export" });
     expect(createPlan.statusCode).toBe(201);
     expect(listFields.statusCode).toBe(200);
-    expect(exportData.statusCode).toBe(200);
+    expect(exportData.statusCode).toBe(403);
 
     const forbiddenRequests: InjectOptions[] = [
       {
@@ -878,6 +878,78 @@ describe("work plan API", () => {
 
     const plans = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
     expect(plans.json<unknown[]>()).toHaveLength(3);
+  });
+
+  it("keeps a stopped series stopped when its rule or template is edited", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2027-08-08T00:00:00.000Z"));
+    const context = await createContext();
+    const create = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plan-series",
+      payload: {
+        workPlan: planInput({ startAt: "2027-08-09T02:00:00.000Z", endAt: "2027-08-09T03:00:00.000Z" }),
+        recurrence: { frequency: "daily", interval: 1, count: 3, timeZone: "Asia/Shanghai" },
+      },
+    });
+    expect(create.statusCode).toBe(201);
+    const created = create.json<{ series: { id: string; version: number } }>();
+
+    // 推进两天：前两个实例成为过去，第三个仍在未来
+    vi.setSystemTime(new Date("2027-08-11T00:00:00.000Z"));
+    const stop = await context.request({
+      method: "DELETE",
+      url: `/api/v1/work-plan-series/${created.series.id}?version=${created.series.version}`,
+    });
+    expect(stop.statusCode).toBe(200);
+    expect(stop.json<{ active: boolean }>().active).toBe(false);
+
+    const plansAfterStop = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
+    expect(plansAfterStop.json<unknown[]>()).toHaveLength(2);
+
+    const update = await context.request({
+      method: "PATCH",
+      url: `/api/v1/work-plan-series/${created.series.id}`,
+      payload: { workPlan: { title: "改名也不复活" }, version: created.series.version + 1 },
+    });
+    expect(update.statusCode).toBe(200);
+    expect(update.json<{ series: { active: boolean }; generated: unknown[] }>()).toMatchObject({
+      series: { active: false },
+      generated: [],
+    });
+
+    const plansAfterUpdate = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
+    expect(plansAfterUpdate.json<unknown[]>()).toHaveLength(2);
+  });
+
+  it("keeps an active series active across rule edits and rebuilds occurrences", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2027-08-08T00:00:00.000Z"));
+    const context = await createContext();
+    const create = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plan-series",
+      payload: {
+        workPlan: planInput({ startAt: "2027-08-09T02:00:00.000Z", endAt: "2027-08-09T03:00:00.000Z" }),
+        recurrence: { frequency: "daily", interval: 1, count: 3, timeZone: "Asia/Shanghai" },
+      },
+    });
+    expect(create.statusCode).toBe(201);
+    const created = create.json<{ series: { id: string; version: number } }>();
+
+    const update = await context.request({
+      method: "PATCH",
+      url: `/api/v1/work-plan-series/${created.series.id}`,
+      payload: { recurrence: { count: 2 }, version: created.series.version },
+    });
+    expect(update.statusCode).toBe(200);
+    expect(update.json<{ series: { active: boolean }; generated: unknown[] }>()).toMatchObject({
+      series: { active: true },
+    });
+    expect(update.json<{ generated: unknown[] }>().generated).toHaveLength(2);
+
+    const plans = await context.request({ method: "GET", url: "/api/v1/work-plans?limit=500" });
+    expect(plans.json<unknown[]>()).toHaveLength(2);
   });
 
   it("removes tag, reminder and notification APIs while retaining export validation", async () => {

@@ -111,8 +111,9 @@ export class RecurrenceService {
       timeZone: input.recurrence?.timeZone ?? row.time_zone,
     };
     const execute = this.database.sqlite.transaction(() => {
+      // 编辑不改变 active：已停止的系列保持停止（与月目标系列语义一致），恢复生成走显式操作。
       const result = this.database.sqlite
-        .prepare("UPDATE work_plan_series SET template_json = ?, frequency = ?, interval = ?, weekdays_json = ?, until_at = ?, occurrence_count = ?, time_zone = ?, generated_through = NULL, active = 1, version = version + 1, updated_at = ? WHERE id = ? AND version = ?")
+        .prepare("UPDATE work_plan_series SET template_json = ?, frequency = ?, interval = ?, weekdays_json = ?, until_at = ?, occurrence_count = ?, time_zone = ?, generated_through = NULL, version = version + 1, updated_at = ? WHERE id = ? AND version = ?")
         .run(
           JSON.stringify(nextTemplate),
           next.frequency,

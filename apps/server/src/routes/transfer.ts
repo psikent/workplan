@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { TransferService } from "../modules/transfer.js";
 
 export async function registerTransferRoutes(app: FastifyInstance, transfer: TransferService) {
-  app.get("/api/v1/export", async (_request, reply) => {
+  app.get("/api/v1/export", { config: { authorization: "admin" } }, async (_request, reply) => {
     reply.header("Content-Disposition", `attachment; filename="workplan-${new Date().toISOString().slice(0, 10)}.json"`);
     return transfer.export();
   });

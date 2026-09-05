@@ -123,7 +123,6 @@ try {
     "/api/v1/custom-fields",
     "/api/v1/owner-account-mappings",
     "/api/v1/export-templates",
-    "/api/v1/export",
     "/api/v1/reminders?from=2026-01-01&to=2026-12-31",
   ];
   for (const path of queryPaths) {
@@ -131,6 +130,10 @@ try {
     const byToken = await api(path, { bearer: viewerToken });
     check(`Viewer 查询 ${path}`, bySession.status === 200 && byToken.status === 200, `session=${bySession.status} token=${byToken.status}`);
   }
+
+  const backupExport = await api("/api/v1/export", { cookie: viewer.cookie });
+  const backupExportToken = await api("/api/v1/export", { bearer: viewerToken });
+  check("Viewer 无权下载 JSON 备份", backupExport.status === 403 && backupExportToken.status === 403, `session=${backupExport.status} token=${backupExportToken.status}`);
 
   const searchSession = await api("/api/v1/work-plans/search", { method: "POST", cookie: viewer.cookie, csrf: viewer.csrf, body: { q: "验收", filters: [], sort: [], limit: 50, offset: 0 } });
   const searchTokenBody = await (await api("/api/v1/work-plans/search", { method: "POST", body: { q: "验收" }, bearer: viewerToken })).json();

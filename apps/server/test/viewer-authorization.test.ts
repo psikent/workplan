@@ -242,6 +242,7 @@ const adminOnlyRequests = (ids: { templateId: string; fieldId: string; optionId:
   { method: "DELETE", url: "/api/v1/owner-account-mappings/被阻止" },
   { method: "POST", url: "/api/v1/import/validate", payload: {} },
   { method: "POST", url: "/api/v1/import", payload: {} },
+  { method: "GET", url: "/api/v1/export" },
   { method: "POST", url: "/api/v1/export-templates", payload: { name: "被阻止模板", sheetName: "计划", columns: [{ source: "title", header: "工作内容" }] } },
   { method: "PATCH", url: `/api/v1/export-templates/${ids.templateId}`, payload: { name: "被阻止", version: 1 } },
   { method: "DELETE", url: `/api/v1/export-templates/${ids.templateId}?version=1` },
@@ -309,7 +310,6 @@ describe("viewer authorization", () => {
       { method: "GET", url: "/api/v1/custom-fields" },
       { method: "GET", url: "/api/v1/owner-account-mappings" },
       { method: "GET", url: "/api/v1/export-templates" },
-      { method: "GET", url: "/api/v1/export" },
       { method: "GET", url: `/api/v1/work-plans/export.xls?templateId=${ids.templateId}` },
       { method: "POST", url: "/api/v1/work-plans/export.xls", payload: { columns: [{ source: "title", header: "工作内容" }] } },
       { method: "GET", url: "/api/v1/reminders?from=2027-08-01&to=2027-08-31" },
@@ -325,8 +325,6 @@ describe("viewer authorization", () => {
 
     const xls = await session.request({ method: "POST", url: "/api/v1/work-plans/export.xls", payload: { columns: [{ source: "title", header: "工作内容" }] } });
     expect(xls.headers["content-type"]).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    const jsonExport = await session.request({ method: "GET", url: "/api/v1/export" });
-    expect(jsonExport.json()).toHaveProperty("data");
 
     const logout = await session.request({ method: "POST", url: "/api/v1/auth/logout" });
     expect(logout.statusCode).toBe(200);
