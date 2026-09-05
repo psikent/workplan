@@ -1,4 +1,6 @@
-import type { OwnerConflict, OwnerConflictCounterpart, WorkPlanStatus } from "@workplan/contracts";
+import type { OwnerConflict, OwnerConflictCounterpart, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
+import { deriveWorkPlanStatus } from "@workplan/contracts";
+import type { DatabaseBundle } from "../db/index.js";
 
 // 冲突判定的输入投影（规格 R1/R2）：同 owner、[startAt, endAt) 半开精确相交、
 // 双方活跃（pending/in_progress）。status 进入投影是为了让全部判定语义收敛在
@@ -76,4 +78,42 @@ export function conflictCounterpartsFor(
     { id: CONFLICT_CHECK_TARGET_ID, label: "", owner: target.owner, startAt: target.startAt, endAt: target.endAt, status: "in_progress" },
   ];
   return computeOwnerConflicts(withTarget).get(CONFLICT_CHECK_TARGET_ID)?.counterparts ?? [];
+}
+
+type OwnerConflictRow = {
+  id: string;
+  title: string;
+  status: WorkPlanStatus;
+  status_mode: WorkPlanStatusMode;
+  start_at: string;
+  end_at: string;
+  owner_value: string | null;
+};
+
+// 一次轻量 SQL 取全部 owner 非空任务的最小投影：不做范围/筛选裁剪——冲突标记
+// 必须与请求视野无关（ADR 0008）。owner 取值口径与 getValues/serializeRow 一致：
+// 字符串型列（text/url/date/datetime）参与判定，数值/布尔/多选视为未指派；
+// 活跃状态不在此处过滤，交由 computeOwnerConflicts 按求值时刻统一判定。
+export function loadOwnerConflictItems(database: DatabaseBundle, evaluatedAt: string): OwnerConflictItem[] {
+  const rows = database.sqlite
+    .prepare(
+      `SELECT wp.id, wp.title, wp.status, wp.status_mode, wp.start_at, wp.end_at,
+              COALESCE(cfv.text_value, cfv.url_value, cfv.date_value, cfv.datetime_value) AS owner_value
+       FROM work_plans wp
+       JOIN custom_field_definitions cfd ON cfd.key = 'owner'
+       LEFT JOIN custom_field_values cfv ON cfv.work_plan_id = wp.id AND cfv.field_id = cfd.id`,
+    )
+    .all() as OwnerConflictRow[];
+  const now = Date.parse(evaluatedAt);
+  return rows.flatMap((row) => {
+    if (!row.owner_value) return [];
+    return [{
+      id: row.id,
+      label: row.title,
+      owner: row.owner_value,
+      startAt: row.start_at,
+      endAt: row.end_at,
+      status: row.status_mode === "manual" ? row.status : deriveWorkPlanStatus(row.start_at, row.end_at, now),
+    }];
+  });
 }

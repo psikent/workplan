@@ -489,3 +489,116 @@ describe("统一查询：排序键写入维护", () => {
     expect(searched.json<WorkPlan[]>().map((item) => item.id)).toEqual(engineSorted.slice(1, 3));
   });
 });
+
+describe("Owner Conflict：全局冲突标记与实时校核（规格 R2/R3）", () => {
+  const ownerOptions = [{ value: "zhangsan", label: "张三" }, { value: "lisi", label: "李四" }];
+  const counterpartIds = (plan: WorkPlan | undefined) => plan?.ownerConflict?.counterparts.map((counterpart) => counterpart.id) ?? [];
+
+  it("查询每项携带 ownerConflict：同 owner 相交互标，否则为 null；详情同口径", async () => {
+    const context = await createContext();
+    await createField(context, "owner", "single_select", ownerOptions);
+    const [a, b, c, d] = await createPlans(context, [
+      { title: "甲", status: "pending", statusMode: "manual", startAt: "2026-05-01T02:00:00.000Z", customFields: { owner: "zhangsan" } },
+      { title: "乙", status: "pending", statusMode: "manual", startAt: "2026-05-01T04:00:00.000Z", customFields: { owner: "zhangsan" } },
+      { title: "丙", status: "pending", statusMode: "manual", startAt: "2026-05-09T02:00:00.000Z", customFields: { owner: "zhangsan" } },
+      { title: "丁", startAt: "2026-05-01T02:00:00.000Z", customFields: {} },
+    ]);
+    const items = (await query(context, { sort: [], limit: 100 })).json<WorkPlanQueryResponse>().items;
+    const byTitle = new Map(items.map((item) => [item.title, item]));
+    expect(counterpartIds(byTitle.get("甲"))).toEqual([b.id]);
+    expect(counterpartIds(byTitle.get("乙"))).toEqual([a.id]);
+    expect(byTitle.get("丙")?.ownerConflict).toBeNull();
+    expect(byTitle.get("丁")?.ownerConflict).toBeNull();
+
+    const detail = await context.request({ method: "GET", url: `/api/v1/work-plans/${a.id}` });
+    expect(counterpartIds(detail.json<WorkPlan>())).toEqual([b.id]);
+  });
+
+  it("completed 与 cancelled 不参与冲突", async () => {
+    const context = await createContext();
+    await createField(context, "owner", "single_select", ownerOptions);
+    await createPlans(context, [
+      { title: "活跃", status: "pending", statusMode: "manual", customFields: { owner: "zhangsan" } },
+      { title: "已完成", status: "completed", statusMode: "manual", customFields: { owner: "zhangsan" } },
+      { title: "已取消", status: "cancelled", statusMode: "manual", customFields: { owner: "zhangsan" } },
+    ]);
+    const items = (await query(context, { sort: [], limit: 100 })).json<WorkPlanQueryResponse>().items;
+    for (const item of items) expect(item.ownerConflict).toBeNull();
+  });
+
+  it("范围筛选、状态筛选与分页不影响冲突标记", async () => {
+    const context = await createContext();
+    await createField(context, "owner", "single_select", ownerOptions);
+    const [a, b] = await createPlans(context, [
+      // 甲跨五六月；乙完全落在六月（与甲相交），会被五月范围与 pending 筛选排除
+      { title: "甲", status: "pending", statusMode: "manual", startAt: "2026-05-31T20:00:00.000Z", endAt: "2026-06-02T10:00:00.000Z", customFields: { owner: "zhangsan" } },
+      { title: "乙", status: "in_progress", statusMode: "manual", startAt: "2026-06-01T00:00:00.000Z", endAt: "2026-06-01T05:00:00.000Z", customFields: { owner: "zhangsan" } },
+    ]);
+
+    const mayRange = (await query(context, {
+      sort: [],
+      limit: 100,
+      range: { from: "2026-05-01T00:00:00.000Z", to: "2026-06-01T00:00:00.000Z" },
+    })).json<WorkPlanQueryResponse>().items;
+    expect(mayRange.map((item) => item.title)).toEqual(["甲"]);
+    expect(counterpartIds(mayRange[0])).toEqual([b.id]);
+
+    const pendingOnly = (await query(context, {
+      sort: [],
+      limit: 100,
+      filters: [{ field: "status", op: "eq", value: "pending" }],
+    })).json<WorkPlanQueryResponse>().items;
+    expect(pendingOnly.map((item) => item.title)).toEqual(["甲"]);
+    expect(counterpartIds(pendingOnly[0])).toEqual([b.id]);
+
+    const pageOne = (await query(context, { sort: [], limit: 1 })).json<WorkPlanQueryResponse>();
+    expect(pageOne.items.map((item) => item.title)).toEqual(["甲"]);
+    expect(counterpartIds(pageOne.items[0])).toEqual([b.id]);
+    expect(pageOne.items[0]?.id).toBe(a.id);
+  });
+
+  it("POST /conflict-check 返回与给定 owner+区间相交的活跃任务，id 排除自身", async () => {
+    const context = await createContext();
+    await createField(context, "owner", "single_select", ownerOptions);
+    const [self, b, far] = await createPlans(context, [
+      { title: "自身", status: "pending", statusMode: "manual", startAt: "2026-05-01T02:00:00.000Z", customFields: { owner: "zhangsan" } },
+      { title: "相交", status: "pending", statusMode: "manual", startAt: "2026-05-01T04:00:00.000Z", customFields: { owner: "zhangsan" } },
+      { title: "远处", status: "pending", statusMode: "manual", startAt: "2026-05-09T02:00:00.000Z", customFields: { owner: "zhangsan" } },
+    ]);
+    const check = (payload: Record<string, unknown>) =>
+      context.request({ method: "POST", url: "/api/v1/work-plans/conflict-check", payload });
+
+    const excludingSelf = await check({ id: self.id, owner: "zhangsan", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" });
+    expect(excludingSelf.statusCode).toBe(200);
+    const body = excludingSelf.json<{ owner: string; counterparts: Array<{ id: string }> }>();
+    expect(body.owner).toBe("zhangsan");
+    expect(body.counterparts.map((counterpart) => counterpart.id)).toEqual([b.id]);
+
+    const includingSelf = await check({ owner: "zhangsan", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" });
+    expect(includingSelf.json<{ counterparts: Array<{ id: string }> }>().counterparts.map((counterpart) => counterpart.id))
+      .toEqual([self.id, b.id]);
+
+    // 端点相接：目标起点恰为「相交」的结束时刻，不算冲突
+    const adjacent = await check({ owner: "zhangsan", startAt: "2026-05-01T08:00:00.000Z", endAt: "2026-05-01T10:00:00.000Z" });
+    expect(adjacent.json<{ counterparts: unknown[] }>().counterparts).toEqual([]);
+    expect(far.ownerConflict).toBeNull();
+  });
+
+  it("POST /conflict-check 对空 owner 与非法区间返回 422", async () => {
+    const context = await createContext();
+    await createField(context, "owner", "single_select", ownerOptions);
+    const emptyOwner = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plans/conflict-check",
+      payload: { owner: "", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" },
+    });
+    expect(emptyOwner.statusCode).toBe(422);
+
+    const invalidRange = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plans/conflict-check",
+      payload: { owner: "zhangsan", startAt: "2026-05-01T06:00:00.000Z", endAt: "2026-05-01T02:00:00.000Z" },
+    });
+    expect(invalidRange.statusCode).toBe(422);
+  });
+});

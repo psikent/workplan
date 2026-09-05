@@ -1,6 +1,9 @@
 import type {
   CreateWorkPlan,
+  OwnerConflictCounterpart,
   WorkPlan,
+  WorkPlanConflictCheckRequest,
+  WorkPlanConflictCheckResponse,
   WorkPlanQueryRequest,
   WorkPlanSearch,
   WorkPlanStatus,
@@ -10,6 +13,7 @@ import { deriveWorkPlanStatus, naturalSortKey, normalizeDateTimeForSort } from "
 import type { DatabaseBundle } from "../db/index.js";
 import { invalidInput, notFound, versionConflict } from "../errors.js";
 import { newId, nowIso } from "../utils.js";
+import { conflictCounterpartsFor, loadOwnerConflictItems } from "./owner-conflicts.js";
 import type { CustomFieldService } from "./custom-fields.js";
 import type { MonthlyGoalService } from "./monthly-goals.js";
 import type { OwnerAccountService } from "./owner-accounts.js";
@@ -71,9 +75,21 @@ export class WorkPlanService {
   get(id: string): WorkPlan {
     const row = this.database.sqlite.prepare("SELECT * FROM work_plans WHERE id = ?").get(id) as WorkPlanRow | undefined;
     if (!row) throw notFound("工作计划不存在");
-    const serialized = this.queryEngine.serializeRows([row], Date.now())[0];
+    // 详情响应与查询响应同口径：携带全局冲突标记（ADR 0008）。
+    const serialized = this.queryEngine.serializeRows([row], Date.now(), this.queryEngine.ownerConflictsAt(nowIso()))[0];
     if (!serialized) throw notFound("工作计划不存在");
     return serialized;
+  }
+
+  // 实时校核（规格 R3）：无副作用，复用与派生字段相同的判定函数。
+  conflictCheck(input: WorkPlanConflictCheckRequest): WorkPlanConflictCheckResponse {
+    const items = loadOwnerConflictItems(this.database, nowIso());
+    const counterparts: OwnerConflictCounterpart[] = conflictCounterpartsFor(
+      { owner: input.owner, startAt: input.startAt, endAt: input.endAt },
+      items,
+      input.id,
+    );
+    return { owner: input.owner, counterparts };
   }
 
   create(input: CreateWorkPlan): WorkPlan {

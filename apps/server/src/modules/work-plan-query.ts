@@ -20,6 +20,7 @@ import {
 import type { DatabaseBundle } from "../db/index.js";
 import { cursorInvalid, cursorMismatch, invalidInput, sortFieldError } from "../errors.js";
 import { nowIso } from "../utils.js";
+import { computeOwnerConflicts, loadOwnerConflictItems } from "./owner-conflicts.js";
 import type { MonthlyGoalService } from "./monthly-goals.js";
 import type { OwnerAccountService } from "./owner-accounts.js";
 import type { CustomFieldService } from "./custom-fields.js";
@@ -182,6 +183,11 @@ export class WorkPlanQueryEngine {
     return this.queryAt(request, nowIso(), options);
   }
 
+  // 全局冲突映射（ADR 0008）：与请求的范围/筛选/分页无关，仅由求值时刻决定活跃派生。
+  ownerConflictsAt(evaluatedAt: string): Map<string, OwnerConflict> {
+    return computeOwnerConflicts(loadOwnerConflictItems(this.database, evaluatedAt));
+  }
+
   // 显式求值时刻版本：工作台三区块等场景要求多个查询共享同一求值时刻。
   queryAt(request: WorkPlanQueryRequest, evaluatedAt: string, options: { offset?: number } = {}): WorkPlanQueryResult {
     const now = Date.parse(evaluatedAt);
@@ -251,7 +257,7 @@ export class WorkPlanQueryEngine {
     // 多取一行判定是否存在下一页，保证末页 nextCursor 恰为 null。
     const hasNext = options.offset === undefined ? rows.length > request.limit : false;
     const pageRows = hasNext ? rows.slice(0, request.limit) : rows;
-    const items = this.serializeRows(pageRows, now);
+    const items = this.serializeRows(pageRows, now, this.ownerConflictsAt(evaluatedAt));
     const lastRow = pageRows.at(-1);
     const nextCursor =
       hasNext && lastRow
