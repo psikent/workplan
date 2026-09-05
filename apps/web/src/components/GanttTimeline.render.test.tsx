@@ -139,6 +139,27 @@ describe("GanttTimeline rendered grid", () => {
     expect(gantt.gantt_end).toBe(originalEnd);
   });
 
+  it("removes Frappe's empty side header so it cannot cover the current date highlight", async () => {
+    const today = new Date();
+    const rangeStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
+    const rangeEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const { container } = render(
+      <GanttTimeline
+        plans={[plan]}
+        view="week"
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector(".current-date-highlight")).not.toBeNull();
+    });
+    expect(container.querySelector(".side-header")).toBeNull();
+  });
+
   it("opens the new-plan callback once for a date-grid double click and ignores a single click", async () => {
     const onCreateAt = vi.fn();
     const rangeStart = new Date(2026, 7, 3);

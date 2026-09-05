@@ -228,6 +228,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
       gantt.gantt_end = exactRangeEnd;
       gantt.setup_date_values();
       gantt.render();
+      removeEmptyGanttSideHeader(containerRef.current);
       disableWeekendHighlightHit(containerRef.current);
        if (plans.length === 0) {
          containerRef.current.querySelector<SVGGElement>(`.bar-wrapper[data-id="${EMPTY_TIMELINE_TASK_ID}"]`)?.remove();
@@ -907,6 +908,15 @@ function disableWeekendHighlightHit(mount: HTMLElement) {
   for (const rect of mount.querySelectorAll<SVGRectElement>(".holiday-highlight")) {
     rect.style.pointerEvents = "none";
   }
+}
+
+// Frappe always creates the side-header shell, even when today/view controls
+// are disabled. Its padding and sticky background can cover the top-right of
+// the final date cell, so keep only a side header that contains a real control.
+function removeEmptyGanttSideHeader(mount: HTMLElement) {
+  const sideHeader = mount.querySelector<HTMLElement>(".side-header");
+  if (!sideHeader || sideHeader.childElementCount > 0 || sideHeader.textContent?.trim()) return;
+  sideHeader.remove();
 }
 
 export function alignCurrentDateMarker(mount: HTMLElement) {
