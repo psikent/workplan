@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   CustomFieldDefinition,
+  OwnerConflict,
   WorkPlan,
   WorkPlanFilter,
   WorkPlanQueryErrorCode,
@@ -557,10 +558,14 @@ export class WorkPlanQueryEngine {
     return value;
   }
 
-  serializeRows(rows: Array<WorkPlanRow & Record<string, unknown>>, now: number): WorkPlan[] {
+  serializeRows(
+    rows: Array<WorkPlanRow & Record<string, unknown>>,
+    now: number,
+    conflictsById: ReadonlyMap<string, OwnerConflict> = new Map(),
+  ): WorkPlan[] {
     const ownerAccountByValue = this.ownerAccounts.indexByOwnerValue();
     const goalIdsByWorkPlan = this.monthlyGoals.indexGoalIdsByWorkPlan(rows.map((row) => row.id));
-    return rows.map((row) => this.serializeRow(row, now, ownerAccountByValue, goalIdsByWorkPlan.get(row.id) ?? []));
+    return rows.map((row) => this.serializeRow(row, now, ownerAccountByValue, goalIdsByWorkPlan.get(row.id) ?? [], conflictsById));
   }
 
   private serializeRow(
@@ -568,6 +573,7 @@ export class WorkPlanQueryEngine {
     now: number,
     ownerAccountByValue: ReadonlyMap<string, string>,
     monthlyGoalIds: string[],
+    conflictsById: ReadonlyMap<string, OwnerConflict>,
   ): WorkPlan {
     const customFields = this.customFields.getValues(row.id);
     const ownerValue = typeof customFields.owner === "string" ? customFields.owner : null;
@@ -586,6 +592,7 @@ export class WorkPlanQueryEngine {
       customFields,
       monthlyGoalIds,
       ownerAccount: ownerValue ? ownerAccountByValue.get(ownerValue) ?? null : null,
+      ownerConflict: conflictsById.get(row.id) ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

@@ -59,6 +59,7 @@ const plan: WorkPlan = {
   customFields: { owner: "lxj", effort: 8 },
   monthlyGoalIds: [],
   ownerAccount: null,
+  ownerConflict: null,
   createdAt: new Date(2026, 7, 1).toISOString(),
   updatedAt: new Date(2026, 7, 1).toISOString(),
 };

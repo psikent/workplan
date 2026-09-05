@@ -28,6 +28,23 @@ export const loginModeSchema = z.enum(loginModes);
 export const isoDateTimeSchema = z.iso.datetime({ offset: true });
 export const isoDateSchema = z.iso.date();
 
+// 负责人时段冲突（Owner Conflict）是响应侧派生只读字段：由服务端全局计算后随
+// 查询/详情响应返回；创建/更新入参（workPlanValuesSchema，strict）不含该字段，
+// 因此不可经入参写入。counterparts 按开始时间升序，成对不传递（见 ADR 0008）。
+export const ownerConflictCounterpartSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string(),
+  startAt: isoDateTimeSchema,
+  endAt: isoDateTimeSchema,
+});
+export type OwnerConflictCounterpart = z.infer<typeof ownerConflictCounterpartSchema>;
+
+export const ownerConflictSchema = z.object({
+  owner: z.string().min(1),
+  counterparts: z.array(ownerConflictCounterpartSchema).min(1),
+});
+export type OwnerConflict = z.infer<typeof ownerConflictSchema>;
+
 export const workPlanSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -43,6 +60,7 @@ export const workPlanSchema = z.object({
   customFields: z.record(z.string(), z.unknown()),
   monthlyGoalIds: z.array(z.string().uuid()).default([]),
   ownerAccount: z.string().email().nullable(),
+  ownerConflict: ownerConflictSchema.nullable(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
 });
@@ -195,6 +213,29 @@ export const workPlanQueryErrorCodes = [
   "WORK_PLAN_REORDER_RETIRED",
 ] as const;
 export type WorkPlanQueryErrorCode = (typeof workPlanQueryErrorCodes)[number];
+
+// POST /api/v1/work-plans/conflict-check（规格 R3）：无副作用的实时校核。
+// id 为编辑场景排除自身；语义与 ownerConflict 派生字段完全一致（复用同一判定函数）。
+export const workPlanConflictCheckRequestSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    owner: z.string().min(1),
+    startAt: isoDateTimeSchema,
+    endAt: isoDateTimeSchema,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (Date.parse(value.startAt) >= Date.parse(value.endAt)) {
+      context.addIssue({ code: "custom", path: ["endAt"], message: "结束时间必须晚于开始时间" });
+    }
+  });
+export type WorkPlanConflictCheckRequest = z.infer<typeof workPlanConflictCheckRequestSchema>;
+
+export const workPlanConflictCheckResponseSchema = z.object({
+  owner: z.string(),
+  counterparts: z.array(ownerConflictCounterpartSchema),
+});
+export type WorkPlanConflictCheckResponse = z.infer<typeof workPlanConflictCheckResponseSchema>;
 
 // 工作计划页 URL 排序参数：sort=<field>:<direction>,<field>:<direction>；默认排期顺序不写参数。
 export function formatWorkPlanSortParam(items: readonly WorkPlanSortItem[]): string {

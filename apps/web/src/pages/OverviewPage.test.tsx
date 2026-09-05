@@ -29,6 +29,7 @@ function makePlan(overrides: Partial<WorkPlan> & { id: string; title: string }):
     customFields: {},
     monthlyGoalIds: [],
     ownerAccount: null,
+    ownerConflict: null,
     createdAt: new Date(now).toISOString(),
     updatedAt: new Date(now).toISOString(),
     ...overrides,
