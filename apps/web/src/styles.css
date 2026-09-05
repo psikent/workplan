@@ -608,7 +608,9 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 :root[data-theme="dark"] .gantt-mount .current-date-highlight { background: var(--accent); color: var(--accent-contrast); }
 :root[data-theme="dark"] .gantt-mount .current-highlight,
 :root[data-theme="dark"] .gantt-mount .current-ball-highlight { background: var(--accent); }
-:root[data-theme="dark"] .gantt-mount .current-date-highlight .timeline-reminder-bell:hover { color: var(--accent-contrast); }
+/* 亮青药丸上铃铛与日期统一深藏青，琥珀在青底上撞色 */
+:root[data-theme="dark"] .gantt-mount .current-date-highlight .timeline-reminder-bell { color: var(--accent-contrast); }
+:root[data-theme="dark"] .gantt-mount .current-date-highlight .timeline-reminder-bell:hover { opacity: .72; }
 
 @media (max-width: 1120px) {
   .app-shell { grid-template-columns: 76px minmax(0, 1fr); }
