@@ -112,3 +112,5 @@
 7. **回归**:全仓 typecheck + 测试全绿(contracts 20 / server 181 / web 281 / scripts 52);styles.css 新增规则仅引用 token,字面色只出现在 `:root` token 定义;明暗两套主题真机核对通过。
 
 浏览器 QA(基于复制真实库的隔离实例,亮/暗两主题,截图见 `qa/`):链条 A-B-C 成对标记正确、端点相接不标记、completed/空 owner 对照组不标记;改期解除冲突、新建冲突保存成功均通过。QA 期间另发现一个与本功能无关的存量 bug:抽屉打开手动状态计划时状态被派生值覆盖,已登记 `.scratch/drawer-manual-status-clobbered/issues/01-open-clobbers-manual-status.md`。
+
+Code review 备注(2026-09-05,双轴):Standards 无硬性违规;Spec 唯一偏差为 R2「入参剥离或忽略」实际是 strict 拒绝(422)——与既有派生字段 ownerAccount 的入参先例一致(回写完整响应本就会因 strict 被拒),不为削弱契约而放宽。

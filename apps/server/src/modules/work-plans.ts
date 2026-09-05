@@ -75,8 +75,9 @@ export class WorkPlanService {
   get(id: string): WorkPlan {
     const row = this.database.sqlite.prepare("SELECT * FROM work_plans WHERE id = ?").get(id) as WorkPlanRow | undefined;
     if (!row) throw notFound("工作计划不存在");
-    // 详情响应与查询响应同口径：携带全局冲突标记（ADR 0008）。
-    const serialized = this.queryEngine.serializeRows([row], Date.now(), this.queryEngine.ownerConflictsAt(nowIso()))[0];
+    // 详情响应与查询响应同口径：携带全局冲突标记（ADR 0008）；求值时刻统一取一次。
+    const evaluatedAt = nowIso();
+    const serialized = this.queryEngine.serializeRows([row], Date.parse(evaluatedAt), this.queryEngine.ownerConflictsAt(evaluatedAt))[0];
     if (!serialized) throw notFound("工作计划不存在");
     return serialized;
   }
