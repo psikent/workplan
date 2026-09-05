@@ -1,6 +1,6 @@
 # 04 — 详情抽屉实时冲突提醒
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02
 Spec: ../spec.md
 Scope: apps/web/src/components/WorkPlanDrawer.tsx、apps/web/src/styles.css、web lib/测试

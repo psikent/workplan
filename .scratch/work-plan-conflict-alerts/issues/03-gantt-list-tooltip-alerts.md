@@ -1,6 +1,6 @@
 # 03 — 甘特条 / 计划列表 / 浮动提示三处提醒
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02
 Spec: ../spec.md
 Scope: apps/web/src/components/GanttTimeline.tsx、apps/web/src/pages/WorkPlansPage.tsx、apps/web/src/styles.css、web 测试

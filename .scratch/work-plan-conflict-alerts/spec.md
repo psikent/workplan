@@ -1,6 +1,6 @@
 # Spec: 工作任务负责人时段冲突校核(Owner Conflict Alerts)
 
-> Status: **待实现** — 2026-09-05 grilling 定稿(9 项决策见 Requirements),票据 01–05 就绪,尚未开发。
+> Status: **已实现** — 2026-09-05 实现并验收(票据 01–05 全部完成)。验证结论见文末「验收记录」。
 
 ## Goal
 
@@ -100,3 +100,15 @@
 5. 浮动提示:冲突任务强制显示负责人行 + 冲突清单;非冲突任务提示配置不受影响。
 6. 抽屉:打开冲突任务即有边框 + 小字;编辑负责人/日期造成或解除冲突时防抖刷新;不阻止保存。
 7. 回归:web / server typecheck 与测试全绿;四处置无写死面色,明暗主题均验收。
+
+## 验收记录(2026-09-05)
+
+1. **语义**:纯函数单测 11 例(端点相接/毫秒相交/状态与空 owner 排除/成对不传递/多任务两两清单)+ 服务端集成测试全绿。
+2. **服务端**:`/work-plans/query` 与按 id 详情每项携带 `ownerConflict`;范围筛选、状态筛选、分页视野外/被筛掉的冲突对象仍被正确标记(集成测试覆盖)。
+3. **甘特**:冲突条整条 `gantt-conflict` 警示色、优先于状态色;`ganttInputSignature` 纳入 counterparts,冲突增删触发重渲染。实现备注:frappe 的 `custom_class` 仅支持单 token(内部 `classList.add` 不接受空格),冲突类改由渲染后几何校正阶段 `classList.toggle` 同步——多 token 写法会让整图甘特条渲染失败(已在真机暴露并修复)。
+4. **列表**:冲突行 `plan-row-conflict` amber 软底,hover 对应 `--amber-soft-hover`。
+5. **浮动提示**:冲突任务强制负责人行(警示色)+ 冲突清单;非冲突提示维持用户配置(单测 + 真机)。
+6. **抽屉**:初始态用响应 `ownerConflict`;owner/起止变化防抖 400ms 调 `conflict-check`(编辑传 id 排除自身,竞态最后一次为准);改期后提醒即时消失;新建冲突任务提醒出现且保存不被阻止。
+7. **回归**:全仓 typecheck + 测试全绿(contracts 20 / server 181 / web 281 / scripts 52);styles.css 新增规则仅引用 token,字面色只出现在 `:root` token 定义;明暗两套主题真机核对通过。
+
+浏览器 QA(基于复制真实库的隔离实例,亮/暗两主题,截图见 `qa/`):链条 A-B-C 成对标记正确、端点相接不标记、completed/空 owner 对照组不标记;改期解除冲突、新建冲突保存成功均通过。QA 期间另发现一个与本功能无关的存量 bug:抽屉打开手动状态计划时状态被派生值覆盖,已登记 `.scratch/drawer-manual-status-clobbered/issues/01-open-clobbers-manual-status.md`。

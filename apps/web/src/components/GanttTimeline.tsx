@@ -132,8 +132,9 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
           end: endOfLocalDay(new Date(plan.endAt)),
           progress: plan.status === "completed" ? 100 : plan.status === "in_progress" ? 50 : 0,
           dependencies: "",
-          // 冲突条叠加警示类（规格 R4）：CSS 同权重规则靠后生效，覆盖状态配色
-          custom_class: `gantt-${plan.status}${plan.ownerConflict ? " gantt-conflict" : ""}`,
+          // frappe 的 custom_class 只接受单 token（内部 classList.add）；
+          // 冲突警示类在渲染后的 applyWholeDayBarGeometry 里统一同步
+          custom_class: `gantt-${plan.status}`,
         }))
         : [{
           id: EMPTY_TIMELINE_TASK_ID,
@@ -744,6 +745,9 @@ function applyWholeDayBarGeometry(mount: HTMLElement, plansById: Map<string, Wor
     const plan = plansById.get(wrapper.dataset.id ?? "");
     const bar = wrapper.querySelector<SVGRectElement>(".bar");
     if (!plan || !bar) continue;
+
+    // 冲突警示类（规格 R4）：随甘特重渲染同步，冲突出现/消失即生效
+    wrapper.classList.toggle("gantt-conflict", Boolean(plan.ownerConflict));
 
     const x = timelineDayPosition(new Date(plan.startAt), rangeStart, columnWidth);
     const end = new Date(plan.endAt);

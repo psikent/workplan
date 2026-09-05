@@ -1,6 +1,6 @@
 # 01 — 冲突判定核心与契约
 Type: task
-Status: ready-for-agent
+Status: resolved
 Spec: ../spec.md
 Scope: packages/contracts/src/index.ts、apps/server/src/modules/owner-conflicts.ts(新)、CONTEXT.md、docs/adr/
 

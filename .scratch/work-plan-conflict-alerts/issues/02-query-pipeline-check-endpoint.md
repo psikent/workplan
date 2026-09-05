@@ -1,6 +1,6 @@
 # 02 — 查询管道集成与实时校核端点
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/server/src/modules/work-plan-query.ts、apps/server 路由与测试

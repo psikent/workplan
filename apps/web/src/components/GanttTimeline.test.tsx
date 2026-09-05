@@ -198,7 +198,9 @@ describe("GanttTimeline adapter", () => {
     expect(ganttMock.tasks[0]?.name).toBe("设计评审");
   });
 
-  it("marks conflict bars with gantt-conflict while non-conflict bars keep status classes", async () => {
+  it("applies gantt-conflict on render and drops it when the conflict clears", async () => {
+    // frappe 的 custom_class 仅支持单 token:冲突类由 applyWholeDayBarGeometry 同步
+    ganttMock.injectInteractiveDom = true;
     const conflicted: WorkPlan = {
       ...plan,
       ownerConflict: {
@@ -207,20 +209,19 @@ describe("GanttTimeline adapter", () => {
       },
     };
     const view = render(
-      <GanttTimeline plans={[plan, conflicted]} displayProperties={[]} view="week" rangeStart={new Date(2026, 7, 3)} rangeEnd={new Date(2026, 7, 10)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+      <GanttTimeline plans={[conflicted]} displayProperties={[]} view="week" rangeStart={new Date(2026, 7, 3)} rangeEnd={new Date(2026, 7, 10)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
     );
 
-    await waitFor(() => expect(ganttMock.tasks).toHaveLength(2));
+    await waitFor(() => expect(ganttMock.element?.querySelector(".bar-wrapper")?.classList.contains("gantt-conflict")).toBe(true));
     expect(ganttMock.tasks[0]?.custom_class).toBe("gantt-pending");
-    expect(ganttMock.tasks[1]?.custom_class).toBe("gantt-pending gantt-conflict");
 
-    // 冲突出现/消失必须触发甘特重渲染（ganttInputSignature 纳入 counterparts 标记）
+    // 冲突出现/消失必须触发甘特重渲染（ganttInputSignature 纳入 counterparts 标记）并同步类
     const rendersBefore = ganttMock.renderCount;
     view.rerender(
       <GanttTimeline plans={[{ ...plan, id: conflicted.id }]} displayProperties={[]} view="week" rangeStart={new Date(2026, 7, 3)} rangeEnd={new Date(2026, 7, 10)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
     );
     await waitFor(() => expect(ganttMock.renderCount).toBeGreaterThan(rendersBefore));
-    expect(ganttMock.tasks[0]?.custom_class).toBe("gantt-pending");
+    await waitFor(() => expect(ganttMock.element?.querySelector(".bar-wrapper")?.classList.contains("gantt-conflict")).toBe(false));
     view.unmount();
   });
 

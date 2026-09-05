@@ -1,6 +1,6 @@
 # 05 — 回归、暗色与端到端验收
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 03, 04
 Spec: ../spec.md
 Scope: 全仓、浏览器 QA

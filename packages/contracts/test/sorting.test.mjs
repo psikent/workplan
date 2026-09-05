@@ -127,6 +127,7 @@ describe("工作计划排序契约", () => {
       customFields: {},
       monthlyGoalIds: [],
       ownerAccount: null,
+      ownerConflict: null,
       createdAt: "2025-12-01T00:00:00.000Z",
       updatedAt: "2025-12-01T00:00:00.000Z",
     };
