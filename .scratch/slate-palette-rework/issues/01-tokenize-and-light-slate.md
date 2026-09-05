@@ -33,3 +33,7 @@ Scope: apps/web/src/styles.css
 - 顺手修复：var(--ink)/var(--surface-soft) 两个从未定义的引用 → --text/--surface-muted；登录输入框 .input-with-icon 补 background: var(--surface)（旧代码从未设底色，暗色下露出 UA 灰底）。
 - BrandMark.tsx 描边 #fff → var(--accent-contrast)；index.html theme-color 更新为 #f8fafc/#020617。
 - web build 通过；浅色截图（计划周/月、工作台、月目标、设置、抽屉、登录、移动 390）验收通过。
+
+## Comments（追加）
+
+- 2026-09-05 强调色改判：用户实机后否决 indigo（#818cf8/#6366f1，不在参考页配色内），两套主题强调色一族（accent/hover/soft/line/ring/glow/panel/focus-ring/Gantt 默认条）整体换为参考页青色（暗 #22d3ee、浅 #0891b2，hover 分别 #67e8f9/#0e7490）。浅色按钮白字对比 ~3.7:1（13px 加粗标签，较原 indigo 4.46 略降，记录备查）。已确认所有字面 indigo 清零、token 完整性校验通过。
