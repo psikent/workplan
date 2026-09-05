@@ -37,6 +37,7 @@
   --amber: #d97706;
   --amber-text: #92400e;
   --amber-soft: rgb(217 119 6 / 12%);
+  --amber-soft-hover: rgb(217 119 6 / 18%);
   --amber-line: rgb(217 119 6 / 32%);
   --coral: #e11d48;
   --coral-text: #9f1239;
@@ -54,6 +55,8 @@
   --shadow-drawer: -12px 0 36px rgb(15 23 42 / 14%);
   --gantt-bar: #a5b4fc;
   --gantt-bar-progress: #818cf8;
+  --gantt-bar-conflict: #b45309;
+  --gantt-bar-conflict-progress: #92400e;
   --gantt-in-progress: #10b981;
   --gantt-in-progress-progress: #059669;
   --gantt-pending: #f59e0b;
@@ -210,6 +213,9 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .planner-panel.view-month .plan-rows::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .plan-row { position: relative; min-height: 58px; border-bottom: 1px solid var(--line-soft); font-size: 12px; background: var(--surface); transition: background .15s ease, box-shadow .15s ease; }
 .plan-row:hover, .plan-row.gantt-row-hovered { background: var(--surface-hover); }
+/* 冲突行（规格 R5/R8）：amber 软底 + 对应 hover 色，行内单元格内容不变 */
+.plan-row.plan-row-conflict { background: var(--amber-soft); }
+.plan-row.plan-row-conflict:hover, .plan-row.plan-row-conflict.gantt-row-hovered { background: var(--amber-soft-hover); }
 .plan-row > * { min-width: 0; }
 .plan-title-button { min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 10px; border: 0; background: transparent; text-align: left; cursor: pointer; }
 .plan-title-button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 620; }
@@ -257,7 +263,13 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .gantt-mount .gantt-pending .bar { fill: var(--gantt-pending); }.gantt-mount .gantt-pending .bar-progress { fill: var(--gantt-pending-progress); }
 .gantt-mount .gantt-completed .bar { fill: var(--gantt-completed); }.gantt-mount .gantt-completed .bar-progress { fill: var(--gantt-completed-progress); }
 .gantt-mount .gantt-cancelled .bar { fill: var(--gantt-cancelled); }.gantt-mount .gantt-cancelled .bar-progress { fill: var(--gantt-cancelled-progress); }
+/* 冲突条（规格 R4/R8）：与状态类同权重、按源序靠后覆盖，整条（含进度）用冲突警示色 */
+.gantt-mount .gantt-conflict .bar { fill: var(--gantt-bar-conflict); }
+.gantt-mount .gantt-conflict .bar-progress { fill: var(--gantt-bar-conflict-progress); }
 .gantt-mount .popup-wrapper { font-family: inherit; border: 1px solid var(--line); box-shadow: 0 10px 30px var(--shadow-medium); pointer-events: none; }
+/* 冲突浮动提示（规格 R6/R8）：强制负责人行警示色 + 冲突清单区块 */
+.gantt-mount .popup-wrapper .gantt-conflict-block { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--amber-line); }
+.gantt-mount .popup-wrapper .gantt-conflict-owner { color: var(--amber-text); font-weight: 650; }
 /* 时间轴提醒铃铛（规格 R3）：表头日期数字下方，单日最多一个，amber 作语义强调色 */
 .gantt-mount .timeline-reminder-bell {
   display: block;
@@ -529,6 +541,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
   --amber: #fbbf24;
   --amber-text: #fcd34d;
   --amber-soft: rgb(251 191 36 / 13%);
+  --amber-soft-hover: rgb(251 191 36 / 20%);
   --amber-line: rgb(251 191 36 / 35%);
   --coral: #fb7185;
   --coral-text: #fda4af;
@@ -546,6 +559,8 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
   --shadow-drawer: -12px 0 36px rgb(0 0 0 / 45%);
   --gantt-bar: #818cf8;
   --gantt-bar-progress: #6366f1;
+  --gantt-bar-conflict: #d97706;
+  --gantt-bar-conflict-progress: #b45309;
   --gantt-in-progress: #34d399;
   --gantt-in-progress-progress: #059669;
   --gantt-pending: #fbbf24;

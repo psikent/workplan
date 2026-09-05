@@ -6,7 +6,7 @@ import GanttTimeline, { formatGanttTooltip, type GanttDisplayProperty } from "./
 
 const ganttMock = vi.hoisted(() => ({
   options: null as Record<string, unknown> | null,
-  tasks: [] as Array<{ id: string; name: string; start: Date; end: Date }>,
+  tasks: [] as Array<{ id: string; name: string; start: Date; end: Date; custom_class?: string }>,
   range: null as { start: Date; end: Date } | null,
   renderCount: 0,
   element: null as HTMLElement | null,
@@ -196,6 +196,32 @@ describe("GanttTimeline adapter", () => {
 
     await waitFor(() => expect(ganttMock.tasks).toHaveLength(1));
     expect(ganttMock.tasks[0]?.name).toBe("设计评审");
+  });
+
+  it("marks conflict bars with gantt-conflict while non-conflict bars keep status classes", async () => {
+    const conflicted: WorkPlan = {
+      ...plan,
+      ownerConflict: {
+        owner: "lxj",
+        counterparts: [{ id: "c1ee0e58-5d1c-4f0e-9b6f-0a4ac1a2b3c4", label: "现场勘查", startAt: plan.startAt, endAt: plan.endAt }],
+      },
+    };
+    const view = render(
+      <GanttTimeline plans={[plan, conflicted]} displayProperties={[]} view="week" rangeStart={new Date(2026, 7, 3)} rangeEnd={new Date(2026, 7, 10)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+
+    await waitFor(() => expect(ganttMock.tasks).toHaveLength(2));
+    expect(ganttMock.tasks[0]?.custom_class).toBe("gantt-pending");
+    expect(ganttMock.tasks[1]?.custom_class).toBe("gantt-pending gantt-conflict");
+
+    // 冲突出现/消失必须触发甘特重渲染（ganttInputSignature 纳入 counterparts 标记）
+    const rendersBefore = ganttMock.renderCount;
+    view.rerender(
+      <GanttTimeline plans={[{ ...plan, id: conflicted.id }]} displayProperties={[]} view="week" rangeStart={new Date(2026, 7, 3)} rangeEnd={new Date(2026, 7, 10)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+    await waitFor(() => expect(ganttMock.renderCount).toBeGreaterThan(rendersBefore));
+    expect(ganttMock.tasks[0]?.custom_class).toBe("gantt-pending");
+    view.unmount();
   });
 
   it("truncates work content beyond 20 characters in the bar label", async () => {
@@ -545,5 +571,50 @@ describe("formatGanttTooltip", () => {
     const html = formatGanttTooltip(plan, [{ id: "custom:owner", label: "<b>负责人</b>", field: ownerField }]);
     expect(html).toContain("&lt;b&gt;负责人&lt;/b&gt;：lxj");
     expect(html).not.toContain("<b>");
+  });
+});
+
+describe("formatGanttTooltip 冲突提示（规格 R6）", () => {
+  const conflictedPlan: WorkPlan = {
+    ...plan,
+    ownerConflict: {
+      owner: "lxj",
+      counterparts: [
+        { id: "c1ee0e58-5d1c-4f0e-9b6f-0a4ac1a2b3c4", label: "现场勘查", startAt: localIso(2026, 8, 6), endAt: localIso(2026, 8, 7) },
+        { id: "d2ff1f69-6e2d-5a1f-8c7f-1b5bd2b3c4d5", label: "设备消缺", startAt: localIso(2026, 8, 9), endAt: localIso(2026, 8, 10) },
+      ],
+    },
+  };
+
+  it("冲突任务强制展示负责人行与逐条冲突清单，不管用户提示属性配置", () => {
+    const html = formatGanttTooltip(conflictedPlan, [], ownerField);
+    expect(html).toContain("gantt-conflict-block");
+    expect(html).toContain("gantt-conflict-owner");
+    expect(html).toContain("负责人：lxj");
+    expect(html).toContain("与【现场勘查】8月6日 - 8月7日 时间冲突");
+    expect(html).toContain("与【设备消缺】8月9日 - 8月10日 时间冲突");
+  });
+
+  it("owner 字段缺省时回退到固定文案与原始值", () => {
+    const html = formatGanttTooltip(conflictedPlan, []);
+    expect(html).toContain("工作负责人：lxj");
+  });
+
+  it("非冲突任务不含冲突区块，用户配置不受影响", () => {
+    const html = formatGanttTooltip(plan, [{ id: "status", label: "状态" }]);
+    expect(html).not.toContain("gantt-conflict");
+    expect(html).toContain("状态：待开始");
+  });
+
+  it("冲突对象名称做 HTML 转义", () => {
+    const html = formatGanttTooltip({
+      ...plan,
+      ownerConflict: {
+        owner: "lxj",
+        counterparts: [{ id: "e3aa2a7a-7f3e-6b2f-9d8f-2c6ce3c4d5e6", label: "<x>任务</x>", startAt: localIso(2026, 8, 6), endAt: localIso(2026, 8, 7) }],
+      },
+    }, []);
+    expect(html).toContain("与【&lt;x&gt;任务&lt;/x&gt;】");
+    expect(html).not.toContain("<x>任务</x>");
   });
 });

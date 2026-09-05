@@ -338,6 +338,35 @@ describe("work plan table columns", () => {
     expect(screen.getByTitle("8").classList.contains("plan-cell-centered")).toBe(true);
     view.unmount();
   });
+
+  it("marks conflict rows and passes the owner field to the gantt timeline", async () => {
+    const conflicted: WorkPlan = {
+      ...plan,
+      id: "f1e2d3c4-b5a6-4789-8abc-def012345678",
+      title: "冲突计划",
+      ownerConflict: {
+        owner: "lxj",
+        counterparts: [{ id: copiedPlanId, label: "示例计划", startAt: plan.startAt, endAt: plan.endAt }],
+      },
+    };
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/export-templates") return [exportTemplate];
+      if (path === "/owner-account-mappings") return [];
+      if (path === "/monthly-goals") return [];
+      if (path === "/work-plans/query" && init?.method === "POST") return emulateQuery([plan, conflicted], init);
+      if (path.startsWith("/work-plans")) return [plan];
+      if (path.startsWith("/custom-fields")) return [ownerField, effortField];
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+
+    const view = renderPage();
+    await screen.findByText("冲突计划");
+
+    expect(view.container.querySelector(".plan-row[data-plan-id=\"f1e2d3c4-b5a6-4789-8abc-def012345678\"]")?.classList.contains("plan-row-conflict")).toBe(true);
+    expect(view.container.querySelector(".plan-row[data-plan-id=\"b70cff45-b93c-4dff-ab87-e15ef3d2494f\"]")?.classList.contains("plan-row-conflict")).toBe(false);
+    await waitFor(() => expect(ganttPropsMock).toHaveBeenCalledWith(expect.objectContaining({ ownerField })));
+    view.unmount();
+  });
 });
 
 describe("work plan ordering and copying", () => {

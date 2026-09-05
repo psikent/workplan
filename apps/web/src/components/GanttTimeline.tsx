@@ -20,6 +20,7 @@ type Props = {
   reminders?: ReminderDay[];
   displayProperties?: GanttDisplayProperty[];
   tooltipProperties?: GanttDisplayProperty[];
+  ownerField?: CustomFieldDefinition;
   view: "week" | "month";
   rangeStart: Date;
   rangeEnd: Date;
@@ -55,12 +56,13 @@ const EMPTY_REMINDER_DAYS: ReminderDay[] = [];
 const EMPTY_TIMELINE_TASK_ID = "__empty-timeline__";
 const BAR_DOUBLE_CLICK_WINDOW_MS = 500;
 
-function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, view, rangeStart, rangeEnd, verticalScrollPeerRef, taskListCollapsed = false, onScheduleChange, onSelect, onReminderSelect, onCreateAt, readOnly = false }: Props) {
+function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, ownerField, view, rangeStart, rangeEnd, verticalScrollPeerRef, taskListCollapsed = false, onScheduleChange, onSelect, onReminderSelect, onCreateAt, readOnly = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
   const plansByIdRef = useRef(plansById);
   const tooltipPropertiesRef = useRef(tooltipProperties);
+  const ownerFieldRef = useRef(ownerField);
   const onScheduleChangeRef = useRef(onScheduleChange);
   const onSelectRef = useRef(onSelect);
   const onReminderSelectRef = useRef(onReminderSelect);
@@ -75,11 +77,13 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
     plan.endAt,
     plan.status,
     formatGanttLabel(plan, displayProperties),
+    conflictSignature(plan),
   ])), [displayProperties, plans]);
   const remindersSignature = useMemo(() => JSON.stringify(reminders), [reminders]);
 
   plansByIdRef.current = plansById;
   tooltipPropertiesRef.current = tooltipProperties;
+  ownerFieldRef.current = ownerField;
   onScheduleChangeRef.current = onScheduleChange;
   onSelectRef.current = onSelect;
   onReminderSelectRef.current = onReminderSelect;
@@ -128,7 +132,8 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
           end: endOfLocalDay(new Date(plan.endAt)),
           progress: plan.status === "completed" ? 100 : plan.status === "in_progress" ? 50 : 0,
           dependencies: "",
-          custom_class: `gantt-${plan.status}`,
+          // 冲突条叠加警示类（规格 R4）：CSS 同权重规则靠后生效，覆盖状态配色
+          custom_class: `gantt-${plan.status}${plan.ownerConflict ? " gantt-conflict" : ""}`,
         }))
         : [{
           id: EMPTY_TIMELINE_TASK_ID,
@@ -173,7 +178,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
         popup: (context: { task: { id: string } }) => {
           const plan = plansByIdRef.current.get(context.task.id);
           if (!plan) return false;
-          return formatGanttTooltip(plan, tooltipPropertiesRef.current);
+          return formatGanttTooltip(plan, tooltipPropertiesRef.current, ownerFieldRef.current);
         },
         on_click: (task: { id: string }) => {
           const plan = plansByIdRef.current.get(task.id);
@@ -439,11 +444,13 @@ function formatGanttLabel(plan: WorkPlan, properties: GanttDisplayProperty[]) {
 
 // Renders the whole hover tooltip as HTML: a title line plus a details block
 // (Chinese date range, selected properties in order as "属性名：值", and the
-// duration for plans that are in progress or completed). Frappe Gantt's popup callback
-// replaces the .popup-wrapper innerHTML, so the class names below reuse the
-// library's existing tooltip styles while keeping the positioning handled by
-// configurePopupFollow untouched.
-export function formatGanttTooltip(plan: WorkPlan, properties: GanttDisplayProperty[]) {
+// duration for plans that are in progress or completed). Conflict plans (规格 R6)
+// additionally force an amber owner line plus a counterpart list, regardless of
+// the user's tooltip property configuration; non-conflict tooltips stay as-is.
+// Frappe Gantt's popup callback replaces the .popup-wrapper innerHTML, so the
+// class names below reuse the library's existing tooltip styles while keeping
+// the positioning handled by configurePopupFollow untouched.
+export function formatGanttTooltip(plan: WorkPlan, properties: GanttDisplayProperty[], ownerField?: CustomFieldDefinition) {
   const start = startOfLocalDay(new Date(plan.startAt));
   const end = startOfLocalDay(new Date(plan.endAt));
   const crossMonthOrYear = start.getFullYear() !== end.getFullYear() || start.getMonth() !== end.getMonth();
@@ -458,7 +465,27 @@ export function formatGanttTooltip(plan: WorkPlan, properties: GanttDisplayPrope
   if (plan.status === "in_progress" || plan.status === "completed") {
     lines.push(`持续 ${calendarDayCount(start, end)} 天`);
   }
-  return `<div class="title">${escapeHtml(plan.title)}</div><div class="details">${lines.join("<br/>")}</div>`;
+  let html = `<div class="title">${escapeHtml(plan.title)}</div><div class="details">${lines.join("<br/>")}</div>`;
+  if (plan.ownerConflict) {
+    const ownerLabel = ownerField?.label ?? "工作负责人";
+    const ownerValue = ownerField
+      ? formatCustomFieldValue(plan.customFields.owner, ownerField)
+      : String(plan.customFields.owner ?? "");
+    const items = plan.ownerConflict.counterparts.map((counterpart) => {
+      const counterpartStart = startOfLocalDay(new Date(counterpart.startAt));
+      const counterpartEnd = startOfLocalDay(new Date(counterpart.endAt));
+      const counterpartCross = counterpartStart.getFullYear() !== counterpartEnd.getFullYear()
+        || counterpartStart.getMonth() !== counterpartEnd.getMonth();
+      return escapeHtml(`与【${counterpart.label}】${chineseDayLabel(counterpartStart, counterpartCross)} - ${chineseDayLabel(counterpartEnd, counterpartCross)} 时间冲突`);
+    });
+    html += `<div class="details gantt-conflict-block"><span class="gantt-conflict-owner">${escapeHtml(`${ownerLabel}：${ownerValue}`)}</span><br/>${items.join("<br/>")}</div>`;
+  }
+  return html;
+}
+
+// 冲突标记参与 ganttInputSignature：冲突出现/消失（counterparts 增减）必须触发甘特重渲染（规格 R4）。
+function conflictSignature(plan: WorkPlan) {
+  return plan.ownerConflict ? plan.ownerConflict.counterparts.map((counterpart) => counterpart.id).join(",") : "";
 }
 
 /**

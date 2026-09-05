@@ -378,6 +378,11 @@ export default function WorkPlansPage() {
       return property ? [property] : [];
     });
   }, [availableTooltipProperties, tooltipDisplayIds]);
+  // 冲突提示的强制负责人行需要 owner 字段定义（选项 label 展示与字段名）。
+  const ownerField = useMemo(
+    () => (fieldsQuery.data ?? []).find((field) => field.key === "owner" && !field.archivedAt),
+    [fieldsQuery.data],
+  );
   const planGridStyle = useMemo(() => ({
     "--plan-grid-template": ["minmax(180px, 1.5fr)", ...visibleColumns.map((column) => `${column.width}px`)].join(" "),
     "--plan-grid-min-width": `${180 + visibleColumns.reduce((total, column) => total + column.width, 0)}px`,
@@ -1029,7 +1034,7 @@ export default function WorkPlansPage() {
           onDoubleClick={() => setListPercent(defaultListPercent)}
         />
         <div className="planner-timeline">
-          <GanttTimeline plans={plans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} />
+          <GanttTimeline plans={plans} reminders={remindersQuery.data?.days ?? []} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} ownerField={ownerField} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} />
         </div>
       </div>
 
@@ -1068,7 +1073,7 @@ function PlanRow({ plan, columns, goalsById, onSelect }: { plan: WorkPlan; colum
     return goal ? [goal] : [];
   });
   return (
-    <div className="plan-row" data-plan-id={plan.id}>
+    <div className={`plan-row${plan.ownerConflict ? " plan-row-conflict" : ""}`} data-plan-id={plan.id}>
       <div className="plan-row-title-cell">
         <button className="plan-title-button" type="button" onClick={() => onSelect(plan)}><strong>{plan.title}</strong></button>
         {chips.length > 0 ? (
