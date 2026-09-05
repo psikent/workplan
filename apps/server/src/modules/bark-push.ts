@@ -33,6 +33,11 @@ type BarkPushLogKey = {
   plan_id: string;
 };
 
+// 进程内在途互斥：调度 tick 每 60s 触发且不 await，推送网络耗时长于一个 tick 时
+// 两个 run 可能并发——hasPushLog → await sendOne → INSERT 之间的窗口会双发
+// （唯一索引只挡日志行，第二次 INSERT 抛错被吞）。单实例部署下整轮互斥即可。
+let runInFlight = false;
+
 /**
  * 每日 09:30（Asia/Shanghai）推送检修单提醒（R3/D3/D4/D5/D6）：
  * - 本地时间未到 09:30 或设备 Key 未配置 → 直接返回（功能关闭，零报错）。
@@ -42,6 +47,16 @@ type BarkPushLogKey = {
  * 本函数不向调用方抛异常；单计划失败互不影响。
  */
 export async function runDailyBarkPush(deps: BarkPushDeps): Promise<void> {
+  if (runInFlight) return;
+  runInFlight = true;
+  try {
+    await runDailyBarkPushInner(deps);
+  } finally {
+    runInFlight = false;
+  }
+}
+
+async function runDailyBarkPushInner(deps: BarkPushDeps): Promise<void> {
   const log = deps.log;
   try {
     const now = deps.now ? deps.now() : Date.now();

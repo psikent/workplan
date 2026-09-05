@@ -298,6 +298,19 @@ export async function buildApp(options: BuildAppOptions = {}) {
         });
         return;
       }
+      // 静态资源请求不走 SPA 兜底：资源缺失（如发版间隙的旧 hash 文件）应返回 404，
+      // 而不是 200 + text/html 让前端拿到 HTML 当 JS 解析、难以察觉。
+      const pathname = (request.url.split("?")[0] ?? request.url);
+      if (pathname.startsWith("/assets/") || pathname.includes(".")) {
+        reply.code(404).send({
+          type: "https://workplan.local/problems/not-found",
+          title: "NOT_FOUND",
+          status: 404,
+          code: "NOT_FOUND",
+          detail: "静态资源不存在",
+        });
+        return;
+      }
       reply
         .type("text/html")
         .header("Cache-Control", "no-cache")

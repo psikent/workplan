@@ -81,7 +81,12 @@ export class TransferService {
   import(payload: unknown): { imported: true; counts: Record<string, number> } {
     const parsed = this.assertShape(payload);
     const execute = this.database.sqlite.transaction(() => this.replace(parsed));
-    execute();
+    try {
+      execute();
+    } catch (error) {
+      // 与 validate 一致：FK/约束等入库错误以 422 参数错误返回，而不是 500
+      throw invalidInput(`导入失败：${error instanceof Error ? error.message : String(error)}`);
+    }
     return {
       imported: true,
       counts: this.importCounts(parsed),

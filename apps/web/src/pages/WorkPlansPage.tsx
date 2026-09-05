@@ -4,9 +4,10 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
 import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, MonthlyGoal, OwnerAccountMapping, ReminderDay, WorkPlan, WorkPlanQueryRequest, WorkPlanQueryResponse, WorkPlanSeries, WorkPlanSortItem, WorkPlanStatus } from "@workplan/contracts";
 import { formatWorkPlanSortParam, parseWorkPlanSortParam } from "@workplan/contracts";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, PanelLeftClose, PanelLeftOpen, Plus, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import GanttTimeline, { type GanttDisplayId, type GanttDisplayProperty } from "../components/GanttTimeline";
+import { ColumnSettings, GanttPropertySettings, SortSettings, type PlanColumn } from "../components/plan-settings";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/ToastProvider";
 import WorkPlanDrawer from "../components/WorkPlanDrawer";
@@ -14,15 +15,31 @@ import { useSession } from "../App";
 import { api, downloadWorkPlansXlsCustom, fetchReminders, fileToBase64, jsonBody } from "../lib/api";
 import { canWriteBusinessData } from "../lib/permissions";
 import { endOfMonth, endOfWeek, formatCustomFieldValue, formatDate, startOfMonth, startOfWeek, statusLabels } from "../lib/format";
+import {
+  clampListPercent,
+  cleanSortItems,
+  collapsePreferencesKey,
+  columnPreferencesKey,
+  defaultColumnIds,
+  defaultGanttDisplayIds,
+  defaultListPercent,
+  defaultTooltipDisplayIds,
+  ganttPreferencesKey,
+  listPercentBounds,
+  loadCollapsedPreference,
+  loadColumnPreferences,
+  loadGanttPreferences,
+  loadListPercent,
+  loadSortPreference,
+  loadTooltipPreferences,
+  matchesMobileViewport,
+  mobileViewportQuery,
+  saveSortPreference,
+  splitPreferencesKey,
+  tooltipPreferencesKey,
+  type ColumnId,
+} from "../lib/plan-preferences";
 
-type BuiltInColumnId = "status" | "startAt" | "endAt";
-type ColumnId = BuiltInColumnId | `custom:${string}`;
-type PlanColumn = {
-  id: ColumnId;
-  label: string;
-  width: number;
-  field?: CustomFieldDefinition;
-};
 type ExportAttribute = { source: string; label: string };
 type CreatedWorkPlanSeries = { series: WorkPlanSeries; generated: WorkPlan[] };
 type SaveMutationResult = { created: boolean; createdPlans: WorkPlan[] };
@@ -31,30 +48,7 @@ function isTextPlanColumn(column: PlanColumn) {
   return column.field?.type === "short_text" || column.field?.type === "long_text";
 }
 
-const columnPreferencesKey = "workplan:list-columns:v1";
-const ganttPreferencesKey = "workplan:gantt-properties:v1";
-const tooltipPreferencesKey = "workplan:gantt-tooltip:v1";
-const splitPreferencesKey = "workplan:planner-split:v1";
-const collapsePreferencesKey = "workplan:planner-collapsed:v1";
-const sortPreferencesKeyPrefix = "workplan:list-sort:v1";
-const mobileViewportQuery = "(max-width: 720px)";
-const defaultColumnIds: ColumnId[] = ["status", "startAt", "endAt"];
-const defaultGanttDisplayIds: GanttDisplayId[] = [];
-const defaultTooltipDisplayIds: GanttDisplayId[] = [];
-const defaultListPercent = 44;
-const minimumPaneWidth = 360;
-const dividerWidth = 8;
 const pageSize = 200;
-const sortableBuiltInLabels: Record<string, string> = {
-  title: "工作内容",
-  status: "状态",
-  startAt: "开始时间",
-  endAt: "结束时间",
-  duration: "持续时长",
-  createdAt: "创建时间",
-  updatedAt: "更新时间",
-};
-const sortableCustomFieldTypes = new Set(["short_text", "url", "number", "boolean", "date", "datetime", "single_select"]);
 const builtInColumns: PlanColumn[] = [
   { id: "status", label: "状态", width: 89 },
   { id: "startAt", label: "开始时间", width: 96 },
@@ -63,140 +57,6 @@ const builtInColumns: PlanColumn[] = [
 // 稳定空数组：加载期的 `?? []` 字面量每次渲染都是新引用，会让 memo 化的 GanttTimeline 失效。
 const EMPTY_PLANS: WorkPlan[] = [];
 const EMPTY_REMINDER_DAYS: ReminderDay[] = [];
-
-function sortPreferencesKey(accountId: string) {
-  return `${sortPreferencesKeyPrefix}:${accountId}`;
-}
-
-function loadSortPreference(accountId: string): WorkPlanSortItem[] | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(sortPreferencesKey(accountId)) ?? "null") as unknown;
-    if (!saved || typeof saved !== "object") return null;
-    const value = saved as { version?: unknown; sort?: unknown };
-    if (value.version !== 1 || !Array.isArray(value.sort)) return null;
-    const items: WorkPlanSortItem[] = [];
-    const seen = new Set<string>();
-    for (const raw of value.sort) {
-      if (!raw || typeof raw !== "object") return null;
-      const { field, direction } = raw as { field?: unknown; direction?: unknown };
-      if (typeof field !== "string" || (direction !== "asc" && direction !== "desc")) return null;
-      if (seen.has(field)) return null;
-      seen.add(field);
-      items.push({ field, direction });
-    }
-    return items;
-  } catch {
-    return null;
-  }
-}
-
-function saveSortPreference(accountId: string, items: WorkPlanSortItem[]) {
-  try {
-    window.localStorage.setItem(sortPreferencesKey(accountId), JSON.stringify({ version: 1, sort: items }));
-  } catch {
-    // 排序偏好保留到本次会话即可。
-  }
-}
-
-// 逐项清理偏好：未知/归档/类型不支持的排序字段剔除，空值按缺失处理不拦截。
-function cleanSortItems(items: WorkPlanSortItem[], fields: CustomFieldDefinition[]): WorkPlanSortItem[] {
-  return items.filter((item) => {
-    if (item.field.startsWith("custom.")) {
-      const key = item.field.slice("custom.".length);
-      const field = fields.find((candidate) => candidate.key === key);
-      return Boolean(field && !field.archivedAt && sortableCustomFieldTypes.has(field.type));
-    }
-    return item.field in sortableBuiltInLabels;
-  });
-}
-
-function loadColumnPreferences(): ColumnId[] {
-  if (typeof window === "undefined") return defaultColumnIds;
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(columnPreferencesKey) ?? "null") as unknown;
-    if (!saved || typeof saved !== "object") return defaultColumnIds;
-    const value = saved as { version?: unknown; visibleIds?: unknown };
-    if (value.version !== 1 || !Array.isArray(value.visibleIds)) return defaultColumnIds;
-    return Array.from(new Set(value.visibleIds.filter((id): id is ColumnId =>
-      typeof id === "string" && (defaultColumnIds.includes(id as BuiltInColumnId) || id.startsWith("custom:")),
-    )));
-  } catch {
-    return defaultColumnIds;
-  }
-}
-
-function loadGanttPreferences(): GanttDisplayId[] {
-  if (typeof window === "undefined") return defaultGanttDisplayIds;
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(ganttPreferencesKey) ?? "null") as unknown;
-    if (!saved || typeof saved !== "object") return defaultGanttDisplayIds;
-    const value = saved as { version?: unknown; visibleIds?: unknown };
-    if (value.version !== 1 || !Array.isArray(value.visibleIds)) return defaultGanttDisplayIds;
-    return Array.from(new Set(value.visibleIds.filter((id): id is GanttDisplayId =>
-      id === "status" || id === "title" || (typeof id === "string" && id.startsWith("custom:")),
-    )));
-  } catch {
-    return defaultGanttDisplayIds;
-  }
-}
-
-function loadTooltipPreferences(): GanttDisplayId[] {
-  if (typeof window === "undefined") return defaultTooltipDisplayIds;
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(tooltipPreferencesKey) ?? "null") as unknown;
-    if (!saved || typeof saved !== "object") return defaultTooltipDisplayIds;
-    const value = saved as { version?: unknown; visibleIds?: unknown };
-    if (value.version !== 1 || !Array.isArray(value.visibleIds)) return defaultTooltipDisplayIds;
-    return Array.from(new Set(value.visibleIds.filter((id): id is GanttDisplayId =>
-      id === "status" || (typeof id === "string" && id.startsWith("custom:")),
-    )));
-  } catch {
-    return defaultTooltipDisplayIds;
-  }
-}
-
-function loadListPercent(): number {
-  if (typeof window === "undefined") return defaultListPercent;
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(splitPreferencesKey) ?? "null") as unknown;
-    if (!saved || typeof saved !== "object") return defaultListPercent;
-    const value = saved as { version?: unknown; listPercent?: unknown };
-    if (value.version !== 1 || typeof value.listPercent !== "number" || !Number.isFinite(value.listPercent)) return defaultListPercent;
-    return clampListPercent(value.listPercent, 0);
-  } catch {
-    return defaultListPercent;
-  }
-}
-
-function loadCollapsedPreference(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(collapsePreferencesKey) ?? "null") as unknown;
-    if (!saved || typeof saved !== "object") return false;
-    const value = saved as { version?: unknown; collapsed?: unknown };
-    if (value.version !== 1 || typeof value.collapsed !== "boolean") return false;
-    return value.collapsed;
-  } catch {
-    return false;
-  }
-}
-
-function matchesMobileViewport() {
-  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(mobileViewportQuery).matches;
-}
-
-function listPercentBounds(panelWidth: number) {
-  if (panelWidth <= 0) return { min: 25, max: 75 };
-  const min = minimumPaneWidth / panelWidth * 100;
-  const max = (panelWidth - minimumPaneWidth - dividerWidth) / panelWidth * 100;
-  return min <= max ? { min, max } : { min: 50, max: 50 };
-}
-
-function clampListPercent(percent: number, panelWidth: number) {
-  const bounds = listPercentBounds(panelWidth);
-  return Math.min(bounds.max, Math.max(bounds.min, percent));
-}
 
 function duplicateTitle(title: string) {
   const suffix = "（副本）";
@@ -1109,198 +969,6 @@ function PlanRow({ plan, columns, goalsById, onSelect }: { plan: WorkPlan; colum
         ) : null}
       </div>
       {columns.map((column) => <PlanColumnValue key={column.id} column={column} plan={plan} />)}
-    </div>
-  );
-}
-
-function SortSettings({ items, fields, appliedItems, queryFailed, onChange, onClose }: {
-  items: WorkPlanSortItem[];
-  fields: CustomFieldDefinition[];
-  appliedItems: WorkPlanSortItem[];
-  queryFailed: boolean;
-  onChange: (items: WorkPlanSortItem[]) => void;
-  onClose: () => void;
-}) {
-  const labelOf = (field: string) => {
-    if (field.startsWith("custom.")) {
-      const definition = fields.find((candidate) => candidate.key === field.slice("custom.".length));
-      return definition ? `${definition.label}（自定义）` : field;
-    }
-    return sortableBuiltInLabels[field] ?? field;
-  };
-  const availableFieldKeys = [
-    ...Object.keys(sortableBuiltInLabels),
-    ...fields
-      .filter((field) => !field.archivedAt && sortableCustomFieldTypes.has(field.type))
-      .map((field) => `custom.${field.key}`),
-  ];
-  const addable = availableFieldKeys.filter((key) => !items.some((item) => item.field === key));
-  const sameSort = (left: WorkPlanSortItem[], right: WorkPlanSortItem[]) =>
-    left.length === right.length && left.every((item, index) => item.field === right[index]?.field && item.direction === right[index]?.direction);
-  const defaultActive = items.length === 0;
-
-  return (
-    <div className="advanced-filter-panel sort-panel" role="dialog" aria-label="排序设置">
-      <header className="sort-panel-head">
-        <div>
-          <strong>排序</strong>
-          <small>{defaultActive ? "当前：排期顺序（默认）" : `当前按 ${items.map((item) => labelOf(item.field)).join(" → ")} 排序`}</small>
-        </div>
-        <span className="sort-panel-actions">
-          {defaultActive ? null : <button className="text-button" type="button" onClick={() => onChange([])}><RotateCcw />恢复默认</button>}
-          <button className="text-button" type="button" onClick={onClose}>关闭</button>
-        </span>
-      </header>
-      {queryFailed && !sameSort(items, appliedItems) ? <div className="form-error" role="status">最近一次排序未应用成功，表格仍按之前的顺序显示。</div> : null}
-      {items.length === 0 ? <p className="sort-panel-hint">未添加排序项时，表格与甘特图按默认排期顺序显示。</p> : null}
-      <ol className="sort-item-list">
-        {items.map((item, index) => (
-          <li className="sort-item-row" key={item.field}>
-            <span className="sort-item-rank" aria-hidden>{index + 1}</span>
-            <span className="sort-item-label">{labelOf(item.field)}</span>
-            <button
-              type="button"
-              aria-label={`${labelOf(item.field)} 方向 ${item.direction === "asc" ? "升序，点击改为降序" : "降序，点击改为升序"}`}
-              onClick={() => onChange(items.map((candidate, candidateIndex) => (candidateIndex === index ? { ...candidate, direction: candidate.direction === "asc" ? "desc" as const : "asc" as const } : candidate)))}
-            >
-              {item.direction === "asc" ? <ArrowUp /> : <ArrowDown />}{item.direction === "asc" ? "升序" : "降序"}
-            </button>
-            <span className="column-order-actions">
-              <button type="button" aria-label={`上移 ${labelOf(item.field)}`} disabled={index <= 0} onClick={() => onChange(arrayMove(items, index, index - 1))}><ArrowUp /></button>
-              <button type="button" aria-label={`下移 ${labelOf(item.field)}`} disabled={index < 0 || index === items.length - 1} onClick={() => onChange(arrayMove(items, index, index + 1))}><ArrowDown /></button>
-              <button type="button" aria-label={`移除 ${labelOf(item.field)}`} onClick={() => onChange(items.filter((_, candidateIndex) => candidateIndex !== index))}>移除</button>
-            </span>
-          </li>
-        ))}
-      </ol>
-      <div className="sort-add-row">
-        <select
-          aria-label="添加排序字段"
-          value=""
-          disabled={items.length >= 5 || addable.length === 0}
-          onChange={(event) => {
-            if (!event.target.value) return;
-            onChange([...items, { field: event.target.value, direction: "asc" }]);
-            event.target.value = "";
-          }}
-        >
-          <option value="">{items.length >= 5 ? "最多五项排序" : "添加排序字段"}</option>
-          {addable.map((key) => <option key={key} value={key}>{labelOf(key)}</option>)}
-        </select>
-        <small>最多五项，从上到下是优先级；并列时按默认排期顺序兜底。</small>
-      </div>
-    </div>
-  );
-}
-
-function ColumnSettings({ columns, visibleIds, onToggle, onMove, onReset }: {
-  columns: PlanColumn[];
-  visibleIds: ColumnId[];
-  onToggle: (id: ColumnId) => void;
-  onMove: (id: ColumnId, direction: -1 | 1) => void;
-  onReset: () => void;
-}) {
-  const columnsById = new Map(columns.map((column) => [column.id, column]));
-  const orderedColumns = [
-    ...visibleIds.flatMap((id) => {
-      const column = columnsById.get(id);
-      return column ? [column] : [];
-    }),
-    ...columns.filter((column) => !visibleIds.includes(column.id)),
-  ];
-  return (
-    <div className="column-settings-popover" role="dialog" aria-label="列设置">
-      <header><div><strong>列设置</strong><small>选择显示内容并调整顺序</small></div><button className="text-button" type="button" onClick={onReset}><RotateCcw />恢复默认</button></header>
-      <div className="column-settings-list">
-        <label className="column-setting-row fixed"><input type="checkbox" checked disabled /><span>工作内容</span><small>固定</small></label>
-        {orderedColumns.map((column) => {
-          const checked = visibleIds.includes(column.id);
-          const visibleIndex = visibleIds.indexOf(column.id);
-          return (
-            <div className="column-setting-row" key={column.id}>
-              <label><input type="checkbox" checked={checked} onChange={() => onToggle(column.id)} /><span>{column.label}</span></label>
-              {column.field ? <small>自定义字段</small> : null}
-              <div className="column-order-actions">
-                <button type="button" aria-label={`上移 ${column.label}`} disabled={!checked || visibleIndex <= 0} onClick={() => onMove(column.id, -1)}><ArrowUp /></button>
-                <button type="button" aria-label={`下移 ${column.label}`} disabled={!checked || visibleIndex < 0 || visibleIndex === visibleIds.length - 1} onClick={() => onMove(column.id, 1)}><ArrowDown /></button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function GanttPropertySettings({ properties, tooltipProperties, visibleIds, onToggle, onMove, onReset, tooltipVisibleIds, onToggleTooltip, onMoveTooltip, onResetTooltip }: {
-  properties: GanttDisplayProperty[];
-  tooltipProperties: GanttDisplayProperty[];
-  visibleIds: GanttDisplayId[];
-  onToggle: (id: GanttDisplayId) => void;
-  onMove: (id: GanttDisplayId, direction: -1 | 1) => void;
-  onReset: () => void;
-  tooltipVisibleIds: GanttDisplayId[];
-  onToggleTooltip: (id: GanttDisplayId) => void;
-  onMoveTooltip: (id: GanttDisplayId, direction: -1 | 1) => void;
-  onResetTooltip: () => void;
-}) {
-  const propertiesById = new Map(properties.map((property) => [property.id, property]));
-  const tooltipPropertiesById = new Map(tooltipProperties.map((property) => [property.id, property]));
-  const orderedProperties = [
-    ...visibleIds.flatMap((id) => {
-      const property = propertiesById.get(id);
-      return property ? [property] : [];
-    }),
-    ...properties.filter((property) => !visibleIds.includes(property.id)),
-  ];
-  const orderedTooltipProperties = [
-    ...tooltipVisibleIds.flatMap((id) => {
-      const property = tooltipPropertiesById.get(id);
-      return property ? [property] : [];
-    }),
-    ...tooltipProperties.filter((property) => !tooltipVisibleIds.includes(property.id)),
-  ];
-  return (
-    <div className="column-settings-popover gantt-property-popover" role="dialog" aria-label="甘特条属性">
-      <header><div><strong>甘特条属性</strong><small>选择并排序甘特条内显示的内容</small></div><button className="text-button" type="button" onClick={onReset}><RotateCcw />清空</button></header>
-      <div className="column-settings-list">
-        {orderedProperties.map((property) => {
-          const checked = visibleIds.includes(property.id);
-          const visibleIndex = visibleIds.indexOf(property.id);
-          return (
-            <div className="column-setting-row" key={property.id}>
-              <label><input type="checkbox" checked={checked} onChange={() => onToggle(property.id)} /><span>{property.label}</span></label>
-              {property.field ? <small>自定义字段</small> : <small>内置属性</small>}
-              <div className="column-order-actions">
-                <button type="button" aria-label={`上移甘特属性 ${property.label}`} disabled={!checked || visibleIndex <= 0} onClick={() => onMove(property.id, -1)}><ArrowUp /></button>
-                <button type="button" aria-label={`下移甘特属性 ${property.label}`} disabled={!checked || visibleIndex < 0 || visibleIndex === visibleIds.length - 1} onClick={() => onMove(property.id, 1)}><ArrowDown /></button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="gantt-popover-section">
-        <div className="gantt-popover-section-head">
-          <div><strong>甘特条浮动提示</strong><small>选择并排序悬停提示内显示的内容</small></div>
-          <button className="text-button" type="button" onClick={onResetTooltip}><RotateCcw />清空</button>
-        </div>
-        <div className="column-settings-list">
-          {orderedTooltipProperties.map((property) => {
-            const checked = tooltipVisibleIds.includes(property.id);
-            const visibleIndex = tooltipVisibleIds.indexOf(property.id);
-            return (
-              <div className="column-setting-row" key={property.id}>
-                <label><input type="checkbox" aria-label={`浮动提示 ${property.label}`} checked={checked} onChange={() => onToggleTooltip(property.id)} /><span>{property.label}</span></label>
-                {property.field ? <small>自定义字段</small> : <small>内置属性</small>}
-                <div className="column-order-actions">
-                  <button type="button" aria-label={`上移浮动提示 ${property.label}`} disabled={!checked || visibleIndex <= 0} onClick={() => onMoveTooltip(property.id, -1)}><ArrowUp /></button>
-                  <button type="button" aria-label={`下移浮动提示 ${property.label}`} disabled={!checked || visibleIndex < 0 || visibleIndex === tooltipVisibleIds.length - 1} onClick={() => onMoveTooltip(property.id, 1)}><ArrowDown /></button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 }

@@ -33,7 +33,11 @@ export function useSystemTheme(): Theme {
   return theme;
 }
 
+// 画布色与 index.html 内联启动脚本保持同值：切换主题时同步地址栏/状态栏颜色。
+const THEME_COLOR: Record<Theme, string> = { light: "#f8fafc", dark: "#020617" };
+
 export function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_COLOR[theme]);
 }

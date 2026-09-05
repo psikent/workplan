@@ -1,5 +1,5 @@
 import type { OwnerConflict, OwnerConflictCounterpart, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
-import { deriveWorkPlanStatus } from "@workplan/contracts";
+import { compareCodePointStrings, deriveWorkPlanStatus } from "@workplan/contracts";
 import type { DatabaseBundle } from "../db/index.js";
 
 // 冲突判定的输入投影（规格 R1/R2）：同 owner、[startAt, endAt) 半开精确相交、
@@ -27,19 +27,23 @@ function overlaps(left: Pick<OwnerConflictItem, "startAt" | "endAt">, right: Pic
 // 全局冲突计算（规格 R2）：按 owner 值分组、组内按 startAt 排序后扫描重叠对，
 // 输出 id → ownerConflict 映射；成对关系，不做连通分量聚类。
 // 复杂度 O(n log n)（n 为活跃且 owner 非空的任务数），团队量级数百条，开销可忽略。
+// 并列决胜与 counterparts 排序用码点序（与契约包排序约定一致，UUID 为 ASCII 时等价）。
 export function computeOwnerConflicts(items: OwnerConflictItem[]): Map<string, OwnerConflict> {
   const groups = new Map<string, OwnerConflictItem[]>();
   for (const item of items) {
-    // 空 owner（未指派）与 completed/cancelled 不参与冲突。
-    if (!item.owner || !ACTIVE_CONFLICT_STATUSES.has(item.status)) continue;
-    const group = groups.get(item.owner);
-    if (group) group.push(item);
-    else groups.set(item.owner, [item]);
+    // 空/纯空白 owner（未指派）与 completed/cancelled 不参与冲突；归一化一次，
+    // 保证分组键与响应内 ownerConflict.owner 同值。
+    const owner = item.owner.trim();
+    if (!owner || !ACTIVE_CONFLICT_STATUSES.has(item.status)) continue;
+    const normalized = owner === item.owner ? item : { ...item, owner };
+    const group = groups.get(owner);
+    if (group) group.push(normalized);
+    else groups.set(owner, [normalized]);
   }
 
   const result = new Map<string, OwnerConflict>();
   for (const group of groups.values()) {
-    group.sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt) || left.id.localeCompare(right.id));
+    group.sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt) || compareCodePointStrings(left.id, right.id));
     for (let left = 0; left < group.length; left++) {
       const earlier = group[left]!;
       for (let right = left + 1; right < group.length; right++) {
@@ -52,7 +56,7 @@ export function computeOwnerConflicts(items: OwnerConflictItem[]): Map<string, O
     }
   }
   for (const entry of result.values()) {
-    entry.counterparts.sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt) || left.id.localeCompare(right.id));
+    entry.counterparts.sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt) || compareCodePointStrings(left.id, right.id));
   }
   return result;
 }
@@ -71,11 +75,12 @@ export function conflictCounterpartsFor(
   items: OwnerConflictItem[],
   excludeId?: string,
 ): OwnerConflictCounterpart[] {
-  if (!target.owner) return [];
+  const owner = target.owner.trim();
+  if (!owner) return [];
   const projection = excludeId ? items.filter((item) => item.id !== excludeId) : items;
   const withTarget: OwnerConflictItem[] = [
     ...projection,
-    { id: CONFLICT_CHECK_TARGET_ID, label: "", owner: target.owner, startAt: target.startAt, endAt: target.endAt, status: "in_progress" },
+    { id: CONFLICT_CHECK_TARGET_ID, label: "", owner, startAt: target.startAt, endAt: target.endAt, status: "in_progress" },
   ];
   return computeOwnerConflicts(withTarget).get(CONFLICT_CHECK_TARGET_ID)?.counterparts ?? [];
 }
@@ -94,6 +99,9 @@ type OwnerConflictRow = {
 // 必须与请求视野无关（ADR 0008）。owner 取值口径与 getValues/serializeRow 一致：
 // 字符串型列（text/url/date/datetime）参与判定，数值/布尔/多选视为未指派；
 // 活跃状态不在此处过滤，交由 computeOwnerConflicts 按求值时刻统一判定。
+// 口径前提（见 ADR 0008）：产品约束 owner 字段应为 single_select——ownerAccount
+// 派生只认 single_select 选项，冲突判定接受任意文本是安全的超集（历史自由文本
+// 仍能标冲突）；两侧读出的 owner 统一 trim，纯空白视为未指派。
 export function loadOwnerConflictItems(database: DatabaseBundle, evaluatedAt: string): OwnerConflictItem[] {
   const rows = database.sqlite
     .prepare(
@@ -106,11 +114,12 @@ export function loadOwnerConflictItems(database: DatabaseBundle, evaluatedAt: st
     .all() as OwnerConflictRow[];
   const now = Date.parse(evaluatedAt);
   return rows.flatMap((row) => {
-    if (!row.owner_value) return [];
+    const owner = row.owner_value?.trim();
+    if (!owner) return [];
     return [{
       id: row.id,
       label: row.title,
-      owner: row.owner_value,
+      owner,
       startAt: row.start_at,
       endAt: row.end_at,
       status: row.status_mode === "manual" ? row.status : deriveWorkPlanStatus(row.start_at, row.end_at, now),

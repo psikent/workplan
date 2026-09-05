@@ -147,6 +147,8 @@ export class WorkPlanService {
     const startAt = this.normalizeInstant(input.startAt ?? current.startAt);
     const endAt = this.normalizeInstant(input.endAt ?? current.endAt);
     this.assertTimeRange(startAt, endAt);
+    // 历史兼容：PATCH 只带 status 不带 statusMode 视为切换手动状态（契约注释同步说明）；
+    // Web 客户端始终显式携带 statusMode，不会走到隐式分支。
     const statusMode = input.statusMode ?? (input.status !== undefined ? "manual" : current.statusMode);
     if (statusMode === "manual" && !input.status && current.statusMode !== "manual") {
       throw invalidInput("手动状态必须指定状态值");

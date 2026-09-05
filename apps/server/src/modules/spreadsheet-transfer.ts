@@ -210,9 +210,14 @@ export class SpreadsheetTransferService {
     const title = String(values.get("title") ?? "").trim();
     if (!title) throw new Error("标题不能为空");
     const statusText = String(values.get("status") ?? "").trim();
-    const status = statusText
-      ? statusesByLabel.get(statusText) ?? (Object.hasOwn(statusLabels, statusText) ? statusText as WorkPlanStatus : "pending")
-      : undefined;
+    // 状态与日期/选项同样严格：未知文本报错（行级 422），而不是静默落成"待开始"
+    let status: WorkPlanStatus | undefined;
+    if (statusText) {
+      const mapped = statusesByLabel.get(statusText)
+        ?? (Object.hasOwn(statusLabels, statusText) ? statusText as WorkPlanStatus : undefined);
+      if (!mapped) throw new Error(`未知状态：“${statusText}”`);
+      status = mapped;
+    }
     const customFields: Record<string, unknown> = {};
     for (const column of template.columns) {
       if (!column.source.startsWith("custom:")) continue;

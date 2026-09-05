@@ -31,6 +31,8 @@ export const isoDateSchema = z.iso.date();
 // 负责人时段冲突（Owner Conflict）是响应侧派生只读字段：由服务端全局计算后随
 // 查询/详情响应返回；创建/更新入参（workPlanValuesSchema，strict）不含该字段，
 // 因此不可经入参写入。counterparts 按开始时间升序，成对不传递（见 ADR 0008）。
+// owner 取值：服务端判定入口统一 trim——空串与纯空白视为未指派，不参与冲突；
+// 前提是 owner 字段产品约束为 single_select（ownerAccount 派生只认该类型）。
 export const ownerConflictCounterpartSchema = z.object({
   id: z.string().uuid(),
   label: z.string(),
@@ -114,6 +116,9 @@ export const updateWorkPlanSchema = workPlanValuesSchema
     validateTimeRange(value, context);
     validateManualStatus(value, context);
   });
+// 注意：PATCH 只带 status 而不带 statusMode 时，服务端把状态模式隐式切换为 manual
+// （历史 API 兼容行为）；Web 客户端始终显式携带 statusMode。调用方若想保持自动派生，
+// 必须显式传 statusMode: "automatic"。
 
 export const updateScheduleSchema = z
   .object({
@@ -294,6 +299,9 @@ export const reminderDaySchema = z.object({
   reminders: z.array(reminderSchema),
 });
 
+// 提醒推导按日循环并加载全量计划：限制查询跨度，防止超长区间拖垮服务端。
+const MAX_REMINDER_SPAN_DAYS = 366;
+
 export const listRemindersQuerySchema = z
   .object({
     from: isoDateSchema,
@@ -302,6 +310,12 @@ export const listRemindersQuerySchema = z
   .refine((value) => value.from <= value.to, {
     message: "结束日期不能早于开始日期",
     path: ["to"],
+  })
+  .superRefine((value, context) => {
+    const spanDays = (Date.parse(value.to) - Date.parse(value.from)) / 86_400_000;
+    if (spanDays > MAX_REMINDER_SPAN_DAYS) {
+      context.addIssue({ code: "custom", path: ["to"], message: `提醒查询区间不能超过 ${MAX_REMINDER_SPAN_DAYS} 天` });
+    }
   });
 
 export const listRemindersResponseSchema = z.object({
@@ -1025,8 +1039,9 @@ export function deriveWorkPlanStatus(startAt: string, endAt: string, now = Date.
 
 // ---------- 排期顺序与自然文本排序键（票据 08 选定方案的共享实现） ----------
 
-function compareCodePointStrings(a: string, b: string): number {
-  // 码点序比较，等价于 UTF-8 字节序 / SQLite BINARY；不能用 JS 字符串 `<`（UTF-16 序）。
+// 码点序比较，等价于 UTF-8 字节序 / SQLite BINARY；不能用 JS 字符串 `<`（UTF-16 序）。
+// 服务端并列决胜（如冲突清单同 startAt 的 id 决胜）也应复用本函数，保持跨环境确定性。
+export function compareCodePointStrings(a: string, b: string): number {
   let leftIndex = 0;
   let rightIndex = 0;
   while (leftIndex < a.length && rightIndex < b.length) {

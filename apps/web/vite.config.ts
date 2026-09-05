@@ -27,8 +27,10 @@ export default defineConfig({
         start_url: "/",
         scope: "/",
         display: "standalone",
-        background_color: "#f6f8fb",
-        theme_color: "#f6f8fb",
+        // PWA 安装启动屏为静态清单，无法随应用主题切换——统一取浅色画布（--canvas
+        // 浅色值，与 index.html meta theme-color 同值），暗色用户启动屏为浅色属已知取舍。
+        background_color: "#f8fafc",
+        theme_color: "#f8fafc",
         icons: [
           { src: "pwa-192x192.png", sizes: "192x192", type: "image/png" },
           { src: "pwa-512x512.png", sizes: "512x512", type: "image/png" },

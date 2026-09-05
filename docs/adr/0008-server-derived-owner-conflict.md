@@ -26,3 +26,5 @@ Status: accepted
 - 冲突标记与请求的范围/筛选/分页无关；编辑抽屉的未保存实时校核另走 conflict-check 端点，两者共享同一判定函数，语义不会漂移。
 - 判定输入投影包含 `status`（而非由 SQL 预筛活跃）：活跃条件是判定语义的一部分，收敛在纯函数内便于单元测试全覆盖。
 - 按规格决策，冲突警示色统一走 amber 色板（与表单报错的 coral 拉开层级）；甘特 pending 状态本身即琥珀系，冲突条以更深的 `--gantt-bar-conflict` token 区分并以其余三处提醒补强辨识。
+- owner 取值口径前提：产品约束 owner 字段应为 **single_select**——`ownerAccount` 派生（`owner-accounts.ts`）只认 single_select 选项；冲突判定接受任意文本列（text/url/date/datetime 的 COALESCE）是安全的超集，历史自由文本数据仍能标冲突。两侧读出的 owner 统一 trim，空串与纯空白视为未指派。
+- conflict-check 的假设目标恒按 `status: "in_progress"` 参与判定（2026-09-05 拍板保持现状）：过去区间的编辑会产生过度提醒，属「仅提醒不阻止保存」语义下的可接受取舍。
