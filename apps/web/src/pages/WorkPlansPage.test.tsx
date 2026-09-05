@@ -248,10 +248,37 @@ describe("editor permissions", () => {
     expect(screen.getByRole("button", { name: /导出 XLS/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "新建工作计划" })).toBeTruthy();
     expect(screen.queryByText("导入 XLS")).toBeNull();
+    // 编辑角色没有导入权限：拆分按钮不渲染下拉箭头
+    expect(screen.queryByRole("button", { name: "导入 XLS" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /导出 XLS/ }));
     expect(screen.queryByLabelText("另存为模板名称")).toBeNull();
     expect(screen.getByRole("button", { name: "导出" })).toBeTruthy();
+    view.unmount();
+  });
+});
+
+describe("plan create split button", () => {
+  it("sits at the filter toolbar's right edge and toggles the import dropdown", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    const toolbar = view.container.querySelector(".filter-toolbar");
+    const createButton = screen.getByRole("button", { name: "新建工作计划" });
+    const importArrow = screen.getByRole("button", { name: "导入 XLS" });
+    expect(toolbar!.contains(createButton)).toBe(true);
+    expect(toolbar!.contains(importArrow)).toBe(true);
+    expect(createButton.closest(".plan-create-split")).not.toBeNull();
+    expect(importArrow.getAttribute("aria-expanded")).toBe("false");
+    expect(view.container.querySelector('input[type="file"][accept*=".xls"]')).toBeNull();
+
+    fireEvent.click(importArrow);
+    expect(importArrow.getAttribute("aria-expanded")).toBe("true");
+    expect(view.container.querySelector('input[type="file"][accept*=".xls"]')).not.toBeNull();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(view.container.querySelector('input[type="file"][accept*=".xls"]')).toBeNull());
+    expect(importArrow.getAttribute("aria-expanded")).toBe("false");
     view.unmount();
   });
 });
@@ -1002,6 +1029,8 @@ describe("XLS transfer", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const view = renderPage();
     await screen.findByRole("option", { name: "标准工作计划" });
+    // 导入入口收在新建按钮右侧的下拉箭头里，先展开菜单
+    fireEvent.click(screen.getByRole("button", { name: "导入 XLS" }));
     const input = view.container.querySelector('input[type="file"][accept*=".xls"]') as HTMLInputElement;
     await waitFor(() => expect(input.disabled).toBe(false));
 

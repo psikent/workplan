@@ -4,7 +4,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
 import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, MonthlyGoal, OwnerAccountMapping, ReminderDay, WorkPlan, WorkPlanQueryRequest, WorkPlanQueryResponse, WorkPlanSeries, WorkPlanSortItem, WorkPlanStatus } from "@workplan/contracts";
 import { formatWorkPlanSortParam, parseWorkPlanSortParam } from "@workplan/contracts";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, PanelLeftClose, PanelLeftOpen, Plus, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, PanelLeftClose, PanelLeftOpen, Plus, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import GanttTimeline, { type GanttDisplayId, type GanttDisplayProperty } from "../components/GanttTimeline";
 import { ColumnSettings, GanttPropertySettings, SortSettings, type PlanColumn } from "../components/plan-settings";
@@ -131,6 +131,7 @@ export default function WorkPlansPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [spreadsheetMessage, setSpreadsheetMessage] = useState("");
   const [exportPopoverOpen, setExportPopoverOpen] = useState(false);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
   const [exportSources, setExportSources] = useState<string[] | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -382,6 +383,15 @@ export default function WorkPlansPage() {
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [exportPopoverOpen]);
+
+  useEffect(() => {
+    if (!importMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setImportMenuOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [importMenuOpen]);
 
   useEffect(() => {
     try {
@@ -661,6 +671,7 @@ export default function WorkPlansPage() {
   async function importXls(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || !selectedTemplate) return;
+    setImportMenuOpen(false);
     if (file.size > 6_000_000) {
       setSpreadsheetMessage("XLS 文件不能超过 6 MB");
       event.target.value = "";
@@ -818,8 +829,6 @@ export default function WorkPlansPage() {
               </>
             ) : null}
           </div>
-          {user.role === "admin" ? <label className={`secondary-button file-button ${!selectedTemplateCanImport ? "disabled" : ""}`} title={selectedTemplateCanImport ? "按所选模板新增工作计划" : "导入模板必须包含工作内容、开始时间和结束时间"}><Upload />导入 XLS<input type="file" accept="application/vnd.ms-excel,.xls" disabled={!selectedTemplateCanImport} onChange={(event) => void importXls(event)} /></label> : null}
-          {canWrite ? <button className="primary-button" type="button" onClick={() => { setSelected(null); setNewPlanDate(null); setDrawerOpen(true); }}><Plus />新建工作计划</button> : null}
         </div>
       </header>
       {canWrite ? null : <p className="read-only-hint" role="note">当前账户为只读账户：可查询、筛选、查看详情和导出，不能新建或修改工作计划。</p>}
@@ -832,6 +841,27 @@ export default function WorkPlansPage() {
         <div className="column-settings-wrap sort-settings-wrap">
           <button className={`secondary-button compact-button ${showSortSettings ? "selected" : ""}`} type="button" aria-label="排序设置" aria-haspopup="dialog" aria-expanded={showSortSettings} onClick={() => setShowSortSettings((value) => !value)}><ArrowUpDown />排序</button>
         </div>
+        {canWrite ? (
+          <div className={`plan-create-split ${user.role === "admin" ? "with-import" : ""}`}>
+            <button className="primary-button" type="button" onClick={() => { setSelected(null); setNewPlanDate(null); setDrawerOpen(true); }}><Plus />新建工作计划</button>
+            {user.role === "admin" ? (
+              <div className="plan-create-menu-wrap">
+                <button className="primary-button plan-create-arrow" type="button" aria-label="导入 XLS" aria-haspopup="menu" aria-expanded={importMenuOpen} title="导入 XLS" onClick={() => setImportMenuOpen((value) => !value)}><ChevronDown /></button>
+                {importMenuOpen ? (
+                  <>
+                    <div className="export-popover-backdrop" onClick={() => setImportMenuOpen(false)} />
+                    <div className="plan-create-menu">
+                      <label className={`plan-create-menu-item file-button ${!selectedTemplateCanImport ? "disabled" : ""}`} title={selectedTemplateCanImport ? "按所选模板新增工作计划" : "导入模板必须包含工作内容、开始时间和结束时间"}>
+                        <Upload />导入 XLS
+                        <input type="file" accept="application/vnd.ms-excel,.xls" disabled={!selectedTemplateCanImport} onChange={(event) => void importXls(event)} />
+                      </label>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {pageNotice ? <div className="spreadsheet-transfer-message" role="status">{pageNotice}</div> : null}
       {plansQuery.isError ? (
