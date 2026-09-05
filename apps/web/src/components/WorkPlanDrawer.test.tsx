@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { CustomFieldDefinition, MonthlyGoal, WorkPlan, WorkPlanSeries } from "@workplan/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import WorkPlanDrawer from "./WorkPlanDrawer";
+
+const apiMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/api")>()),
+  api: apiMock,
+}));
 
 const plan: WorkPlan = {
   id: "b70cff45-b93c-4dff-ab87-e15ef3d2494f",
@@ -233,7 +240,7 @@ describe("WorkPlanDrawer", () => {
       />,
     );
 
-    const controls = Array.from(view.container.querySelectorAll(".custom-field-list > .field"));
+    const controls = Array.from(view.container.querySelectorAll(".custom-field-list .field"));
     expect(controls.map((control) => control.querySelector("span")?.textContent)).toEqual(["工作负责人", "工作负责人账号"]);
     const account = screen.getByLabelText("工作负责人账号") as HTMLInputElement;
     expect(account.readOnly).toBe(true);
@@ -349,6 +356,105 @@ describe("WorkPlanDrawer", () => {
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.any(Object), null));
     view.unmount();
+  });
+
+  describe("owner conflict alerts (规格 R7)", () => {
+    const ownerSelect = customField({
+      id: "f9a9dc48-e819-4b1b-89a3-ee680649e842",
+      key: "owner",
+      label: "工作负责人",
+      type: "single_select",
+      options: [
+        { id: "44a6325a-caa8-43e1-b998-567a816ec272", value: "fengmingqian", label: "冯铭倩", sortOrder: 0, archivedAt: null, version: 1 },
+        { id: "a1a22ca6-4a22-496d-9ac0-077dd5278463", value: "linyaqian", label: "林雅茜", sortOrder: 1, archivedAt: null, version: 1 },
+      ],
+    });
+    const counterpart = { id: "8b6c2c1e-9b0d-4f8e-a1c2-3d4e5f6a7b8c", label: "现场勘查", startAt: plan.startAt, endAt: plan.endAt };
+    const conflictedPlan: WorkPlan = {
+      ...plan,
+      customFields: { owner: "fengmingqian" },
+      ownerConflict: { owner: "fengmingqian", counterparts: [counterpart] },
+    };
+    const hintPattern = /该负责人在此时段已有其他任务/;
+
+    afterEach(() => {
+      cleanup();
+      vi.useRealTimers();
+      apiMock.mockReset();
+    });
+
+    it("打开已冲突的计划立即提醒，无需等待防抖", () => {
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+      const view = render(
+        <WorkPlanDrawer plan={conflictedPlan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} />,
+      );
+
+      expect(view.container.querySelector(".owner-conflict-zone.owner-conflict-active")).toBeTruthy();
+      expect(screen.getByText(hintPattern).textContent).toContain("与【现场勘查】");
+      expect(apiMock).not.toHaveBeenCalled();
+      view.unmount();
+    });
+
+    it("编辑负责人后防抖校核出现冲突，请求携带编辑中的 id 与区间；解除后提醒消失", async () => {
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+      apiMock.mockResolvedValue({ owner: "fengmingqian", counterparts: [counterpart] });
+      const view = render(
+        <WorkPlanDrawer plan={plan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} />,
+      );
+      expect(screen.queryByText(hintPattern)).toBeNull();
+
+      fireEvent.change(screen.getByLabelText("工作负责人"), { target: { value: "fengmingqian" } });
+      expect(apiMock).not.toHaveBeenCalled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(apiMock).toHaveBeenCalledTimes(1);
+      const [, init] = apiMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(String(init.body))).toEqual({
+        id: plan.id,
+        owner: "fengmingqian",
+        startAt: plan.startAt,
+        endAt: plan.endAt,
+      });
+      expect(screen.getByText(hintPattern).textContent).toContain("与【现场勘查】");
+
+      apiMock.mockResolvedValue({ owner: "linyaqian", counterparts: [] });
+      fireEvent.change(screen.getByLabelText("工作负责人"), { target: { value: "linyaqian" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(apiMock).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText(hintPattern)).toBeNull();
+      view.unmount();
+    });
+
+    it("owner 清空后不查询并清除提醒", async () => {
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+      apiMock.mockResolvedValue({ owner: "fengmingqian", counterparts: [] });
+      const view = render(
+        <WorkPlanDrawer plan={plan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} />,
+      );
+
+      fireEvent.change(screen.getByLabelText("工作负责人"), { target: { value: "fengmingqian" } });
+      fireEvent.change(screen.getByLabelText("工作负责人"), { target: { value: "" } });
+      await vi.advanceTimersByTimeAsync(400);
+      expect(apiMock).not.toHaveBeenCalled();
+      expect(screen.queryByText(hintPattern)).toBeNull();
+      view.unmount();
+    });
+
+    it("冲突提醒不阻止保存", async () => {
+      const onSave = vi.fn().mockResolvedValue(undefined);
+      const view = render(
+        <WorkPlanDrawer plan={conflictedPlan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={onSave} />,
+      );
+      expect(screen.getByText(hintPattern)).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+      expect(onSave.mock.calls[0]?.[0]).toMatchObject({ customFields: { owner: "fengmingqian" } });
+      view.unmount();
+    });
   });
 
   describe("monthly goal section", () => {

@@ -336,6 +336,11 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .field-grid > .full { grid-column: 1 / -1; }
 .field-grid.compact { gap: 10px; }
 .custom-field-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+/* 负责人冲突提醒（规格 R7/R8）：外层容器边框警示色 + 小字提醒，仅提示不阻止保存；
+   常驻透明边框与负边距抵消，避免冲突出现/消失时布局跳动 */
+.owner-conflict-zone { display: grid; gap: 14px; padding: 8px; margin: -9px; border: 1px solid transparent; border-radius: 8px; }
+.owner-conflict-zone.owner-conflict-active { border-color: var(--amber-line); }
+.owner-conflict-hint { margin: 0; color: var(--amber-text); font-size: 10px; line-height: 1.5; font-weight: 400; }
 .form-section { min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 7px; }
 .form-section legend { display: flex; align-items: center; gap: 7px; padding: 0 7px; color: var(--text-soft); font-size: 12px; font-weight: 650; }
 .form-section legend svg { width: 15px; height: 15px; color: var(--accent); }

@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
-import type { CreateWorkPlan, CustomFieldDefinition, MonthlyGoal, OwnerAccountMapping, WorkPlan, WorkPlanSeries, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
+import type { CreateWorkPlan, CustomFieldDefinition, MonthlyGoal, OwnerAccountMapping, OwnerConflictCounterpart, WorkPlan, WorkPlanConflictCheckResponse, WorkPlanSeries, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
 import { Archive, CalendarClock, Copy, Repeat2, Target, X } from "lucide-react";
-import { fromDateTimeLocal, statusLabels, toDateTimeLocal } from "../lib/format";
+import { api, jsonBody } from "../lib/api";
+import { formatDate, fromDateTimeLocal, statusLabels, toDateTimeLocal } from "../lib/format";
 import { rangeOverlapsMonth } from "../lib/period";
 
 type RecurrenceInput = { frequency: "daily" | "weekly" | "monthly"; interval: number; timeZone: string } | null;
@@ -76,6 +77,13 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   );
   const validPlanRange = isValidPlanRange(startAt, endAt);
 
+  // 负责人冲突实时提醒（规格 R7）：初始态用 plan 快照携带的 ownerConflict，
+  // owner/起止任一变化后防抖调用 conflict-check 覆盖；仅提醒，不阻止保存。
+  const [conflictCounterparts, setConflictCounterparts] = useState<OwnerConflictCounterpart[] | null>(null);
+  const conflictCheckSequence = useRef(0);
+  const ownerValue = typeof customValues.owner === "string" ? customValues.owner : "";
+  const conflictCheckKey = `${ownerValue}|${startAt}|${endAt}`;
+
   useEffect(() => {
     const nextDefaults = defaultTimes(initialDate ?? undefined);
     setTitle(plan?.title ?? "");
@@ -96,6 +104,36 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
     const defaults = defaultCustomValues(fields);
     setCustomValues((current) => ({ ...defaults, ...current }));
   }, [fields, open, plan]);
+
+  // 防抖实时校核：声明在表单重置 effect 之后、初始快照 effect 之前——挂载首轮
+  // customValues 尚未重置，其同步清除必须先于快照写入执行，否则会覆盖初始提醒。
+  useEffect(() => {
+    if (!open) return;
+    // owner 为空或起止未填齐/区间非法：不发请求，清除提醒。
+    if (!ownerValue || !isValidPlanRange(startAt, endAt)) {
+      setConflictCounterparts(null);
+      return;
+    }
+    const startIso = fromDateTimeLocal(startAt);
+    const endIso = fromDateTimeLocal(endAt);
+    const sequence = ++conflictCheckSequence.current;
+    const timer = window.setTimeout(() => {
+      api<WorkPlanConflictCheckResponse>("/work-plans/conflict-check", {
+        method: "POST",
+        ...jsonBody({ ...(plan ? { id: plan.id } : {}), owner: ownerValue, startAt: startIso, endAt: endIso }),
+      }).then((result) => {
+        // 竞态以最后一次请求为准。
+        if (conflictCheckSequence.current !== sequence) return;
+        setConflictCounterparts(result.counterparts.length > 0 ? result.counterparts : null);
+      }).catch(() => undefined);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [conflictCheckKey, open, plan]);
+
+  useEffect(() => {
+    if (!open) return;
+    setConflictCounterparts(plan?.ownerConflict?.counterparts ?? null);
+  }, [open, plan]);
 
   useEffect(() => {
     if (!open || statusMode !== "automatic" || !startAt || !endAt) return;
@@ -267,8 +305,19 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
               <legend><CalendarClock />自定义字段</legend>
               <div className="custom-field-list">{activeFields.map((field) => (
                 <Fragment key={field.id}>
-                  <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
-                  {field.key === "owner" ? <label className="field derived-field"><span>工作负责人账号</span><input value={ownerAccountDisplay} readOnly aria-readonly="true" /></label> : null}
+                  {field.key === "owner" ? (
+                    <div className={`owner-conflict-zone${conflictCounterparts ? " owner-conflict-active" : ""}`}>
+                      <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
+                      <label className="field derived-field"><span>工作负责人账号</span><input value={ownerAccountDisplay} readOnly aria-readonly="true" /></label>
+                      {conflictCounterparts ? (
+                        <p className="owner-conflict-hint" role="status">
+                          该负责人在此时段已有其他任务：{conflictCounterparts.map((counterpart) => `与【${counterpart.label}】${formatDate(counterpart.startAt, true)} - ${formatDate(counterpart.endAt, true)} 时间冲突`).join("；")}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
+                  )}
                 </Fragment>
               ))}</div>
             </fieldset>
