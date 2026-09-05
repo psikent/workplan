@@ -78,6 +78,8 @@ button, input, select, textarea { font: inherit; }
 /* 防止 iOS Safari 聚焦输入框时自动放大：触屏设备上输入控件字号不低于 16px */
 @media (pointer: coarse) {
   input, select, textarea { font-size: max(16px, 1em) !important; }
+  /* iOS WebKit 对带水平 padding 的 datetime-local 会错误计算 100% 宽度，导致抽屉横向溢出。 */
+  .field input[type="datetime-local"] { padding-inline: 0; }
 }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { color: inherit; }
