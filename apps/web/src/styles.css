@@ -185,6 +185,8 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .advanced-filter-panel { min-height: 50px; display: flex; align-items: center; gap: 10px; margin: -5px 0 13px; padding: 8px 11px; border: 1px solid var(--accent-panel-border); border-radius: 7px; background: var(--accent-panel-bg); }
 .advanced-filter-panel strong { margin-right: 4px; font-size: 12px; }
 .advanced-filter-panel select, .advanced-filter-panel input { height: 34px; min-width: 170px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; }
+.advanced-filter-panel .filter-secondary-summary { max-width: 220px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.advanced-filter-panel .filter-reset-button { min-height: 34px; flex: 0 0 auto; }
 .filter-toolbar select, .search-control { height: 38px; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; }
 .filter-toolbar select { min-width: 138px; padding: 0 34px 0 12px; color: var(--text-soft); }
 .search-control { width: min(280px, 30vw); display: flex; align-items: center; gap: 8px; padding: 0 11px; }

@@ -175,6 +175,12 @@ function renderPage(initialEntry = "/work-plans", locationRef?: { current: strin
   );
 }
 
+function selectFilterField(label: string) {
+  const fieldSelect = screen.getByRole("combobox", { name: "筛选字段" });
+  const option = within(fieldSelect).getByRole("option", { name: label });
+  fireEvent.change(fieldSelect, { target: { value: option.getAttribute("value") } });
+}
+
 function headerLabels(container: HTMLElement) {
   return Array.from(container.querySelectorAll(".planner-columns > span"), (node) => node.textContent ?? "");
 }
@@ -496,17 +502,67 @@ describe("work plan range and Gantt display", () => {
     fireEvent.change(searchInput, { target: { value: "不存在" } });
     await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plans: [] }));
 
-    fireEvent.change(view.container.querySelector(".filter-toolbar select")!, { target: { value: "completed" } });
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+    selectFilterField("状态");
+    fireEvent.change(screen.getByRole("combobox", { name: "筛选值" }), { target: { value: "completed" } });
     await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plans: [] }));
 
-    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
-    const advancedSelects = view.container.querySelectorAll(".advanced-filter-panel select");
-    fireEvent.change(advancedSelects[0]!, { target: { value: "owner" } });
+    selectFilterField("负责人");
     await waitFor(() => expect(screen.getByPlaceholderText("输入筛选值")).toBeTruthy());
     fireEvent.change(screen.getByPlaceholderText("输入筛选值"), { target: { value: "nobody" } });
-    await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plans: [] }));
+    await waitFor(() => {
+      expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plans: [] });
+      const queryCall = apiMock.mock.calls
+        .filter(([path, init]) => path === "/work-plans/query" && init?.method === "POST")
+        .at(-1);
+      expect(JSON.parse(String(queryCall?.[1]?.body))).toMatchObject({
+        filters: [
+          { field: "status", op: "eq", value: "completed" },
+          { field: "custom.owner", op: "contains", value: "nobody" },
+        ],
+      });
+    });
 
     expect(screen.getByText("这个时间范围还没有工作计划")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("puts status into the field filter and keeps reset in the expanded filter row", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    expect(screen.queryByText("全部状态")).toBeNull();
+    const filterButton = screen.getByRole("button", { name: "筛选" });
+    expect(filterButton.getAttribute("aria-expanded")).toBe("false");
+    expect(filterButton.getAttribute("aria-controls")).toBe("work-plan-filter-panel");
+    fireEvent.click(filterButton);
+    expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+    expect(view.container.querySelector("#work-plan-filter-panel")).not.toBeNull();
+    expect(screen.getByText("字段筛选")).toBeTruthy();
+    expect(within(screen.getByRole("combobox", { name: "筛选字段" })).getByRole("option", { name: "状态" })).toBeTruthy();
+
+    selectFilterField("状态");
+    fireEvent.change(screen.getByRole("combobox", { name: "筛选值" }), { target: { value: "completed" } });
+    await waitFor(() => {
+      const queryCall = apiMock.mock.calls
+        .filter(([path, init]) => path === "/work-plans/query" && init?.method === "POST")
+        .at(-1);
+      expect(JSON.parse(String(queryCall?.[1]?.body))).toMatchObject({ filters: [{ field: "status", op: "eq", value: "completed" }] });
+    });
+
+    const resetButton = screen.getByRole("button", { name: "重置" });
+    expect(resetButton.closest(".advanced-filter-panel")).not.toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "筛选词" } });
+    fireEvent.click(resetButton);
+    expect((screen.getByPlaceholderText("搜索工作计划") as HTMLInputElement).value).toBe("");
+    expect((screen.getByRole("combobox", { name: "筛选字段" }) as HTMLSelectElement).value).toBe("");
+    expect(screen.getByRole("button", { name: "重置" }).closest(".advanced-filter-panel")).not.toBeNull();
+    await waitFor(() => {
+      const queryCall = apiMock.mock.calls
+        .filter(([path, init]) => path === "/work-plans/query" && init?.method === "POST")
+        .at(-1);
+      expect(JSON.parse(String(queryCall?.[1]?.body))).toMatchObject({ filters: [] });
+    });
     view.unmount();
   });
 
@@ -553,16 +609,15 @@ describe("work plan range and Gantt display", () => {
     view.unmount();
   });
 
-  it("shows normal creation feedback and preserves the active range and filters", async () => {
+  it("shows normal creation feedback and preserves the active range and custom field filter", async () => {
     mockMutableWorkPlans();
     const view = renderPage();
     await screen.findByText("示例计划");
     const initialGantt = ganttPropsMock.mock.calls.at(-1)?.[0] as { rangeStart: Date; rangeEnd: Date; view: string };
 
     fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "新计划" } });
-    fireEvent.change(view.container.querySelector(".filter-toolbar select")!, { target: { value: "pending" } });
     fireEvent.click(screen.getByRole("button", { name: "筛选" }));
-    fireEvent.change(view.container.querySelector(".advanced-filter-panel select")!, { target: { value: "owner" } });
+    selectFilterField("负责人");
     await waitFor(() => expect(screen.getByPlaceholderText("输入筛选值")).toBeTruthy());
     fireEvent.change(screen.getByPlaceholderText("输入筛选值"), { target: { value: "lxj" } });
     await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ plans: [] }));
@@ -585,8 +640,7 @@ describe("work plan range and Gantt display", () => {
 
     expect(await screen.findByText("工作计划已保存")).toBeTruthy();
     expect((screen.getByPlaceholderText("搜索工作计划") as HTMLInputElement).value).toBe("新计划");
-    expect((view.container.querySelector(".filter-toolbar select") as HTMLSelectElement).value).toBe("pending");
-    expect((view.container.querySelector(".advanced-filter-panel select") as HTMLSelectElement).value).toBe("owner");
+    expect((screen.getByRole("combobox", { name: "筛选字段" }) as HTMLSelectElement).value).toBe("owner");
     expect((screen.getByPlaceholderText("输入筛选值") as HTMLInputElement).value).toBe("lxj");
     await waitFor(() => expect(ganttPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({
       rangeStart: initialGantt.rangeStart,
@@ -607,10 +661,14 @@ describe("work plan range and Gantt display", () => {
     const view = renderPage();
     await screen.findByText("示例计划");
     if (reason === "search") fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "只看这个标题" } });
-    if (reason === "status") fireEvent.change(view.container.querySelector(".filter-toolbar select")!, { target: { value: "completed" } });
+    if (reason === "status") {
+      fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+      selectFilterField("状态");
+      fireEvent.change(screen.getByRole("combobox", { name: "筛选值" }), { target: { value: "completed" } });
+    }
     if (reason === "Custom Field") {
       fireEvent.click(screen.getByRole("button", { name: "筛选" }));
-      fireEvent.change(view.container.querySelector(".advanced-filter-panel select")!, { target: { value: "owner" } });
+      selectFilterField("负责人");
       await waitFor(() => expect(screen.getByPlaceholderText("输入筛选值")).toBeTruthy());
       fireEvent.change(screen.getByPlaceholderText("输入筛选值"), { target: { value: "nobody" } });
     }

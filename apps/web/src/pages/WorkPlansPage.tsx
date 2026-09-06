@@ -49,6 +49,7 @@ function isTextPlanColumn(column: PlanColumn) {
 }
 
 const pageSize = 200;
+const STATUS_FILTER_KEY = "__status";
 const builtInColumns: PlanColumn[] = [
   { id: "status", label: "状态", width: 89 },
   { id: "startAt", label: "开始时间", width: 96 },
@@ -111,8 +112,10 @@ export default function WorkPlansPage() {
   const requestedPlanId = searchParams.get("plan");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
-  const [status, setStatus] = useState<WorkPlanStatus | "all">("all");
+  const [status, setStatus] = useState<WorkPlanStatus | "">("");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [filterKey, setFilterKey] = useState("");
+  const [filterValue, setFilterValue] = useState("");
   const [customFilterKey, setCustomFilterKey] = useState("");
   const [customFilterValue, setCustomFilterValue] = useState("");
   const [view, setView] = useState<"week" | "month">(() => initialTimelineView(searchParams.get("view")));
@@ -257,6 +260,17 @@ export default function WorkPlansPage() {
     () => (fieldsQuery.data ?? []).find((field) => field.key === "owner" && !field.archivedAt),
     [fieldsQuery.data],
   );
+  const selectedCustomFilterField = useMemo(
+    () => (fieldsQuery.data ?? []).find((field) => field.key === customFilterKey && !field.archivedAt),
+    [customFilterKey, fieldsQuery.data],
+  );
+  const secondaryFilterSummary = useMemo(() => {
+    if (filterKey === STATUS_FILTER_KEY && customFilterKey && customFilterValue && selectedCustomFilterField) {
+      return `${selectedCustomFilterField.label}：${formatCustomFieldValue(customFilterValue, selectedCustomFilterField)}`;
+    }
+    if (filterKey !== STATUS_FILTER_KEY && status) return `状态：${statusLabels[status]}`;
+    return null;
+  }, [customFilterKey, customFilterValue, filterKey, selectedCustomFilterField, status]);
   const planGridStyle = useMemo(() => ({
     "--plan-grid-template": ["minmax(180px, 1.5fr)", ...visibleColumns.map((column) => `${column.width}px`)].join(" "),
     "--plan-grid-min-width": `${180 + visibleColumns.reduce((total, column) => total + column.width, 0)}px`,
@@ -277,7 +291,7 @@ export default function WorkPlansPage() {
   // 表格与甘特共享同一份 items，前端不再二次排列。
   const queryFilters = useMemo(() => {
     const filters: WorkPlanQueryRequest["filters"] = [];
-    if (status !== "all") filters.push({ field: "status", op: "eq", value: status });
+    if (status) filters.push({ field: "status", op: "eq", value: status });
     const customFilter = customFilterToQueryFilter(customFilterKey, customFilterValue, fieldsQuery.data ?? []);
     if (customFilter) filters.push(customFilter);
     return filters;
@@ -498,7 +512,7 @@ export default function WorkPlansPage() {
       setNewPlanDate(null);
       const createdPlanVisible = result.createdPlans.some((plan) => {
         const searchHit = !deferredSearch || `${plan.title} ${plan.description}`.toLocaleLowerCase().includes(deferredSearch.toLocaleLowerCase());
-        const statusHit = status === "all" || plan.status === status;
+        const statusHit = !status || plan.status === status;
         const rangeHit = Date.parse(plan.endAt) > range[0]!.getTime() && Date.parse(plan.startAt) < range[1]!.getTime();
         const customHit = !customFilterKey || !customFilterValue || (() => {
           const field = (fieldsQuery.data ?? []).find((candidate) => candidate.key === customFilterKey);
@@ -782,6 +796,36 @@ export default function WorkPlansPage() {
     setListPercent(clampListPercent(next, panelWidth));
   }
 
+  function handleFilterKeyChange(nextKey: string) {
+    setFilterKey(nextKey);
+    if (nextKey === STATUS_FILTER_KEY) {
+      setFilterValue(status);
+      return;
+    }
+    const nextValue = nextKey === customFilterKey ? customFilterValue : "";
+    setCustomFilterKey(nextKey);
+    setCustomFilterValue(nextValue);
+    setFilterValue(nextValue);
+  }
+
+  function handleFilterValueChange(nextValue: string) {
+    setFilterValue(nextValue);
+    if (filterKey === STATUS_FILTER_KEY) {
+      setStatus(nextValue && nextValue in statusLabels ? nextValue as WorkPlanStatus : "");
+    } else if (filterKey) {
+      setCustomFilterValue(nextValue);
+    }
+  }
+
+  function resetFilters() {
+    setSearch("");
+    setStatus("");
+    setFilterKey("");
+    setFilterValue("");
+    setCustomFilterKey("");
+    setCustomFilterValue("");
+  }
+
   return (
     <section className="work-plans-page">
       <header className="page-header">
@@ -835,9 +879,7 @@ export default function WorkPlansPage() {
       {spreadsheetMessage ? <div className="spreadsheet-transfer-message" role="status">{spreadsheetMessage}</div> : null}
       <div className="filter-toolbar">
         <label className="search-control"><Search /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索工作计划" /></label>
-        <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}><option value="all">全部状态</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-        <button className={`secondary-button compact-button ${showAdvancedFilters ? "selected" : ""}`} type="button" onClick={() => setShowAdvancedFilters((value) => !value)}><SlidersHorizontal />筛选</button>
-        <button className="text-button" type="button" onClick={() => { setSearch(""); setStatus("all"); setCustomFilterKey(""); setCustomFilterValue(""); }}>重置</button>
+        <button className={`secondary-button compact-button ${showAdvancedFilters ? "selected" : ""}`} type="button" aria-expanded={showAdvancedFilters} aria-controls="work-plan-filter-panel" onClick={() => setShowAdvancedFilters((value) => !value)}><SlidersHorizontal />筛选</button>
         <div className="column-settings-wrap sort-settings-wrap">
           <button className={`secondary-button compact-button ${showSortSettings ? "selected" : ""}`} type="button" aria-label="排序设置" aria-haspopup="dialog" aria-expanded={showSortSettings} onClick={() => setShowSortSettings((value) => !value)}><ArrowUpDown />排序</button>
         </div>
@@ -881,10 +923,12 @@ export default function WorkPlansPage() {
         />
       ) : null}
       {showAdvancedFilters ? (
-        <div className="advanced-filter-panel">
-          <strong>自定义字段筛选</strong>
-          <select value={customFilterKey} onChange={(event) => { setCustomFilterKey(event.target.value); setCustomFilterValue(""); }}><option value="">选择字段</option>{fieldsQuery.data?.filter((field) => !field.archivedAt).map((field) => <option key={field.id} value={field.key}>{field.label}</option>)}</select>
-          <CustomFilterValue field={fieldsQuery.data?.find((field) => field.key === customFilterKey)} value={customFilterValue} onChange={setCustomFilterValue} />
+        <div id="work-plan-filter-panel" className="advanced-filter-panel">
+          <strong>字段筛选</strong>
+          <select aria-label="筛选字段" value={filterKey} onChange={(event) => handleFilterKeyChange(event.target.value)}><option value="">选择字段</option><option value={STATUS_FILTER_KEY}>状态</option>{fieldsQuery.data?.filter((field) => !field.archivedAt).map((field) => <option key={field.id} value={field.key}>{field.label}</option>)}</select>
+          <FilterValue filterKey={filterKey} field={fieldsQuery.data?.find((field) => field.key === filterKey)} value={filterValue} onChange={handleFilterValueChange} />
+          {secondaryFilterSummary ? <span className="filter-secondary-summary">已同时应用：{secondaryFilterSummary}</span> : null}
+          <button className="text-button filter-reset-button" type="button" onClick={resetFilters}>重置</button>
         </div>
       ) : null}
 
@@ -1016,9 +1060,16 @@ function formatWeekOfMonth(weekStart: Date) {
   return `${weekStart.getMonth() + 1}月第${ordinal}周`;
 }
 
+function FilterValue({ filterKey, field, value, onChange }: { filterKey: string; field: CustomFieldDefinition | undefined; value: string; onChange: (value: string) => void }) {
+  if (filterKey === STATUS_FILTER_KEY) {
+    return <select aria-label="筛选值" value={value} onChange={(event) => onChange(event.target.value)}><option value="">选择状态</option>{Object.entries(statusLabels).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select>;
+  }
+  return <CustomFilterValue field={field} value={value} onChange={onChange} />;
+}
+
 function CustomFilterValue({ field, value, onChange }: { field: CustomFieldDefinition | undefined; value: string; onChange: (value: string) => void }) {
-  if (!field) return <input value="" disabled placeholder="先选择字段" />;
-  if (["single_select", "multi_select"].includes(field.type)) return <select value={value} onChange={(event) => onChange(event.target.value)}><option value="">选择值</option>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select>;
-  if (field.type === "boolean") return <select value={value} onChange={(event) => onChange(event.target.value)}><option value="">选择值</option><option value="true">是</option><option value="false">否</option></select>;
-  return <input type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"} value={value} onChange={(event) => onChange(event.target.value)} placeholder="输入筛选值" />;
+  if (!field) return <input aria-label="筛选值" value="" disabled placeholder="先选择字段" />;
+  if (["single_select", "multi_select"].includes(field.type)) return <select aria-label="筛选值" value={value} onChange={(event) => onChange(event.target.value)}><option value="">选择值</option>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select>;
+  if (field.type === "boolean") return <select aria-label="筛选值" value={value} onChange={(event) => onChange(event.target.value)}><option value="">选择值</option><option value="true">是</option><option value="false">否</option></select>;
+  return <input aria-label="筛选值" type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"} value={value} onChange={(event) => onChange(event.target.value)} placeholder="输入筛选值" />;
 }
