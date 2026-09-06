@@ -1,6 +1,6 @@
 # Spec: 静态网站图标与青色主题对齐
 
-> Status: **待审批** — 已完成 grilling；Q1/Q2 采用推荐方案，等待用户批准实施票据。
+> Status: **已实施** — 票据 01–02 已完成（2026-09-06）；静态资源、设计说明、构建与回归验收通过。
 
 ## Goal
 
@@ -18,7 +18,7 @@
 ## Background facts
 
 - `apps/web/src/components/BrandMark.tsx` 已使用 `var(--accent)`，因此应用内图标已跟随当前主题。
-- `apps/web/scripts/generate-favicons.mjs` 仍把静态底色硬编码为 `#3157df`；`apps/web/public/favicon.svg` 也保留该旧值。
+- 实施前 `apps/web/scripts/generate-favicons.mjs` 把静态底色硬编码为 `#3157df`；`apps/web/public/favicon.svg` 也保留该旧值。
 - 当前浅色主题 `--accent` 为 `#0891b2`，深色主题 `--accent` 为 `#22d3ee`；PWA manifest 已引用现有静态资源，不需要新增入口。
 - 最近的青色主题提交已更新界面 token，但未重新生成静态品牌资源；本需求只补齐这一遗漏。
 
@@ -63,4 +63,3 @@
 ## Domain impact
 
 本需求不新增或改变 WorkPlan 领域术语、业务规则、数据模型和 API 契约，因此不修改 `CONTEXT.md` 或新增 ADR。
-

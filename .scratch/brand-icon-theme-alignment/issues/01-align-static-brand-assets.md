@@ -1,7 +1,7 @@
 # 01 — 对齐生成器并重生成静态品牌资源
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Spec: ../spec.md
 Scope: apps/web/scripts/generate-favicons.mjs, apps/web/public/* icon assets
 
@@ -26,3 +26,8 @@ Scope: apps/web/scripts/generate-favicons.mjs, apps/web/public/* icon assets
 
 - 2026-09-06 grilling Q1/Q2：用户确认采用当前青色主题并全量更新静态品牌资源。
 
+## Answer
+
+- 生成器与 SVG 底色已切换为 `#0891b2`，日历 glyph、白色线稿、透明边缘和全部尺寸保持不变。
+- 已重生成 favicon SVG/ICO、Apple touch icon、四个 PWA 图标和 `brand-preview.png`。
+- 生成脚本二次运行保持幂等；生成资源均通过 `file` 尺寸/格式检查，预览图人工确认视觉与当前主题一致。

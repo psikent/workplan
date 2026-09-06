@@ -4,8 +4,8 @@ Status: resolved
 
 扩展 `apps/web/scripts/generate-favicons.mjs`，新增输出：
 
-- `pwa-192x192.png`、`pwa-512x512.png`：延续现有视觉（#3157df 圆角瓷贴 + 白色日历图形）。
-- `pwa-maskable-192x192.png`、`pwa-maskable-512x512.png`：满铺 #3157df 方形，白色日历图形居中且缩至安全区（约 80%）内。
+- `pwa-192x192.png`、`pwa-512x512.png`：延续现有视觉（当前静态品牌色 `#0891b2` 圆角瓷贴 + 白色日历图形）。
+- `pwa-maskable-192x192.png`、`pwa-maskable-512x512.png`：满铺当前静态品牌色 `#0891b2` 方形，白色日历图形居中且缩至安全区（约 80%）内。
 
 运行 `pnpm favicons` 重新生成，产物提交进 `apps/web/public/`。
 
@@ -16,3 +16,5 @@ Blocked by: (none)
 ## Comments
 
 2026-09-02: 已实现并通过验收（build/typecheck/test 全绿；本地 prod 冒烟：SW 激活、图标 200、离线重试态、重建后更新提示与刷新均验证通过）。详见 spec.md。
+
+2026-09-06: 随全站强调色切换为青色，静态图标从历史靛蓝对齐为当前静态品牌色；几何、尺寸和 maskable 安全区保持不变。

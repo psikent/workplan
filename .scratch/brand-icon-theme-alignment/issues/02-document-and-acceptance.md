@@ -1,7 +1,7 @@
 # 02 — 更新设计说明并完成资源验收
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Spec: ../spec.md
 Blocked by: 01
 Scope: docs/design/DESIGN.md, web build and static asset acceptance
@@ -27,3 +27,8 @@ Scope: docs/design/DESIGN.md, web build and static asset acceptance
 
 - 2026-09-06 grilling Q1/Q2：用户确认采用当前青色主题并全量更新静态品牌资源。
 
+## Answer
+
+- `docs/design/DESIGN.md` 已更新为浅色 `#0891b2`、深色 `#22d3ee`，并记录静态安装图标使用稳定的浅色品牌色。
+- web build 通过；构建产物包含 favicon、Apple touch icon、普通/maskable PWA 图标，manifest 引用保持正确。
+- stale `#3157df` 扫描、`git diff --check`、typecheck 和全套测试均通过。首轮受沙箱禁止本地监听影响的测试已在允许绑定 `127.0.0.1` 后重跑并通过。

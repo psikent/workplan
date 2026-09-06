@@ -8,7 +8,7 @@ const outDir = process.argv[2] ? join(process.cwd(), process.argv[2]) : join(dir
 const TILE = { cx: 20, cy: 20, hx: 19.5, hy: 19.5, r: 10.5 };
 const GLYPH_TRANSLATE = { x: 8, y: 7.6 };
 const STROKE = 2.1;
-const TILE_COLOR = [0x31, 0x57, 0xdf];
+const TILE_COLOR = [0x08, 0x91, 0xb2];
 const GLYPH_COLOR = [0xff, 0xff, 0xff];
 
 const GLYPH_RECT = { cx: 12, cy: 13, hx: 9, hy: 9, r: 2 };
@@ -149,7 +149,7 @@ function encodeIco(sizes) {
 
 const GLYPH_SVG = [
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">',
-  '<rect x="0.5" y="0.5" width="39" height="39" rx="10.5" fill="#3157df"/>',
+  '<rect x="0.5" y="0.5" width="39" height="39" rx="10.5" fill="#0891b2"/>',
   '<g transform="translate(8 7.6)" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none">',
   '<rect x="3" y="4" width="18" height="18" rx="2"/>',
   '<path d="M16 2v4"/>',
