@@ -125,6 +125,56 @@ const click = (page, sel) => page.evaluate((s) => document.querySelector(s)?.cli
   const reloaded = await page.evaluate(() => document.documentElement.classList.contains("gantt-fullscreen"));
   check("刷新后为普通布局", !reloaded);
 
+  // 7) 周视图 + Esc 退出：日常主路径的布局恢复与滚动语义（周视图无横向溢出）
+  await click(page, ".gantt-fullscreen-toggle");
+  await page.waitForTimeout(800);
+  const weekEnter = await page.evaluate(() => document.documentElement.classList.contains("gantt-fullscreen"));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(600);
+  const weekExit = await page.evaluate(() => ({
+    fullscreen: document.documentElement.classList.contains("gantt-fullscreen"),
+    headerVisible: !!document.querySelector(".page-header")?.offsetParent,
+    sidebarVisible: !!document.querySelector(".sidebar")?.offsetParent,
+    left: document.querySelector(".gantt-container")?.scrollLeft ?? null,
+  }));
+  check("周视图可进入全屏", weekEnter);
+  check("周视图 Esc 退出恢复布局", !weekExit.fullscreen && weekExit.headerVisible && weekExit.sidebarVisible && weekExit.left === 0, weekExit);
+
+  // 8) 收起列表 + 月视图：真实触发“重建 + 恢复”路径（收起后时间轴占满面板，
+  // 月视图列宽随全屏宽度从 ~37px 变 ~46px，GanttTimeline 整图重建且有横向溢出）
+  await click(page, ".view-switch button:nth-child(2)"); // 月视图
+  await page.waitForTimeout(800);
+  await click(page, ".planner-collapse-button"); // 收起任务列表
+  await page.waitForTimeout(900);
+  await page.evaluate(() => {
+    const gc = document.querySelector(".gantt-container");
+    gc.dataset.qaMark = "1"; // 重建后新节点不带此标记，用于证明发生了节点替换
+    gc.scrollLeft = 400;
+  });
+  await page.waitForTimeout(300);
+  const before8 = await page.evaluate(() => document.querySelector(".gantt-container").scrollLeft);
+  await click(page, ".gantt-fullscreen-toggle");
+  await page.waitForTimeout(1500);
+  const after8 = await page.evaluate(() => {
+    const gc = document.querySelector(".gantt-container");
+    return {
+      fullscreen: document.documentElement.classList.contains("gantt-fullscreen"),
+      rebuilt: gc.dataset.qaMark !== "1",
+      left: gc.scrollLeft,
+      maxLeft: gc.scrollWidth - gc.clientWidth,
+    };
+  });
+  check("收起列表月视图进入全屏", after8.fullscreen);
+  check("收起列表月视图触发了甘特重建", after8.rebuilt);
+  check("重建后横向滚动恢复（按新容器钳制）", Math.abs(after8.left - Math.min(before8, after8.maxLeft)) <= 2, { before: before8, after: after8.left, maxLeft: after8.maxLeft });
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(900);
+  const exit8 = await page.evaluate(() => {
+    const gc = document.querySelector(".gantt-container");
+    return { fullscreen: document.documentElement.classList.contains("gantt-fullscreen"), left: gc.scrollLeft, maxLeft: gc.scrollWidth - gc.clientWidth };
+  });
+  check("退出后横向滚动恢复（按新容器钳制）", !exit8.fullscreen && Math.abs(exit8.left - Math.min(after8.left, exit8.maxLeft)) <= 2, exit8);
+
   const failed = results.filter((r) => !r.ok);
   console.log(failed.length === 0 ? "ALL PASS" : `${failed.length} FAILED`);
   await browser.close();

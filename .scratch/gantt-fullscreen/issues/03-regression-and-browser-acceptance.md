@@ -1,7 +1,7 @@
 # 03 — 全屏交互回归与浏览器验收
 
 Type: task
-Status: awaiting-approval
+Status: resolved
 Blocked by: 01, 02
 Spec: ../spec.md
 Scope: apps/web/src/pages/WorkPlansPage.test.tsx、apps/web/src/components/GanttTimeline.render.test.tsx、必要时新增页面测试夹具与 `.scratch/gantt-fullscreen/qa/`
@@ -27,3 +27,7 @@ Scope: apps/web/src/pages/WorkPlansPage.test.tsx、apps/web/src/components/Gantt
 ## Comments
 
 - 本票不扩大到服务端、数据库、导出或权限测试；这些区域由规格 R5 明确保持不变。
+- 2026-09-06 完成页面测试 7 项（`WorkPlansPage.test.tsx` 的 `gantt fullscreen mode` 组）：按钮位置语义与动态 aria-label、全屏时根类名与面板保留、Esc 分层（浮层→退出、抽屉优先）、进入关闭浮层且查询值保持、切换前后 `GanttTimeline` 业务 props 不变（含折叠态）、卸载/重挂载复位。GanttTimeline 组件本身零改动，渲染测试无需扩展。
+- 浏览器验收脚本：`qa/screenshot.cjs`（浅/深 × 1440/390 × 普通/全屏截图 + 布局指标）与 `qa/interactions.cjs`（16 项交互断言：滚动保持按新容器钳制、抽屉 Esc 优先、浮层关闭、退出恢复、刷新复位、周视图 Esc 退出），截图存 `qa/shots-baseline/`、`qa/shots-fullscreen/`。结果全部 PASS。
+- code-reviewer 审查：1×P0（Esc 退出不写滚动快照）、1×P1（恢复循环错误早退捷径）已修复；P2 查询错误横幅豁免全屏隐藏；P3（event.repeat、closePlanDrawer 共用）已采纳。复核通过，无未处理 P0/P1。
+- Web 测试 296 全过、typecheck、build、`git diff --check` 通过。

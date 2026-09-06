@@ -1,7 +1,7 @@
 # 02 — 甘特图全屏布局与响应式样式
 
 Type: task
-Status: awaiting-approval
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/web/src/components/AppShell.tsx、apps/web/src/styles.css、必要时 apps/web/src/pages/WorkPlansPage.tsx
@@ -23,3 +23,11 @@ Scope: apps/web/src/components/AppShell.tsx、apps/web/src/styles.css、必要�
 - 浅色/深色、桌面/窄屏截图中甘特面板铺满应用窗口，页面级元素不占位，工具栏与中央按钮位置稳定。
 - 列表展开和折叠、分隔线、分页、时间轴横向/纵向滚动及抽屉覆盖层可操作；全屏切换前后的滚动位置保持。
 - 现有工作计划页样式测试、Web typecheck 和 build 通过。
+
+## Comments
+
+- 2026-09-06 实现完成。`html.gantt-fullscreen` 规则（specificity 高于既有 media query）：隐藏侧栏/离线横幅/页面标题与操作/筛选工具栏/状态提示、去除页面内边距、面板去圆角边框铺满 `app-main`；窄屏（≤720px）下 `app-main` 高度改 `100vh`（常规为 `calc(100vh - 60px)`）。
+- **窄屏适配偏差（对 Q7 的记录）**：基线 390px 下工具栏单行已完全顶满（“今天/周视图”文字竖排压缩、零间隙），标题右侧物理上放不下任何新控件。≤720px 将工具栏改为可换行 flex：全屏按钮仍在标题右侧（auto margin 居中），右侧控件组放不下时整体换行右对齐；换行后“今天/周视图”恢复单行文本，触控尺寸不变。桌面 >720px 布局与切换前逐像素一致（QA 截图对比确认）。
+- 滚动保持：进入/退出经 `applyGanttFullscreen` 快照时间轴横向 `scrollLeft`，GanttTimeline 因宽度重建（frappe `scroll_to` 重置到范围起点）后按 `.gantt-container` 节点替换检测恢复；未重建则滚动天然保持。列表纵向不经重建，浏览器钳制 + 既有纵向同步即可，无需恢复。几何分析：月视图横向溢出要求列宽被 32px 下限钳制，而钳制时列宽不随全屏变化即不重建，周视图总是重建但无横向溢出——“溢出∧重建”在当前布局下几乎不可达，恢复逻辑为护栏。
+- 查询失败横幅（role=alert，含重试按钮）豁免于全屏隐藏（`:not(.query-error-message)`）：30s 自动刷新可能失败，不能静默展示旧数据。
+- 颜色全部走既有 token，无新增字面色。

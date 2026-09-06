@@ -1,6 +1,6 @@
 # 工作计划甘特图页面内全屏决策地图
 
-Status: awaiting-approval
+Status: implemented
 Type: map
 
 ## Destination
@@ -22,7 +22,7 @@ Type: map
 
 ## Not yet specified
 
-- 用户是否批准规格与 01–03 票据进入开发；未批准前不修改功能代码、数据库或生产环境。
+- 无。2026-09-06 用户批准后按 01–03 票据完成实现，测试/typecheck/build/浏览器验收与 code-reviewer 复核全部通过（详见各票据 Comments）。窄屏工具栏换行适配与查询错误横幅豁免两项实施偏差记录在票据 02。
 
 ## Out of scope
 

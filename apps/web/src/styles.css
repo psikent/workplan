@@ -625,8 +625,10 @@ html.gantt-fullscreen .sidebar, html.gantt-fullscreen .offline-banner { display:
 html.gantt-fullscreen .work-plans-page { padding: 0; }
 html.gantt-fullscreen .work-plans-page .page-header,
 html.gantt-fullscreen .work-plans-page .read-only-hint,
-html.gantt-fullscreen .work-plans-page .spreadsheet-transfer-message,
+html.gantt-fullscreen .work-plans-page .spreadsheet-transfer-message:not(.query-error-message),
 html.gantt-fullscreen .work-plans-page .filter-toolbar { display: none; }
+/* 查询失败横幅是功能性反馈（含重试按钮），全屏中保留并适配面板上方边距 */
+html.gantt-fullscreen .work-plans-page .query-error-message { margin: 0 14px 10px; text-align: left; }
 html.gantt-fullscreen .planner-panel { border: 0; border-radius: 0; box-shadow: none; }
 
 /* 窄屏全屏：侧栏顶栏隐藏后 app-main 占满整屏高度（常规布局为 calc(100vh - 60px)） */
