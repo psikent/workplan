@@ -304,11 +304,11 @@ export default function MonthlyGoalsPage() {
   const periodControlsDisabled = Boolean(draft.workPlanId) && plansQuery.isLoading;
 
   return (
-    <section className="content-page">
+    <section className="content-page monthly-goals-page">
       <header className="page-header">
         <div><h1>月目标</h1><p>每月为工作安排一组随月份变化的目标，并自动跟随关联计划完成。</p></div>
         <div className="header-actions">
-          {canWrite ? <button className="secondary-button" type="button" onClick={() => setQuickEditing(true)} aria-label="快速编辑月目标"><Table2 />快速编辑</button> : null}
+          {canWrite ? <button className="secondary-button" type="button" onClick={() => setQuickEditing(true)} aria-label="快速编辑月目标"><Table2 /><span className="toolbar-button-label">快速编辑</span></button> : null}
           <label className={`secondary-button compact-check ${showArchived ? "selected" : ""}`}><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /><span>显示已归档</span></label>
           {canWrite ? <button className="primary-button" type="button" onClick={openCreate}><Plus />新建月目标</button> : null}
         </div>
