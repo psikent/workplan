@@ -33,7 +33,6 @@ export type WorkPlanRow = {
   status_mode: WorkPlanStatusMode;
   start_at: string;
   end_at: string;
-  sort_order: number;
   version: number;
   series_id: string | null;
   occurrence_key: string | null;

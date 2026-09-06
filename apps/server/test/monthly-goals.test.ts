@@ -1167,26 +1167,26 @@ describe("transfer compatibility", () => {
 
     const exported = await context.request({ method: "GET", url: "/api/v1/export" });
     expect(exported.statusCode).toBe(200);
-    const version4 = exported.json<{
+    const version5 = exported.json<{
       schemaVersion: number;
       exportedAt: string;
       data: Record<string, Array<Record<string, unknown>>>;
     }>();
-    expect(version4.schemaVersion).toBe(4);
-    expect(version4.data.monthly_goals).toHaveLength(4);
-    expect(version4.data.monthly_goals[0]).toMatchObject({ title: "导出目标", work_plan_id: plan.id });
-    expect(version4.data.monthly_goal_series).toHaveLength(1);
-    expect(version4.data.monthly_goal_series[0]).toMatchObject({ frequency: "monthly", occurrence_count: 3 });
-    expect(version4.data.monthly_goals.filter((row) => row.title === "定期巡检").every((row) => row.series_id === version4.data.monthly_goal_series[0]!.id)).toBe(true);
-    expect(version4.data).not.toHaveProperty("tags");
+    expect(version5.schemaVersion).toBe(5);
+    expect(version5.data.monthly_goals).toHaveLength(4);
+    expect(version5.data.monthly_goals[0]).toMatchObject({ title: "导出目标", work_plan_id: plan.id });
+    expect(version5.data.monthly_goal_series).toHaveLength(1);
+    expect(version5.data.monthly_goal_series[0]).toMatchObject({ frequency: "monthly", occurrence_count: 3 });
+    expect(version5.data.monthly_goals.filter((row) => row.title === "定期巡检").every((row) => row.series_id === version5.data.monthly_goal_series[0]!.id)).toBe(true);
+    expect(version5.data).not.toHaveProperty("tags");
 
     // A v3 file (pre-series) clears the series table and drops series columns from goals.
     const version3Payload = {
       schemaVersion: 3,
-      exportedAt: version4.exportedAt,
+      exportedAt: version5.exportedAt,
       data: Object.fromEntries(
         Object
-          .entries(version4.data)
+          .entries(version5.data)
           .filter(([key]) => key !== "monthly_goal_series")
           .map(([key, rows]) => [key, key === "monthly_goals"
             ? (rows as Array<Record<string, unknown>>).map((row) => Object.fromEntries(Object.entries(row).filter(([column]) => column !== "series_id" && column !== "occurrence_key")))
@@ -1204,8 +1204,8 @@ describe("transfer compatibility", () => {
 
     const version2Payload = {
       schemaVersion: 2,
-      exportedAt: version4.exportedAt,
-      data: Object.fromEntries(Object.entries(version4.data).filter(([key]) => key !== "monthly_goals" && key !== "monthly_goal_series")),
+      exportedAt: version5.exportedAt,
+      data: Object.fromEntries(Object.entries(version5.data).filter(([key]) => key !== "monthly_goals" && key !== "monthly_goal_series")),
     };
     const v2Validate = await context.request({ method: "POST", url: "/api/v1/import/validate", payload: version2Payload });
     expect(v2Validate.statusCode).toBe(200);
@@ -1216,7 +1216,7 @@ describe("transfer compatibility", () => {
 
     const version1Payload = {
       schemaVersion: 1,
-      exportedAt: version4.exportedAt,
+      exportedAt: version5.exportedAt,
       data: Object.fromEntries(Object.entries(version2Payload.data).filter(([key]) => key !== "owner_account_mappings")),
     };
     const v1Validate = await context.request({ method: "POST", url: "/api/v1/import/validate", payload: version1Payload });

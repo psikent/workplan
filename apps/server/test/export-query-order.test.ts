@@ -62,7 +62,7 @@ describe("XLS 导出复用统一查询", () => {
     const context = await createContext();
     // 直批插入 550 条（超过旧 500 与分页默认值），统一重算排序键
     const insert = context.database.sqlite.prepare(
-      "INSERT INTO work_plans(id, title, description, status, status_mode, priority, start_at, end_at, sort_order, version, is_exception, created_at, updated_at) VALUES (?, ?, '', 'pending', 'automatic', 'none', ?, ?, ?, 1, 0, ?, ?)",
+      "INSERT INTO work_plans(id, title, description, status, status_mode, priority, start_at, end_at, version, is_exception, created_at, updated_at) VALUES (?, ?, '', 'pending', 'automatic', 'none', ?, ?, 1, 0, ?, ?)",
     );
     context.database.sqlite.transaction(() => {
       for (let index = 0; index < 550; index += 1) {
@@ -72,7 +72,6 @@ describe("XLS 导出复用统一查询", () => {
           `批次${padded}计划`,
           `2026-05-${String((index % 28) + 1).padStart(2, "0")}T01:00:00.000Z`,
           `2026-05-${String((index % 28) + 1).padStart(2, "0")}T05:00:00.000Z`,
-          index,
           "2026-04-01T00:00:00.000Z",
           "2026-04-01T00:00:00.000Z",
         );

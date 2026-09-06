@@ -22,7 +22,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 12 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 13 });
     expect(database.prepare("SELECT id, username, role, login_mode AS loginMode, disabled_at AS disabledAt, version FROM users").get()).toEqual({
       id: "user-1",
       username: "lxj",
@@ -46,7 +46,8 @@ describe("database migrations", () => {
       CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, csrf_token TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE INDEX sessions_expires_idx ON sessions(expires_at);
       CREATE TABLE access_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT, last_used_at TEXT, created_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1);
-      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', start_at TEXT NOT NULL DEFAULT '', end_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
+      CREATE TABLE work_plan_series (id TEXT PRIMARY KEY);
+      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', status_mode TEXT NOT NULL DEFAULT 'automatic', priority TEXT NOT NULL DEFAULT 'none', start_at TEXT NOT NULL DEFAULT '', end_at TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, series_id TEXT REFERENCES work_plan_series(id) ON DELETE SET NULL, occurrence_key TEXT, is_exception INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
       CREATE TABLE custom_field_definitions (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'short_text');
       CREATE TABLE custom_field_values (work_plan_id TEXT NOT NULL, field_id TEXT NOT NULL, text_value TEXT, number_value REAL, boolean_value INTEGER, date_value TEXT, datetime_value TEXT, url_value TEXT, PRIMARY KEY(work_plan_id, field_id));
       CREATE TABLE export_templates (id TEXT PRIMARY KEY, name TEXT NOT NULL);
@@ -57,7 +58,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 12 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 13 });
     expect(database.prepare("SELECT id, title FROM work_plans").get()).toEqual({ id: "plan-1", title: "保留计划" });
     expect(database.prepare("SELECT id, name FROM export_templates").get()).toEqual({ id: "template-1", name: "保留模板" });
     expect(database.prepare("SELECT id, username, role FROM users").get()).toEqual({ id: "user-1", username: "lxj", role: "admin" });
@@ -77,7 +78,7 @@ describe("database migrations", () => {
       CREATE INDEX sessions_expires_idx ON sessions(expires_at);
       CREATE TABLE access_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT, last_used_at TEXT, created_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1);
       CREATE TABLE work_plan_series (id TEXT PRIMARY KEY);
-      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', start_at TEXT NOT NULL DEFAULT '', end_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
+      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', status_mode TEXT NOT NULL DEFAULT 'automatic', priority TEXT NOT NULL DEFAULT 'none', start_at TEXT NOT NULL DEFAULT '', end_at TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, series_id TEXT REFERENCES work_plan_series(id) ON DELETE SET NULL, occurrence_key TEXT, is_exception INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
       CREATE TABLE custom_field_definitions (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'short_text');
       CREATE TABLE custom_field_values (work_plan_id TEXT NOT NULL, field_id TEXT NOT NULL, text_value TEXT, number_value REAL, boolean_value INTEGER, date_value TEXT, datetime_value TEXT, url_value TEXT, PRIMARY KEY(work_plan_id, field_id));
       INSERT INTO users(id, username, password_hash, role, login_mode, disabled_at, version, created_at) VALUES
@@ -91,7 +92,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 12 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 13 });
     expect(database.prepare("SELECT id, username, password_hash AS passwordHash, role, login_mode AS loginMode, disabled_at AS disabledAt, version, created_at AS createdAt FROM users ORDER BY created_at").all()).toEqual([
       { id: "user-admin", username: "lxj", passwordHash: "argon-admin-hash", role: "admin", loginMode: "password", disabledAt: null, version: 3, createdAt: "2026-08-08T05:53:04.073Z" },
       { id: "user-editor", username: "editor-1", passwordHash: "argon-editor-hash", role: "editor", loginMode: "password", disabledAt: null, version: 2, createdAt: "2026-08-10T08:00:00.000Z" },
@@ -140,7 +141,8 @@ describe("database migrations", () => {
     database.exec(`
       CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL);
       INSERT INTO schema_migrations(version, name, applied_at) VALUES (8, 'monthly_goal_series', '2026-08-26T00:00:00.000Z');
-      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', start_at TEXT NOT NULL DEFAULT '', end_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
+      CREATE TABLE work_plan_series (id TEXT PRIMARY KEY);
+      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', status_mode TEXT NOT NULL DEFAULT 'automatic', priority TEXT NOT NULL DEFAULT 'none', start_at TEXT NOT NULL DEFAULT '', end_at TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, series_id TEXT REFERENCES work_plan_series(id) ON DELETE SET NULL, occurrence_key TEXT, is_exception INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
       CREATE TABLE custom_field_definitions (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'short_text');
       CREATE TABLE custom_field_values (work_plan_id TEXT NOT NULL REFERENCES work_plans(id) ON DELETE CASCADE, field_id TEXT NOT NULL REFERENCES custom_field_definitions(id) ON DELETE CASCADE, text_value TEXT, number_value REAL, boolean_value INTEGER, date_value TEXT, datetime_value TEXT, url_value TEXT, PRIMARY KEY(work_plan_id, field_id));
       CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'admin' CHECK(role IN ('admin', 'editor')), login_mode TEXT NOT NULL DEFAULT 'password' CHECK(login_mode IN ('password', 'token')), disabled_at TEXT, version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
@@ -158,7 +160,7 @@ describe("database migrations", () => {
     // 迁移 9 只校验它重建的 auth 三表；custom_field_values 的历史悬挂引用不阻断升级。
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 12 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 13 });
     expect(database.prepare("SELECT COUNT(*) AS count FROM custom_field_values").get()).toEqual({ count: 2 });
     expect(database.pragma("foreign_key_check(users)")).toEqual([]);
     expect(database.pragma("foreign_key_check(sessions)")).toEqual([]);
@@ -170,15 +172,15 @@ describe("database migrations", () => {
     const database = new Database(":memory:");
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 12 });
-    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 12").get()).toEqual({ count: 1 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 13 });
+    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 13").get()).toEqual({ count: 1 });
 
     // 空库迁移后即可写入单行配置；第二次 migrate 不重跑、不报错。
     database
       .prepare("INSERT INTO bark_config(id, server_url, device_key, updated_at) VALUES (1, 'https://api.day.app', NULL, '2026-08-30T00:00:00.000Z')")
       .run();
     migrate(database);
-    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 12").get()).toEqual({ count: 1 });
+    expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 13").get()).toEqual({ count: 1 });
     expect(database.prepare("SELECT id, server_url AS serverUrl, device_key AS deviceKey FROM bark_config").get()).toEqual({
       id: 1,
       serverUrl: "https://api.day.app",
@@ -202,6 +204,83 @@ describe("database migrations", () => {
     insert.run("2026-08-31", "plan-1", "2026-08-31T01:30:00.000Z");
     insert.run("2026-08-30", "plan-2", "2026-08-30T02:00:00.000Z");
     expect(database.prepare("SELECT COUNT(*) AS count FROM bark_push_log").get()).toEqual({ count: 3 });
+    database.close();
+  });
+
+  it("drops work_plans.sort_order and its index while preserving rows, children and constraints", () => {
+    const database = new Database(":memory:");
+    database.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL);
+      INSERT INTO schema_migrations(version, name, applied_at) VALUES (12, 'drop_stored_status_order_indexes', '2026-09-03T00:00:00.000Z');
+      CREATE TABLE work_plan_series (id TEXT PRIMARY KEY);
+      CREATE TABLE work_plans (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, status_mode TEXT NOT NULL DEFAULT 'automatic', priority TEXT NOT NULL, start_at TEXT NOT NULL, end_at TEXT NOT NULL, sort_order INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 1, series_id TEXT REFERENCES work_plan_series(id) ON DELETE SET NULL, occurrence_key TEXT, is_exception INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, title_sort_key TEXT);
+      CREATE UNIQUE INDEX work_plans_occurrence_uq ON work_plans(series_id, occurrence_key);
+      CREATE INDEX work_plans_sort_idx ON work_plans(sort_order);
+      CREATE TABLE custom_field_definitions (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'short_text');
+      CREATE TABLE custom_field_values (work_plan_id TEXT NOT NULL REFERENCES work_plans(id) ON DELETE CASCADE, field_id TEXT NOT NULL REFERENCES custom_field_definitions(id) ON DELETE CASCADE, text_value TEXT, number_value REAL, boolean_value INTEGER, date_value TEXT, datetime_value TEXT, url_value TEXT, text_sort_key TEXT, datetime_sort_key TEXT, PRIMARY KEY(work_plan_id, field_id));
+      CREATE TABLE monthly_goals (id TEXT PRIMARY KEY, work_plan_id TEXT REFERENCES work_plans(id) ON DELETE SET NULL);
+      INSERT INTO work_plan_series(id) VALUES ('series-1');
+      INSERT INTO custom_field_definitions(id) VALUES ('field-1');
+      INSERT INTO work_plans(id, title, description, status, status_mode, priority, start_at, end_at, sort_order, version, series_id, occurrence_key, is_exception, created_at, updated_at, title_sort_key) VALUES
+        ('plan-1', '巡检计划', '带系列', 'pending', 'automatic', 'none', '2026-09-01T01:00:00.000Z', '2026-09-01T02:00:00.000Z', 42, 3, 'series-1', 'occ-1', 1, '2026-08-30T00:00:00.000Z', '2026-08-31T00:00:00.000Z', '巡检计划'),
+        ('plan-2', '独立计划', '', 'in_progress', 'manual', 'legacy', '2026-09-02T01:00:00.000Z', '2026-09-02T02:00:00.000Z', -7, 1, NULL, NULL, 0, '2026-08-30T00:00:00.000Z', '2026-08-30T00:00:00.000Z', '独立计划');
+      INSERT INTO custom_field_values(work_plan_id, field_id, text_value) VALUES ('plan-1', 'field-1', '高');
+      INSERT INTO monthly_goals(id, work_plan_id) VALUES ('goal-1', 'plan-1');
+    `);
+
+    migrate(database);
+
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 13 });
+    const columns = (database.prepare("PRAGMA table_info(work_plans)").all() as Array<{ name: string }>).map((column) => column.name);
+    expect(columns).not.toContain("sort_order");
+    expect(columns).toEqual(["id", "title", "description", "status", "status_mode", "priority", "start_at", "end_at", "version", "series_id", "occurrence_key", "is_exception", "created_at", "updated_at", "title_sort_key"]);
+    const indexes = (database.prepare("PRAGMA index_list(work_plans)").all() as Array<{ name: string }>).map((index) => index.name);
+    // 完整清单：v11 的 14 个索引原样重建（work_plans_sort_idx 除外）+ 主键与
+    // UNIQUE(series_id, occurrence_key) 的两个自动索引。
+    expect(indexes.sort()).toEqual([
+      "idx_work_plans_created_asc",
+      "idx_work_plans_created_desc",
+      "idx_work_plans_duration_asc",
+      "idx_work_plans_duration_desc",
+      "idx_work_plans_end_asc",
+      "idx_work_plans_end_desc",
+      "idx_work_plans_schedule_full",
+      "idx_work_plans_start_desc",
+      "idx_work_plans_title_key_asc",
+      "idx_work_plans_title_key_desc",
+      "idx_work_plans_updated_asc",
+      "idx_work_plans_updated_desc",
+      "sqlite_autoindex_work_plans_1",
+      "sqlite_autoindex_work_plans_2",
+      "work_plans_schedule_idx",
+      "work_plans_status_idx",
+    ]);
+
+    // 业务数据逐列保留；遗留 sort_order 数值不迁移、不映射。
+    expect(database.prepare("SELECT id, title, status, status_mode, priority, version, series_id, occurrence_key, is_exception, title_sort_key FROM work_plans ORDER BY id").all()).toEqual([
+      { id: "plan-1", title: "巡检计划", status: "pending", status_mode: "automatic", priority: "none", version: 3, series_id: "series-1", occurrence_key: "occ-1", is_exception: 1, title_sort_key: "巡检计划" },
+      { id: "plan-2", title: "独立计划", status: "in_progress", status_mode: "manual", priority: "legacy", version: 1, series_id: null, occurrence_key: null, is_exception: 0, title_sort_key: "独立计划" },
+    ]);
+
+    // 子表数据完好：级联清空与 SET NULL 都没有发生。
+    expect(database.prepare("SELECT work_plan_id, field_id, text_value FROM custom_field_values").all()).toEqual([{ work_plan_id: "plan-1", field_id: "field-1", text_value: "高" }]);
+    expect(database.prepare("SELECT id, work_plan_id FROM monthly_goals").all()).toEqual([{ id: "goal-1", work_plan_id: "plan-1" }]);
+    expect(database.pragma("foreign_key_check(work_plans)")).toEqual([]);
+
+    // 唯一约束保留；新写入路径（无 sort_order 列）可用。
+    expect(() =>
+      database
+        .prepare("INSERT INTO work_plans(id, title, status, status_mode, priority, start_at, end_at, created_at, updated_at, series_id, occurrence_key) VALUES ('plan-3', '撞键计划', 'pending', 'automatic', 'none', '2026-09-03T01:00:00.000Z', '2026-09-03T02:00:00.000Z', '2026-09-03T00:00:00.000Z', '2026-09-03T00:00:00.000Z', 'series-1', 'occ-9')")
+        .run(),
+    ).not.toThrow();
+    expect(() =>
+      database
+        .prepare("INSERT INTO work_plans(id, title, status, status_mode, priority, start_at, end_at, created_at, updated_at, series_id, occurrence_key) VALUES ('plan-3b', '撞键计划', 'pending', 'automatic', 'none', '2026-09-03T01:00:00.000Z', '2026-09-03T02:00:00.000Z', '2026-09-03T00:00:00.000Z', '2026-09-03T00:00:00.000Z', 'series-1', 'occ-9')")
+        .run(),
+    ).toThrow();
+    database
+      .prepare("INSERT INTO work_plans(id, title, status, status_mode, priority, start_at, end_at, created_at, updated_at) VALUES ('plan-4', '新增计划', 'pending', 'automatic', 'none', '2026-09-04T01:00:00.000Z', '2026-09-04T02:00:00.000Z', '2026-09-04T00:00:00.000Z', '2026-09-04T00:00:00.000Z')")
+      .run();
     database.close();
   });
 });

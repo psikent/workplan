@@ -69,7 +69,6 @@ export const workPlans = sqliteTable(
     priority: text("priority").notNull(),
     startAt: text("start_at").notNull(),
     endAt: text("end_at").notNull(),
-    sortOrder: integer("sort_order").notNull(),
     version: integer("version").notNull().default(1),
     seriesId: text("series_id").references(() => workPlanSeries.id, { onDelete: "set null" }),
     occurrenceKey: text("occurrence_key"),
@@ -82,7 +81,6 @@ export const workPlans = sqliteTable(
   (table) => [
     index("work_plans_schedule_idx").on(table.startAt, table.endAt),
     index("work_plans_status_idx").on(table.status),
-    index("work_plans_sort_idx").on(table.sortOrder),
     uniqueIndex("work_plans_occurrence_uq").on(table.seriesId, table.occurrenceKey),
   ],
 );

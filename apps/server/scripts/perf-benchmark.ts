@@ -87,7 +87,7 @@ function buildDataset(sqlite: Database.Database) {
     "INSERT INTO work_plan_series(id, template_json, frequency, interval, time_zone, active, version, created_at, updated_at) VALUES (?, '{}', 'daily', 1, 'Asia/Shanghai', 1, 1, ?, ?)",
   );
   const seriesTimestamp = "2026-01-01T00:00:00.000Z";
-  const insertPlan = sqlite.prepare("INSERT INTO work_plans(id, title, description, status, status_mode, priority, start_at, end_at, sort_order, version, series_id, occurrence_key, is_exception, created_at, updated_at) VALUES (?, ?, '', ?, ?, 'none', ?, ?, ?, 1, ?, NULL, ?, ?, ?)");
+  const insertPlan = sqlite.prepare("INSERT INTO work_plans(id, title, description, status, status_mode, priority, start_at, end_at, version, series_id, occurrence_key, is_exception, created_at, updated_at) VALUES (?, ?, '', ?, ?, 'none', ?, ?, 1, ?, NULL, ?, ?, ?)");
   const stamp = "2026-01-01T00:00:00.000Z";
   const insertField = sqlite.prepare("INSERT INTO custom_field_definitions(id, key, label, description, type, required, default_value_json, sort_order, archived_at, version, created_at, updated_at) VALUES (?, ?, ?, '', ?, 0, NULL, ?, ?, 1, ?, ?)");
   const insertOption = sqlite.prepare("INSERT INTO custom_field_options(id, field_id, value, label, sort_order, version) VALUES (?, ?, ?, ?, ?, 1)");
@@ -116,7 +116,7 @@ function buildDataset(sqlite: Database.Database) {
         const endAt = new Date(Date.parse(startAt) + (rng() < 0.05 ? 0 : Math.floor(rng() * 90) * 86_400_000 + Math.floor(rng() * 86_399_900))).toISOString();
         const createdAt = new Date(Date.parse(startAt) - (Math.floor(rng() * 30) + 1) * 86_400_000).toISOString();
         ids.push({ id, seriesId });
-        insertPlan.run(id, title(index), status(), rng() < 0.1 ? "manual" : "automatic", startAt, endAt, index + 1, seriesId, rng() < 0.02 ? 1 : 0, createdAt, new Date(Date.parse(createdAt) + Math.floor(rng() * 10) * 86_400_000).toISOString());
+        insertPlan.run(id, title(index), status(), rng() < 0.1 ? "manual" : "automatic", startAt, endAt, seriesId, rng() < 0.02 ? 1 : 0, createdAt, new Date(Date.parse(createdAt) + Math.floor(rng() * 10) * 86_400_000).toISOString());
       }
     }
   })();

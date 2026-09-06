@@ -272,6 +272,57 @@ const migrations: Migration[] = [
       DROP INDEX IF EXISTS idx_work_plans_status_order_desc;
     `,
   },
+  {
+    // 票据 17：删除工作计划 sort_order 遗留列与索引。SQLite 无法原地删列，
+    // 按官方流程重建 work_plans：复制除 sort_order 外的全部列，索引除
+    // work_plans_sort_idx 外原样重建，UNIQUE(series_id, occurrence_key) 保留。
+    // DROP TABLE 必须在外键关闭下执行：外键开启时 DROP 的隐式 DELETE 会触发
+    // ON DELETE CASCADE 清空 custom_field_values、SET NULL 清空 monthly_goals。
+    // verifyTables 只查重建的 work_plans：custom_field_values 存在指向已删计划的
+    // 历史悬挂行（见迁移 9 注释），全库检查会让无关脏数据阻断升级。
+    version: 13,
+    name: "drop_work_plan_sort_order",
+    requiresForeignKeysOff: true,
+    verifyTables: ["work_plans"],
+    sql: `
+      CREATE TABLE work_plans_new (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL,
+        status_mode TEXT NOT NULL DEFAULT 'automatic' CHECK(status_mode IN ('automatic', 'manual')),
+        priority TEXT NOT NULL,
+        start_at TEXT NOT NULL,
+        end_at TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        series_id TEXT REFERENCES work_plan_series(id) ON DELETE SET NULL,
+        occurrence_key TEXT,
+        is_exception INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        title_sort_key TEXT,
+        UNIQUE(series_id, occurrence_key)
+      );
+      INSERT INTO work_plans_new(id, title, description, status, status_mode, priority, start_at, end_at, version, series_id, occurrence_key, is_exception, created_at, updated_at, title_sort_key)
+        SELECT id, title, description, status, status_mode, priority, start_at, end_at, version, series_id, occurrence_key, is_exception, created_at, updated_at, title_sort_key FROM work_plans;
+      DROP TABLE work_plans;
+      ALTER TABLE work_plans_new RENAME TO work_plans;
+      CREATE INDEX work_plans_schedule_idx ON work_plans(start_at, end_at);
+      CREATE INDEX work_plans_status_idx ON work_plans(status);
+      CREATE INDEX idx_work_plans_title_key_asc ON work_plans(title_sort_key, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_title_key_desc ON work_plans(title_sort_key DESC, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_duration_asc ON work_plans(julianday(end_at) - julianday(start_at), start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_duration_desc ON work_plans(julianday(end_at) - julianday(start_at) DESC, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_schedule_full ON work_plans(start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_start_desc ON work_plans(start_at DESC, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_end_asc ON work_plans(end_at, start_at, created_at, id);
+      CREATE INDEX idx_work_plans_end_desc ON work_plans(end_at DESC, start_at, created_at, id);
+      CREATE INDEX idx_work_plans_created_asc ON work_plans(created_at, start_at, end_at DESC, id);
+      CREATE INDEX idx_work_plans_created_desc ON work_plans(created_at DESC, start_at, end_at DESC, id);
+      CREATE INDEX idx_work_plans_updated_asc ON work_plans(updated_at, start_at, end_at DESC, created_at, id);
+      CREATE INDEX idx_work_plans_updated_desc ON work_plans(updated_at DESC, start_at, end_at DESC, created_at, id);
+    `,
+  },
 ];
 
 export function migrate(database: Database.Database): void {

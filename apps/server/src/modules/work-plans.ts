@@ -23,9 +23,6 @@ export type { WorkPlanRow };
 
 export type UpdateWorkPlanInput = { [K in keyof CreateWorkPlan]?: CreateWorkPlan[K] | undefined } & { version: number };
 
-// 遗留 NOT NULL 列的中性兼容值：统一排序的所有路径都不读取该列（票据 14）。
-export const WORK_PLAN_SORT_ORDER_NEUTRAL = 0;
-
 export class WorkPlanService {
   constructor(
     readonly database: DatabaseBundle,
@@ -118,7 +115,7 @@ export class WorkPlanService {
       : deriveWorkPlanStatus(startAt, endAt, Date.parse(timestamp));
     const execute = this.database.sqlite.transaction(() => {
       this.database.sqlite
-        .prepare("INSERT INTO work_plans(id, title, title_sort_key, description, status, status_mode, priority, start_at, end_at, sort_order, version, series_id, occurrence_key, is_exception, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)")
+        .prepare("INSERT INTO work_plans(id, title, title_sort_key, description, status, status_mode, priority, start_at, end_at, version, series_id, occurrence_key, is_exception, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)")
         .run(
           id,
           input.title,
@@ -129,7 +126,6 @@ export class WorkPlanService {
           "none",
           startAt,
           endAt,
-          WORK_PLAN_SORT_ORDER_NEUTRAL,
           seriesId,
           occurrenceKey,
           timestamp,

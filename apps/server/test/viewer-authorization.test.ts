@@ -175,7 +175,6 @@ const businessWriteRequests = (ids: { planId: string; goalId: string; goalSeries
   { method: "PATCH", url: `/api/v1/work-plans/${ids.planId}`, payload: { title: "Viewer 尝试修改", version: 1 } },
   { method: "PATCH", url: `/api/v1/work-plans/${ids.planId}/schedule`, payload: { startAt: "2027-08-09T01:00:00.000Z", endAt: "2027-08-09T02:00:00.000Z", version: 1 } },
   { method: "DELETE", url: `/api/v1/work-plans/${ids.planId}?version=1` },
-  { method: "POST", url: "/api/v1/work-plans/reorder", payload: { orderedIds: [ids.planId] } },
   {
     method: "POST",
     url: "/api/v1/work-plan-series",

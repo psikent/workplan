@@ -236,7 +236,7 @@ function mockMutableWorkPlans(initialPlans: WorkPlan[] = [plan]) {
     if (path === "/work-plans/query" && init?.method === "POST") return emulateQuery(storedPlans, init);
     if (path === "/work-plans" && init?.method === "POST") {
       const input = JSON.parse(String(init.body)) as Partial<WorkPlan>;
-      const copied = { ...plan, ...input, id: copiedPlanId, sortOrder: storedPlans.length, version: 1 };
+      const copied = { ...plan, ...input, id: copiedPlanId, version: 1 };
       storedPlans = [...storedPlans, copied];
       return copied;
     }
@@ -422,8 +422,8 @@ describe("work plan ordering and copying", () => {
     const longer = { ...plan, id: "10000000-0000-4000-8000-000000000002", title: "同起点较晚结束", endAt: new Date(2026, 7, 8, 14).toISOString() };
     const shorter = { ...plan, id: "10000000-0000-4000-8000-000000000003", title: "同起点较早结束", endAt: new Date(2026, 7, 8, 11).toISOString() };
     const later = { ...plan, id: "10000000-0000-4000-8000-000000000004", title: "最晚开始", startAt: new Date(2026, 7, 8, 11).toISOString(), endAt: new Date(2026, 7, 8, 15).toISOString() };
-    const oneTime = { ...plan, id: "10000000-0000-4000-8000-000000000005", title: "同时间单次", sortOrder: 0 };
-    const recurring = { ...plan, id: "10000000-0000-4000-8000-000000000006", title: "同时间重复", sortOrder: 1, seriesId: "20000000-0000-4000-8000-000000000001" };
+    const oneTime = { ...plan, id: "10000000-0000-4000-8000-000000000005", title: "同时间单次" };
+    const recurring = { ...plan, id: "10000000-0000-4000-8000-000000000006", title: "同时间重复", seriesId: "20000000-0000-4000-8000-000000000001" };
     mockMutableWorkPlans([later, shorter, oneTime, early, recurring, longer]);
     const view = renderPage();
     await screen.findByText("最早开始");

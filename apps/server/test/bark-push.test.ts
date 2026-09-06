@@ -66,7 +66,7 @@ describe("daily bark push scheduler", () => {
   function insertPlan(id: string, title: string, startAt: string, status: "pending" | "completed" | "cancelled" = "pending") {
     const sqlite = database.sqlite;
     sqlite
-      .prepare("INSERT INTO work_plans(id, title, description, status, status_mode, priority, start_at, end_at, sort_order, version, is_exception, created_at, updated_at) VALUES (?, ?, '', ?, 'manual', 'legacy', ?, ?, 0, 1, 0, ?, ?)")
+      .prepare("INSERT INTO work_plans(id, title, description, status, status_mode, priority, start_at, end_at, version, is_exception, created_at, updated_at) VALUES (?, ?, '', ?, 'manual', 'legacy', ?, ?, 1, 0, ?, ?)")
       .run(id, title, status, startAt, startAt, "2026-08-30T00:00:00.000Z", "2026-08-30T00:00:00.000Z");
     sqlite
       .prepare("INSERT INTO custom_field_values(work_plan_id, field_id, boolean_value) VALUES (?, ?, 1)")

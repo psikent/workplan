@@ -142,14 +142,13 @@ describe("工作计划排序契约", () => {
     assert.equal(missingTotal.success, false);
   });
 
-  it("暴露稳定错误类别", () => {
+  it("暴露稳定错误类别（人工重排已随票据 17 退役）", () => {
     assert.deepEqual(workPlanQueryErrorCodes, [
       "SORT_FIELD_INVALID",
       "SORT_FIELD_DUPLICATED",
       "SORT_FIELD_UNSUPPORTED",
       "CURSOR_INVALID",
       "CURSOR_MISMATCH",
-      "WORK_PLAN_REORDER_RETIRED",
     ]);
   });
 

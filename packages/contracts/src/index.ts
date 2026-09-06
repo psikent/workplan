@@ -209,13 +209,13 @@ export const workPlanQueryResponseSchema = z.object({
 export type WorkPlanQueryResponse = z.infer<typeof workPlanQueryResponseSchema>;
 
 // 稳定错误类别：响应外壳沿用 problemDetailsSchema（code 字段取以下值之一）。
+// 人工重排已随票据 17 删除存储与路由，WORK_PLAN_REORDER_RETIRED 不再是可达错误。
 export const workPlanQueryErrorCodes = [
   "SORT_FIELD_INVALID",
   "SORT_FIELD_DUPLICATED",
   "SORT_FIELD_UNSUPPORTED",
   "CURSOR_INVALID",
   "CURSOR_MISMATCH",
-  "WORK_PLAN_REORDER_RETIRED",
 ] as const;
 export type WorkPlanQueryErrorCode = (typeof workPlanQueryErrorCodes)[number];
 
@@ -719,7 +719,8 @@ export const updateUserStatusSchema = z.object({
 });
 
 export const importPayloadSchema = z.object({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+  // 版本 5（票据 17）：work_plans 不再携带 sort_order；导入器继续接受 1–4 旧备份并忽略遗留列。
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   exportedAt: isoDateTimeSchema,
   data: z.record(z.string(), z.unknown()),
 });
