@@ -971,9 +971,9 @@ export default function WorkPlansPage() {
       {spreadsheetMessage ? <div className="spreadsheet-transfer-message" role="status">{spreadsheetMessage}</div> : null}
       <div className="filter-toolbar">
         <label className="search-control"><Search /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索工作计划" /></label>
-        <button className={`secondary-button compact-button ${showAdvancedFilters ? "selected" : ""}`} type="button" aria-expanded={showAdvancedFilters} aria-controls="work-plan-filter-panel" onClick={() => setShowAdvancedFilters((value) => !value)}><SlidersHorizontal />筛选</button>
+        <button className={`secondary-button compact-button ${showAdvancedFilters ? "selected" : ""}`} type="button" aria-label="筛选" aria-expanded={showAdvancedFilters} aria-controls="work-plan-filter-panel" onClick={() => setShowAdvancedFilters((value) => !value)}><SlidersHorizontal /><span className="toolbar-button-label">筛选</span></button>
         <div className="column-settings-wrap sort-settings-wrap">
-          <button className={`secondary-button compact-button ${showSortSettings ? "selected" : ""}`} type="button" aria-label="排序设置" aria-haspopup="dialog" aria-expanded={showSortSettings} onClick={() => setShowSortSettings((value) => !value)}><ArrowUpDown />排序</button>
+          <button className={`secondary-button compact-button ${showSortSettings ? "selected" : ""}`} type="button" aria-label="排序设置" aria-haspopup="dialog" aria-expanded={showSortSettings} onClick={() => setShowSortSettings((value) => !value)}><ArrowUpDown /><span className="toolbar-button-label">排序</span></button>
         </div>
         {canWrite ? (
           <div className={`plan-create-split ${user.role === "admin" ? "with-import" : ""}`}>

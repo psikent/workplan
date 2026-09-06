@@ -670,7 +670,10 @@ html.gantt-fullscreen .planner-panel { border: 0; border-radius: 0; box-shadow: 
   .work-plans-page .work-plan-header-actions > .export-popover-wrap > .secondary-button { padding-inline: 9px; white-space: nowrap; }
   .work-plans-page .work-plan-header-actions .export-popover { max-width: calc(100vw - 32px); }
   .primary-button { padding-inline: 11px; }
-  .filter-toolbar { flex-wrap: wrap; padding-bottom: 3px; }.search-control { flex: 1 1 160px; min-width: 0; }.filter-toolbar select { flex: 0 0 130px; }
+  /* 移动端工具栏单行排布：390px 基线下筛选/排序带文字放不下，压成纯图标
+     （可访问名称保留在 aria-label），搜索框收窄让位，新建工作计划并入同一行。 */
+  .filter-toolbar { flex-wrap: wrap; padding-bottom: 3px; }.search-control { flex: 1 1 40px; min-width: 0; }.filter-toolbar select { flex: 0 0 130px; }
+  .filter-toolbar .compact-button { padding-inline: 9px; }.filter-toolbar .compact-button .toolbar-button-label { display: none; }
   .filter-toolbar .compact-button, .filter-toolbar .text-button { flex: 0 0 auto; white-space: nowrap; }
   .advanced-filter-panel { overflow-x: auto; }.advanced-filter-panel strong { flex: 0 0 auto; }
   .planner-panel { grid-template-columns: minmax(0, var(--planner-list-width, 44%)) 8px minmax(0, 1fr); }
