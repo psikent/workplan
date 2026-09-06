@@ -21,6 +21,9 @@ dev.log
 
 # session-local agent artifacts (session plans, architecture session reports)
 /.zcode/
+
+# pi agent workspace-scoped extension (auto-release trigger)
+/.pi/
 /docs/architecture/
 .ssh/
 
