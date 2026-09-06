@@ -1,6 +1,6 @@
 # 工作计划甘特图页面内全屏决策地图
 
-Status: implemented
+Status: delivered
 Type: map
 
 ## Destination
