@@ -4,7 +4,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
 import type { CreateWorkPlan, CustomFieldDefinition, ExportTemplate, MonthlyGoal, OwnerAccountMapping, ReminderDay, WorkPlan, WorkPlanQueryRequest, WorkPlanQueryResponse, WorkPlanSeries, WorkPlanSortItem, WorkPlanStatus } from "@workplan/contracts";
 import { formatWorkPlanSortParam, parseWorkPlanSortParam } from "@workplan/contracts";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, PanelLeftClose, PanelLeftOpen, Plus, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Columns3, Download, ListFilter, Maximize, Minimize, PanelLeftClose, PanelLeftOpen, Plus, Save, Search, SlidersHorizontal, Upload } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import GanttTimeline, { type GanttDisplayId, type GanttDisplayProperty } from "../components/GanttTimeline";
 import { ColumnSettings, GanttPropertySettings, SortSettings, type PlanColumn } from "../components/plan-settings";
@@ -142,11 +142,15 @@ export default function WorkPlansPage() {
   const [pageCursors, setPageCursors] = useState<string[]>([]);
   const [pageNotice, setPageNotice] = useState("");
   const [ganttRebuildKey, setGanttRebuildKey] = useState(0);
+  // 页面内甘特全屏：仅当前会话有效，不写入偏好、不使用浏览器原生 Fullscreen API。
+  const [ganttFullscreen, setGanttFullscreen] = useState(false);
   const [preferenceItems, setPreferenceItems] = useState<WorkPlanSortItem[] | null>(null);
   const sortNoticeShownRef = useRef(false);
   const plannerPanelRef = useRef<HTMLDivElement>(null);
   const planRowsRef = useRef<HTMLDivElement>(null);
   const openedRequestedPlanIdRef = useRef<string | null>(null);
+  // 全屏切换前的滚动快照：GanttTimeline 因宽度变化整图重建时恢复横向位置。
+  const pendingFullscreenScrollRef = useRef<{ listTop: number; ganttLeft: number; ganttContainer: HTMLElement | null; startedAt: number } | null>(null);
 
   const fieldsQuery = useQuery({ queryKey: ["custom-fields"], queryFn: () => api<CustomFieldDefinition[]>("/custom-fields") });
   // ---------- 排序状态：合法 URL → 当前账户浏览器偏好 → 默认排期顺序 ----------
@@ -407,6 +411,66 @@ export default function WorkPlansPage() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [importMenuOpen]);
 
+  // 全屏状态由 html 根类名驱动应用壳层与页面级元素的显示切换：组件卸载或退出时移除，
+  // 刷新/离开页面即恢复普通布局，且不写入 localStorage。
+  useEffect(() => {
+    if (!ganttFullscreen) return;
+    document.documentElement.classList.add("gantt-fullscreen");
+    return () => document.documentElement.classList.remove("gantt-fullscreen");
+  }, [ganttFullscreen]);
+
+  // Esc 分层关闭（规格 R3）：抽屉最优先，其次面板内设置浮层，最后退出全屏。
+  // 导出/导入/筛选/排序入口位于页面级区域，全屏中无法打开，无需在此处理。
+  useEffect(() => {
+    if (!ganttFullscreen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (drawerOpen) {
+        setDrawerOpen(false);
+        setSelected(null);
+        setNewPlanDate(null);
+        return;
+      }
+      if (showColumnSettings) {
+        setShowColumnSettings(false);
+        return;
+      }
+      if (showGanttSettings) {
+        setShowGanttSettings(false);
+        return;
+      }
+      setGanttFullscreen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [drawerOpen, ganttFullscreen, showColumnSettings, showGanttSettings]);
+
+  // 全屏切换改变面板尺寸：GanttTimeline 在宽度防抖后整图重建并把横向滚动重置到
+  // 范围起点（frappe scroll_to 同步应用）。等到重建（.gantt-container 节点被替换）
+  // 完成后再恢复切换前的列表纵向与时间轴横向滚动；列宽未变时不会重建，滚动本就
+  // 保持原样，无需恢复。列表纵向由浏览器按新高度钳制，重建后的纵向同步以列表为准。
+  useEffect(() => {
+    const pending = pendingFullscreenScrollRef.current;
+    if (!pending) return;
+    pendingFullscreenScrollRef.current = null;
+    if (!pending.ganttContainer) return;
+    let frame = 0;
+    const restore = () => {
+      const container = plannerPanelRef.current?.querySelector<HTMLElement>(".gantt-container") ?? null;
+      if (container && container !== pending.ganttContainer) {
+        if (planRowsRef.current) planRowsRef.current.scrollTop = pending.listTop;
+        container.scrollLeft = pending.ganttLeft;
+        return;
+      }
+      const elapsed = performance.now() - pending.startedAt;
+      if (elapsed >= 400 && container && container.scrollLeft === pending.ganttLeft) return;
+      if (elapsed >= 2000) return;
+      frame = requestAnimationFrame(restore);
+    };
+    frame = requestAnimationFrame(restore);
+    return () => cancelAnimationFrame(frame);
+  }, [ganttFullscreen]);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(columnPreferencesKey, JSON.stringify({ version: 1, visibleIds: visibleColumnIds }));
@@ -590,6 +654,27 @@ export default function WorkPlansPage() {
 
   function toggleTaskList() {
     setCollapsed((current) => !current);
+  }
+
+  function toggleGanttFullscreen() {
+    if (!ganttFullscreen) {
+      // 进入全屏：关闭已展开的页面级与面板内浮层（规格 Q5）；
+      // 搜索/筛选/排序值、时间范围、游标、视图、折叠与显示偏好保持不变。
+      setShowAdvancedFilters(false);
+      setShowSortSettings(false);
+      setShowColumnSettings(false);
+      setShowGanttSettings(false);
+      setExportPopoverOpen(false);
+      setImportMenuOpen(false);
+    }
+    const ganttContainer = plannerPanelRef.current?.querySelector<HTMLElement>(".gantt-container") ?? null;
+    pendingFullscreenScrollRef.current = {
+      listTop: planRowsRef.current?.scrollTop ?? 0,
+      ganttLeft: ganttContainer?.scrollLeft ?? 0,
+      ganttContainer,
+      startedAt: performance.now(),
+    };
+    setGanttFullscreen(!ganttFullscreen);
   }
 
   function shiftRange(direction: -1 | 1) {
@@ -942,7 +1027,10 @@ export default function WorkPlansPage() {
             <button className="icon-button planner-collapse-button" type="button" aria-label={collapsed ? "展开任务列表" : "收起任务列表"} aria-expanded={!collapsed} title={collapsed ? "展开任务列表" : "收起任务列表"} onClick={toggleTaskList}>{collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</button>
             <div className="range-controls"><button className="icon-button" type="button" aria-label="上一时间范围" onClick={() => shiftRange(-1)}><ChevronLeft /></button><button className="secondary-button today-button" type="button" onClick={() => setAnchor(new Date())}>今天</button><button className="icon-button" type="button" aria-label="下一时间范围" onClick={() => shiftRange(1)}><ChevronRight /></button></div>
           </div>
-          <strong>{rangeTitle}</strong>
+          <span className="table-toolbar-center">
+            <strong>{rangeTitle}</strong>
+            <button className="icon-button gantt-fullscreen-toggle" type="button" aria-label={ganttFullscreen ? "退出全屏" : "进入全屏"} title={ganttFullscreen ? "退出全屏" : "进入全屏"} onClick={toggleGanttFullscreen}>{ganttFullscreen ? <Minimize /> : <Maximize />}</button>
+          </span>
           <div className="table-toolbar-actions">
             <div className="column-settings-wrap list-column-settings">
               <button className={`icon-button column-settings-button ${showColumnSettings ? "selected" : ""}`} type="button" aria-label="列设置" aria-expanded={showColumnSettings} onClick={() => setShowColumnSettings((value) => !value)}><Columns3 /></button>

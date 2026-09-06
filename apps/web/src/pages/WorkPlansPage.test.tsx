@@ -1481,3 +1481,169 @@ describe("工作计划页排序体验", () => {
     view.unmount();
   });
 });
+
+describe("gantt fullscreen mode", () => {
+  afterEach(() => {
+    // 全屏状态写在 html 根元素上：组件卸载时自身会清理，这里兜底复位避免污染后续用例
+    document.documentElement.classList.remove("gantt-fullscreen");
+  });
+
+  function ganttPropsSnapshot() {
+    const props = ganttPropsMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    return {
+      plans: props.plans,
+      view: props.view,
+      rangeStart: props.rangeStart,
+      rangeEnd: props.rangeEnd,
+      displayProperties: props.displayProperties,
+      tooltipProperties: props.tooltipProperties,
+      ownerField: props.ownerField,
+      readOnly: props.readOnly,
+      rebuildKey: props.rebuildKey,
+      taskListCollapsed: props.taskListCollapsed,
+    };
+  }
+
+  it("入口位于中央日期标题右侧，点击切换并更新无障碍名称", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(false);
+
+    const center = view.container.querySelector(".table-toolbar-center");
+    expect(center).not.toBeNull();
+    const button = screen.getByRole("button", { name: "进入全屏" });
+    expect(center!.contains(button)).toBe(true);
+    expect(center!.querySelector(":scope > strong")?.textContent).toBe("8月第1周");
+
+    fireEvent.click(button);
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true);
+    expect(screen.getByRole("button", { name: "退出全屏" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "退出全屏" }));
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(false);
+    expect(screen.getByRole("button", { name: "进入全屏" })).toBeInTheDocument();
+    view.unmount();
+  });
+
+  it("全屏时页面级元素经 CSS 隐藏、面板内容仍挂载可交互", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    fireEvent.click(screen.getByRole("button", { name: "进入全屏" }));
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true);
+    // 页面级元素仍在 DOM 中（由 html.gantt-fullscreen 规则隐藏），面板与工具栏完整保留
+    expect(screen.getByRole("heading", { name: "工作计划" })).toBeInTheDocument();
+    expect(view.container.querySelector(".planner-panel")).not.toBeNull();
+    expect(view.container.querySelector(".table-toolbar")).not.toBeNull();
+    expect(view.container.querySelector(".plan-rows")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "上一时间范围" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "周视图" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "今天" })).toBeInTheDocument();
+    view.unmount();
+  });
+
+  it("Esc 分层关闭：先面板内浮层，再退出全屏", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    fireEvent.click(screen.getByRole("button", { name: "进入全屏" }));
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    expect(screen.getByRole("dialog", { name: "列设置" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "列设置" })).toBeNull();
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "甘特条属性" }));
+    expect(screen.getByRole("dialog", { name: "甘特条属性" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "甘特条属性" })).toBeNull();
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(false);
+    view.unmount();
+  });
+
+  it("抽屉打开时 Esc 先关抽屉，第二次 Esc 才退出全屏", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    fireEvent.click(screen.getByRole("button", { name: "进入全屏" }));
+
+    fireEvent.click(view.container.querySelector(".plan-row .plan-title-button")!);
+    await waitFor(() => expect(drawerPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ open: true }));
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(drawerPropsMock.mock.calls.at(-1)?.[0]).toMatchObject({ open: false }));
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(false);
+    view.unmount();
+  });
+
+  it("进入全屏关闭已展开浮层，查询条件与控件值保持，退出后不自动重开", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "示例" } });
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+    expect(document.getElementById("work-plan-filter-panel")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "排序设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "甘特条属性" }));
+    expect(screen.getByRole("dialog", { name: "排序设置" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "进入全屏" }));
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true);
+    expect(screen.queryByRole("dialog", { name: "排序设置" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "列设置" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "甘特条属性" })).toBeNull();
+    expect(document.getElementById("work-plan-filter-panel")).toBeNull();
+    expect(screen.getByPlaceholderText("搜索工作计划")).toHaveValue("示例");
+
+    fireEvent.click(screen.getByRole("button", { name: "退出全屏" }));
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(false);
+    expect(screen.queryByRole("dialog", { name: "排序设置" })).toBeNull();
+    expect(document.getElementById("work-plan-filter-panel")).toBeNull();
+    expect(screen.getByPlaceholderText("搜索工作计划")).toHaveValue("示例");
+    view.unmount();
+  });
+
+  it("切换前后传给 GanttTimeline 的业务 props 保持不变", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    fireEvent.click(screen.getByRole("button", { name: "收起任务列表" }));
+    await waitFor(() => expect(ganttPropsSnapshot().taskListCollapsed).toBe(true));
+    const before = ganttPropsSnapshot();
+
+    fireEvent.click(screen.getByRole("button", { name: "进入全屏" }));
+    await waitFor(() => expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true));
+    const during = ganttPropsSnapshot();
+    expect(during).toEqual(before);
+    expect(during.plans).toBe(before.plans);
+    expect(during.taskListCollapsed).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "退出全屏" }));
+    expect(ganttPropsSnapshot()).toEqual(before);
+    view.unmount();
+  });
+
+  it("刷新或卸载后恢复普通布局", async () => {
+    const first = renderPage();
+    await screen.findByText("示例计划");
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "进入全屏" }));
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true);
+    first.unmount();
+    // 卸载（离开路由）即清理根类名；刷新后重新挂载同样从普通布局开始
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(false);
+
+    const second = renderPage();
+    await screen.findByText("示例计划");
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(false);
+    expect(screen.getByRole("button", { name: "进入全屏" })).toBeInTheDocument();
+    second.unmount();
+  });
+});
