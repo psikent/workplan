@@ -1,3 +1,7 @@
+## Pre-dev sync check
+
+The user develops from multiple machines. At the start of every development session, before any work, verify the local tree is current: `git fetch origin`, then compare local `main` against `origin/main` (e.g. `git rev-list --left-right --count main...origin/main`) and note uncommitted changes. If local is behind `origin/main`, confirm with the user first, then update (mind any uncommitted changes; prefer `--ff-only`). Never start development on a stale tree — another machine may have already fixed or changed what you are about to touch.
+
 ## Agent skills
 
 ### New feature requests
