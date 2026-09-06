@@ -16,6 +16,10 @@ _Avoid_: Inclusive end range, end-day occupancy
 The required single-line title of a Work Plan; it is the Work Plan's primary identity in the plan list, exports, and Gantt displays. Distinct from the long-text Description field.
 _Avoid_: Description, 说明, long text
 
+**Gantt Fullscreen Mode (甘特图全屏模式)**:
+A temporary Work Plan page state that focuses the view on the Gantt panel by hiding page navigation and page-level actions while retaining the Work Content list, time axis, and Gantt controls. It ends when the user leaves the page or reloads it.
+_Avoid_: Browser fullscreen, native fullscreen
+
 **Schedule Order (排期顺序)**:
 The canonical total order for Work Plans: earlier start first, then later end first, then earlier creation first, with identity as the final stable tie-breaker. It is the default and fallback order rather than a manually maintained rank.
 _Avoid_: Manual order, task priority, `sortOrder`
