@@ -1,7 +1,7 @@
 # 02 — 响应式回归与浏览器验收
 
 Type: task
-Status: ready-for-human
+Status: done
 Spec: ../spec.md
 Scope: `apps/web/src/pages/WorkPlansPage.test.tsx`、`apps/web/src/styles.css`（如需修正）及浏览器验收记录
 
@@ -18,7 +18,7 @@ Scope: `apps/web/src/pages/WorkPlansPage.test.tsx`、`apps/web/src/styles.css`�
 5. 运行 Web 相关测试、typecheck、build 和 `git diff --check`；按项目流程完成真实浏览器 QA，检查浅色/深色主题、页头纵向空间和整页横向溢出。
 6. 若浏览器发现弹层在窄屏被裁切，只做维持现有导出语义所需的最小响应式修正，并记录在本票 `## Comments`。
 
-## 验收清单
+## 历史验收清单（2026-09-05；已按下方用户确认闭环）
 
 - [x] 自动化测试覆盖页头结构、既有导出/模板/权限行为，无弱化断言。
 - [ ] 320/360/390px 手机视口通过同行、不换行、无整页横向溢出检查。
@@ -31,3 +31,8 @@ Scope: `apps/web/src/pages/WorkPlansPage.test.tsx`、`apps/web/src/styles.css`�
 - 2026-09-05：页头结构回归测试、Web 全量测试（17 个文件、287 项）、Web typecheck、Web build、全仓 typecheck 与 `git diff --check` 通过。
 - 2026-09-05：浏览器可打开本地应用，但开发数据库无可复用登录态；未读取或猜测现有密码。尝试使用同源 CSS 夹具时被浏览器 URL 安全策略拒绝，未绕过该限制。因此 320/360/390px 的真实业务页几何、主题和弹层截图仍待已登录用户/人工验收。
 - 2026-09-05：全仓测试首次出现 `apps/server/test/workbench.test.ts` 午夜边界用例超时；单独重跑该文件 5/5 通过，判断为既有不稳定超时，与本次 Web 改动无关。
+
+### 用户确认闭环（2026-09-07）
+
+- 用户明确要求将需求清单第四条“手机端页头布局”标记为已闭环，据此将本票更新为 `done`，历史清单中的待验收项不再作为本票结案阻塞。
+- 此次为用户确认的文档闭环；保留历史检查结果与浏览器验收限制，不表示本次新增执行了视口、主题或弹层验证。
