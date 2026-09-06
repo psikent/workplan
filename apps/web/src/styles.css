@@ -661,13 +661,11 @@ html.gantt-fullscreen .planner-panel { border: 0; border-radius: 0; box-shadow: 
   .sidebar-footer { width: 58px; margin-top: 0; padding: 0 10px; border-top: 0; border-left: 1px solid var(--line); }.sidebar-footer .user-chip, .sidebar-footer .user-meta, .sidebar-footer .theme-toggle, .sidebar-footer .auto-theme-toggle { display: none; }.sidebar-footer .signout-button { display: inline-flex; }
   .work-plans-page, .content-page { padding: 18px 16px; }
   .work-plans-page { height: 100%; }
-  .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }.page-header h1 { font-size: 24px; white-space: nowrap; }.page-header p { display: none; }
-  .overview-page .page-header { flex-direction: row; align-items: center; justify-content: space-between; }
-  .monthly-goals-page .page-header { flex-direction: row; align-items: center; justify-content: space-between; }
+  .page-header { flex-direction: row; align-items: center; gap: 10px; }.page-header h1 { font-size: 24px; white-space: nowrap; }.page-header p { display: none; }
   .monthly-goals-page .header-actions { flex-wrap: nowrap; gap: 6px; }
   .monthly-goals-page .header-actions .secondary-button { padding-inline: 9px; }
   .monthly-goals-page .header-actions .toolbar-button-label { display: none; }
-  .work-plans-page .page-header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); align-items: center; gap: 8px; min-height: 38px; margin-bottom: 13px; }
+  .work-plans-page .page-header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); align-items: center; gap: 8px; margin-bottom: 13px; }
   .work-plans-page .page-header > div:first-child, .work-plans-page .work-plan-header-actions { min-width: 0; }
   .work-plans-page .work-plan-header-actions { width: 100%; flex-wrap: nowrap; justify-content: flex-end; gap: 6px; }
   .work-plans-page .work-plan-header-actions > select { width: 0; min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
