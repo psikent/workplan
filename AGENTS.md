@@ -1,8 +1,3 @@
-## 核心工作流程（强制）
-
-1. **新增需求前，先同步最新远端代码**：`git fetch origin` 并比对本地 `main` 与 `origin/main`，避免同一问题在其他机器上已被修改而重复改动。详见下方 Pre-dev sync check。
-2. **代码修改完成后，先经 `code-reviewer` 子智能体审核，无问题后再部署到生产环境**：派 `code-reviewer` 审核脏 diff 并修复 P0/P1 发现，确认无问题后再提交；生产部署由 auto-release hook 在 typecheck + test 全绿后自动执行。详见下方 Code review gate 与 Auto-release hook。
-
 ## Pre-dev sync check
 
 The user develops from multiple machines. At the start of every development session, before any work, verify the local tree is current: `git fetch origin`, then compare local `main` against `origin/main` (e.g. `git rev-list --left-right --count main...origin/main`) and note uncommitted changes. If local is behind `origin/main`, confirm with the user first, then update (mind any uncommitted changes; prefer `--ff-only`). Never start development on a stale tree — another machine may have already fixed or changed what you are about to touch.
