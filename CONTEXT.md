@@ -44,6 +44,10 @@ _Avoid_: Child task, recurrence copy
 A globally defined, typed property that can be attached to every Work Plan without changing the Work Plan's built-in attributes.
 _Avoid_: Metadata blob, task field
 
+**Option Order (选项顺序)**:
+The administrator-maintained sequence of a select Custom Field's options. It is authoritative for option display everywhere and for single_select Work Plan sorting; it is never derived from option label text.
+_Avoid_: 标签排序, label sort, alphabetical order
+
 **Monthly Goal**:
 A per-month work objective, defined by an Administrator or an Editor, with its own title, description, and month. It links to at most one Work Plan and derives its completion from that Work Plan's effective status.
 _Avoid_: Goal tag, milestone, target
