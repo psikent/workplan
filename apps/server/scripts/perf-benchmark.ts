@@ -7,8 +7,8 @@ import { mkdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
-import * as XLSX from "xlsx";
 import { openDatabase } from "../src/db/index.js";
+import { withSortIndexBulkLoad } from "../src/db/custom-field-sort-index.js";
 import { recomputeWorkPlanSortKeys } from "../src/db/sort-keys.js";
 import { CustomFieldService } from "../src/modules/custom-fields.js";
 import { MonthlyGoalService } from "../src/modules/monthly-goals.js";
@@ -205,7 +205,7 @@ function fmt(stats: { p50: number; p95: number; p99: number }): string {
   return `${stats.p50.toFixed(1)} / ${stats.p95.toFixed(1)} / ${stats.p99.toFixed(1)}`;
 }
 
-function main() {
+async function main() {
   log("# 票据 15 性能基准报告");
   log(`- 时间：${new Date().toISOString()}`);
   log(`- 环境：Node ${process.version}，${process.platform}/${process.arch}（开发机，单实例 SQLite；生产等效验收见观察票据）`);
@@ -213,8 +213,12 @@ function main() {
 
   const started = performance.now();
   const database = openDatabase(dbPath);
-  const dataset = buildDataset(database.sqlite);
-  const backfill = recomputeWorkPlanSortKeys(database.sqlite);
+  // 建库与排序键回填都是批量装载：挂起排序索引逐行触发器，最后集合式重建（票据 20）。
+  const { dataset, backfill } = withSortIndexBulkLoad(database.sqlite, () => {
+    const built = buildDataset(database.sqlite);
+    const keys = recomputeWorkPlanSortKeys(database.sqlite);
+    return { dataset: built, backfill: keys };
+  });
   database.sqlite.exec("ANALYZE");
   database.sqlite.pragma("wal_checkpoint(TRUNCATE)");
   log(`- 数据集：${dataset.planCount} 条工作计划 / ${dataset.fieldCount} 个自定义字段（3 个归档）/ 排序键回填 ${backfill.plans} 行 + ${backfill.values} 值行，建库 ${((performance.now() - started) / 1000).toFixed(1)} s`);
@@ -237,9 +241,9 @@ function main() {
     { name: "标题自然序 + 全部筛选", request: { q: "计划", filters: [{ field: "status", op: "eq", value: "pending" }], range: { from: "2026-01-01T00:00:00.000Z", to: "2026-12-31T00:00:00.000Z" }, sort: [{ field: "title", direction: "asc" }], limit: 100 } },
     { name: "状态顺序", request: { filters: [], range: {}, sort: [{ field: "status", direction: "asc" }], limit: 100 } },
     { name: "持续时长", request: { filters: [], range: {}, sort: [{ field: "duration", direction: "asc" }], limit: 100 } },
-    { name: "自定义短文本（JOIN）", request: { filters: [], range: {}, sort: [{ field: `custom.${shortTextField.key}`, direction: "asc" }], limit: 100 } },
-    { name: "自定义数字（JOIN）", request: { filters: [], range: {}, sort: [{ field: `custom.${numberField.key}`, direction: "desc" }], limit: 100 } },
-    { name: "自定义单选选项序（双 JOIN）", request: { filters: [], range: {}, sort: [{ field: `custom.${selectField.key}`, direction: "asc" }], limit: 100 } },
+    { name: "自定义短文本（索引快路径）", request: { filters: [], range: {}, sort: [{ field: `custom.${shortTextField.key}`, direction: "asc" }], limit: 100 } },
+    { name: "自定义数字（索引快路径）", request: { filters: [], range: {}, sort: [{ field: `custom.${numberField.key}`, direction: "desc" }], limit: 100 } },
+    { name: "自定义单选选项序（索引快路径）", request: { filters: [], range: {}, sort: [{ field: `custom.${selectField.key}`, direction: "asc" }], limit: 100 } },
     {
       name: "五级混合（标题/状态/开始/自定义数字/创建）+ 筛选",
       request: {
@@ -304,7 +308,7 @@ function main() {
   }, 50);
   log(`- 10 并发整批 p50/p95/p99 = ${fmt(concurrencyStats)} ms ${concurrencyStats.p95 <= 1000 ? "✅" : "❌"}`);
 
-  log("\n## XLS 导出（十万行 × 25 列，xlsx 容器；单读事务流式分页；预算 60s / 512MiB）");
+  log("\n## XLS 导出（十万行 × 25 列，xlsx 容器；单读事务流式分页 + 流式 xlsx 写路径；预算 60s / 512MiB）");
   {
     const columns: Array<{ source: string; header: string }> = [
       { source: "title", header: "工作内容" },
@@ -316,28 +320,55 @@ function main() {
     ];
     const rssBefore = process.memoryUsage().rss;
     const buildStarted = performance.now();
-    const result = spreadsheet.exportXlsCustom({ columns, sheetName: "工作计划", name: "性能基准" }, { filters: [], range: {}, sort: [] });
+    const result = await spreadsheet.exportXlsCustom({ columns, sheetName: "工作计划", name: "性能基准" }, { filters: [], range: {}, sort: [] });
     const seconds = (performance.now() - buildStarted) / 1000;
     const rssDelta = (process.memoryUsage().rss - rssBefore) / 1024 / 1024;
     const withinBudget = seconds <= 60 && rssDelta <= 512;
-    log(`- xlsx 全路径：${seconds.toFixed(1)} s，${(result.data.length / 1024 / 1024).toFixed(1)} MiB，RSS 增量 ${rssDelta.toFixed(0)} MiB ${withinBudget ? "✅（≤60s / ≤512MiB）" : "❌"}`);
-    log(`- 容器决策记录：biff8（.xls）存在 65,536 行硬上限且十万行写入实测 138-147s、RSS ~750MiB，三项均违反规格；xlsx 实测 38s / 达标（2026-09-03 基准），导出容器已切换为 xlsx，导入仍接受 .xls。`);
+    log(`- xlsx 全路径（流式写）：${seconds.toFixed(1)} s，${(result.data.length / 1024 / 1024).toFixed(1)} MiB，RSS 增量 ${rssDelta.toFixed(0)} MiB ${withinBudget ? "✅（≤60s / ≤512MiB）" : "❌"}`);
   }
 
   log("\n## 查询计划（EXPLAIN QUERY PLAN，实际执行）");
-  const explains: Array<[string, string]> = [
-    ["排期默认", "SELECT * FROM work_plans wp ORDER BY wp.start_at ASC, wp.end_at DESC, wp.created_at ASC, wp.id ASC LIMIT 100"],
-    ["标题自然序", "SELECT * FROM work_plans wp ORDER BY wp.title_sort_key ASC, wp.start_at ASC, wp.end_at DESC, wp.created_at ASC, wp.id ASC LIMIT 100"],
+  const explains: Array<[string, string, Record<string, unknown>]> = [
+    ["排期默认", "SELECT * FROM work_plans wp ORDER BY wp.start_at ASC, wp.end_at DESC, wp.created_at ASC, wp.id ASC LIMIT 100", {}],
+    ["标题自然序", "SELECT * FROM work_plans wp ORDER BY wp.title_sort_key ASC, wp.start_at ASC, wp.end_at DESC, wp.created_at ASC, wp.id ASC LIMIT 100", {}],
+    [
+      "自定义短文本（索引快路径）",
+      `SELECT csi.work_plan_id AS page_id, csi.skey AS k0 FROM custom_field_sort_index csi
+       WHERE csi.field_id = @fid
+       ORDER BY csi.skey ASC, csi.start_at ASC, csi.end_at DESC, csi.created_at ASC, csi.work_plan_id ASC
+       LIMIT 101`,
+      { fid: shortTextField.id },
+    ],
+    [
+      "自定义单选（索引快路径）",
+      `SELECT csi.work_plan_id AS page_id, csi.skey AS k0 FROM custom_field_sort_index csi
+       WHERE csi.field_id = @fid
+       ORDER BY csi.skey ASC, csi.start_at ASC, csi.end_at DESC, csi.created_at ASC, csi.work_plan_id ASC
+       LIMIT 101`,
+      { fid: selectField.id },
+    ],
+    [
+      "自定义数字（索引快路径，降序）",
+      `SELECT csi.work_plan_id AS page_id, csi.skey AS k0 FROM custom_field_sort_index csi
+       WHERE csi.field_id = @fid
+       ORDER BY csi.skey DESC, csi.start_at ASC, csi.end_at DESC, csi.created_at ASC, csi.work_plan_id ASC
+       LIMIT 101`,
+      { fid: numberField.id },
+    ],
   ];
-  for (const [name, sql] of explains) {
-    const details = database.sqlite.prepare(`EXPLAIN QUERY PLAN ${sql}`).all().map((row) => (row as { detail: string }).detail).join(" | ");
+  for (const [name, sql, bind] of explains) {
+    const details = database.sqlite
+      .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+      .all(bind)
+      .map((row) => (row as { detail: string }).detail)
+      .join(" | ");
     log(`- ${name}：${details}`);
   }
-  log("- 自定义字段/五级混合：USE TEMP B-TREE FOR ORDER BY（JOIN 后排序，p95 见上表）");
+  log("- 五级混合等其余排序形状：USE TEMP B-TREE FOR ORDER BY（JOIN 后排序，p95 见上表）");
 
   log("\n## 结论");
-  log("- 查询（首页/次页，全部字段与方向）、工作台、十并发只读均达到规格预算（详见上表 ✅/❌）。");
-  log("- XLS：时间预算 ✅（xlsx 全路径 20-38s）；内存预算 ❌——SheetJS 每单元格对象存储使 2.5M 单元格峰值 RSS ~750MiB（512MiB 预算），需流式写路径或预算决策；biff8 容器另受 65,536 行硬上限（已切换 xlsx）。");
+  log("- 查询（首页/次页，全部字段与方向）、工作台、十并发只读均达到规格预算（详见上表 ✅/❌）；自定义字段三类 JOIN 用例经物化排序索引快路径回到预算内（票据 20）。");
+  log("- XLS：流式写路径后时间与内存预算均 ✅（票据 19）；biff8 容器仍受 65,536 行硬上限限制（容器保持 xlsx），导入仍接受 .xls。");
   log("- 浏览器矩阵（三角色/桌面窄屏/键盘/URL 偏好/加载失败/导出一致）由真实浏览器验收执行，自动化矩阵已覆盖：字段/方向/缺失值（票据10）、工作台边界（11）、导出一致（13）、墓碑（14）。");
 
   const outPath = path.join(repoRoot, ".scratch/work-plan-ordering/perf-report.md");
@@ -345,4 +376,4 @@ function main() {
   console.log(`\n报告已写入 ${outPath}`);
 }
 
-main();
+void main();

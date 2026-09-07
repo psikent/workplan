@@ -59,6 +59,9 @@ type SortLevel = {
 
 type CustomRef = { alias: string; optionsAlias: string | null };
 
+// 索引快路径（票据 20）：单一自定义字段排序改走 custom_field_sort_index 物化索引。
+type FastCustomSort = { definition: CustomFieldDefinition; dir: "asc" | "desc" };
+
 // 状态排序与展示一致：自动状态按求值时刻派生，手动状态用存量；统一映射为整数序（待开始→进行中→已完成→已取消）。
 const STATUS_CASE =
   "CASE WHEN wp.status_mode = 'manual' THEN CASE wp.status WHEN 'pending' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END WHEN julianday(wp.start_at) > julianday(@now) THEN 0 WHEN julianday(wp.end_at) <= julianday(@now) THEN 2 ELSE 1 END";
@@ -66,6 +69,8 @@ const DURATION_EXPR = "(julianday(wp.end_at) - julianday(wp.start_at))";
 
 const CURSOR_VERSION = 1;
 const SORT_UNSUPPORTED_TYPES = new Set(["long_text", "multi_select"]);
+// 索引快路径覆盖的可排序类型（与 db/custom-field-sort-index.ts 的物化键列一致）。
+const SORT_INDEX_TYPES = new Set(["short_text", "url", "number", "boolean", "date", "datetime", "single_select"]);
 
 // 排期兜底链：开始升、结束降、创建升、ID 升；方向固定，不随显式排序反转。
 const SCHEDULE_CHAIN: Array<{ field: WorkPlanSortBuiltinField | "id"; dir: "asc" | "desc" }> = [
@@ -229,36 +234,26 @@ export class WorkPlanQueryEngine {
       params.rangeTo = rangeTo;
     }
 
-    const levels = this.resolveSortLevels(request.sort, catalog, customRefs, joins, params);
+    // 快路径仅限游标语义的 /query：offset 模式（legacy 适配器）保持 JOIN 路径——
+    // 其 OFFSET 在 SQL 内执行，不受快路径按行数展开 IN 占位符的变量上限约束。
+    const fastSort = options.offset === undefined ? this.detectFastCustomSort(request, catalog) : null;
+    // 快路径的 levels 仅用于游标位宽度；JOIN 路径这里解析（其副作用是登记排序字段 JOIN）。
+    const levels = fastSort ? this.fastSortLevels(fastSort) : this.resolveSortLevels(request.sort, catalog, customRefs, joins, params);
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
     const joinSql = joins.length > 0 ? joins.join(" ") : "";
     // 无筛选引用 JOIN 别名时，纯 1:1 LEFT JOIN 不改变行数——计数省去 JOIN 与排序输入。
     const joinsReferencedByWhere = joins.length > 0 && /\b(cfv\d|cfo\d)\b/.test(whereSql);
     const countJoinSql = joinsReferencedByWhere ? joinSql : "";
-    const keysetPredicate = this.buildCursorPredicate(request, levels, params, options.offset === undefined);
-    // 总数按完整过滤集合计数（不含游标）；分页在过滤之上追加键集谓词。
-    const pageConditions = keysetPredicate ? [...where, keysetPredicate] : where;
     const countWhereSql = whereSql;
-    const pageWhereSql = pageConditions.length > 0 ? `WHERE ${pageConditions.join(" AND ")}` : "";
-    const orderSql = levels
-      .map((level) => (level.nullable ? `(${level.expr} IS NULL) ASC, ${level.expr} ${level.dir.toUpperCase()}` : `${level.expr} ${level.dir.toUpperCase()}`))
-      .join(", ");
-    const positionSelect = levels.map((level, index) => `${level.expr} AS k${index}`).join(", ");
 
     const runInReadTransaction = this.database.sqlite.transaction(() => {
       const total = this.database.sqlite
         .prepare(`SELECT COUNT(*) AS total FROM work_plans wp ${countJoinSql} ${countWhereSql}`)
         .get(params) as { total: number };
-
-      const limitClause = "LIMIT @limit";
-      const offsetClause = options.offset !== undefined ? " OFFSET @offset" : "";
-      const pageParams: Record<string, unknown> = { ...params, limit: request.limit + (options.offset === undefined ? 1 : 0) };
-      if (options.offset !== undefined) pageParams.offset = options.offset;
-      const rows = this.database.sqlite
-        .prepare(`SELECT wp.*, ${positionSelect} FROM work_plans wp ${joinSql} ${pageWhereSql} ORDER BY ${orderSql} ${limitClause}${offsetClause}`)
-        .all(pageParams) as Array<WorkPlanRow & Record<string, unknown>>;
-
+      const rows = fastSort
+        ? this.pageViaSortIndex(request, fastSort, levels, { joins, where, params }, options)
+        : this.pageViaJoin(request, levels, joins, where, params, options);
       return { total: total.total, rows };
     });
 
@@ -288,6 +283,153 @@ export class WorkPlanQueryEngine {
     if (decoded.fp !== fingerprint) throw cursorMismatch();
     if (decoded.pos.length !== levels.length) throw cursorInvalid();
     return buildKeyset(levels, decoded.pos, params);
+  }
+
+  // 单一自定义字段排序且类型受支持时改走物化排序索引；其余排序形状返回 null 维持 JOIN 路径。
+  // 校验语义与 resolveSortLevels 的自定义分支一致（未知/归档/不支持类型抛同样的错误）。
+  private detectFastCustomSort(request: WorkPlanQueryRequest, catalog: Map<string, CustomFieldDefinition>): FastCustomSort | null {
+    if (request.sort.length !== 1) return null;
+    const item = request.sort[0]!;
+    if (!item.field.startsWith("custom.")) return null;
+    const key = item.field.slice("custom.".length);
+    const definition = catalog.get(key);
+    if (!definition) throw sortFieldError("SORT_FIELD_INVALID" satisfies WorkPlanQueryErrorCode, `未知排序字段：${item.field}`);
+    if (definition.archivedAt || SORT_UNSUPPORTED_TYPES.has(definition.type)) {
+      throw sortFieldError("SORT_FIELD_UNSUPPORTED" satisfies WorkPlanQueryErrorCode, `字段不支持排序：${item.field}`);
+    }
+    if (!SORT_INDEX_TYPES.has(definition.type)) return null;
+    return { definition, dir: item.direction };
+  }
+
+  // 快路径 levels：键位与 JOIN 路径的 k0..k4 语义一一对应（custom 键 + 排期链），
+  // 游标在两条路径间互通，无需版本隔离。
+  private fastSortLevels(fastSort: FastCustomSort): SortLevel[] {
+    const numeric = ["number", "boolean", "single_select"].includes(fastSort.definition.type);
+    return [
+      { identity: `custom:${fastSort.definition.id}:sort_index`, expr: "csi.skey", dir: fastSort.dir, nullable: true, numeric },
+      { identity: "wp.start_at", expr: "csi.start_at", dir: "asc", nullable: false, numeric: false },
+      { identity: "wp.end_at", expr: "csi.end_at", dir: "desc", nullable: false, numeric: false },
+      { identity: "wp.created_at", expr: "csi.created_at", dir: "asc", nullable: false, numeric: false },
+      { identity: "wp.id", expr: "csi.work_plan_id", dir: "asc", nullable: false, numeric: false },
+    ];
+  }
+
+  // JOIN 路径分页（原实现）：排序表达式涉及多表列，依赖 TEMP B-TREE 排序。
+  private pageViaJoin(
+    request: WorkPlanQueryRequest,
+    levels: SortLevel[],
+    joins: string[],
+    where: string[],
+    params: Record<string, unknown>,
+    options: { offset?: number },
+  ): Array<WorkPlanRow & Record<string, unknown>> {
+    const keysetPredicate = this.buildCursorPredicate(request, levels, params, options.offset === undefined);
+    const pageConditions = keysetPredicate ? [...where, keysetPredicate] : where;
+    const pageWhereSql = pageConditions.length > 0 ? `WHERE ${pageConditions.join(" AND ")}` : "";
+    const orderSql = levels
+      .map((level) => (level.nullable ? `(${level.expr} IS NULL) ASC, ${level.expr} ${level.dir.toUpperCase()}` : `${level.expr} ${level.dir.toUpperCase()}`))
+      .join(", ");
+    const positionSelect = levels.map((level, index) => `${level.expr} AS k${index}`).join(", ");
+    return this.runPageQuery(
+      `SELECT wp.*, ${positionSelect} FROM work_plans wp ${joins.join(" ")} ${pageWhereSql} ORDER BY ${orderSql} LIMIT @limit`,
+      params,
+      request.limit,
+      options,
+    );
+  }
+
+  // 索引快路径分页（票据 20）：非空键区按物化覆盖索引顺序扫描 + 提前终止（免排序）；
+  // 空值区（缺失/空白/失效选项，无索引行）由主表反连接按排期链补齐。
+  // 页内两区拼接：非空在前（方向不翻转），键位与 JOIN 路径游标一一对应。
+  private pageViaSortIndex(
+    request: WorkPlanQueryRequest,
+    fastSort: FastCustomSort,
+    levels: SortLevel[],
+    context: { joins: string[]; where: string[]; params: Record<string, unknown> },
+    options: { offset?: number },
+  ): Array<WorkPlanRow & Record<string, unknown>> {
+    const cursorMode = options.offset === undefined;
+    const positions = this.fastPathCursorPositions(request, cursorMode, levels.length);
+    const keyPos = positions ? positions[0] : undefined;
+    // 游标模式多取一行判定下页；偏移模式取 offset+limit 再切除前缀。
+    const nonNullFetch = request.limit + (cursorMode ? 1 : 0) + (options.offset ?? 0);
+    const filterJoins = context.joins.length > 0 ? context.joins.join(" ") : "";
+    const filterWhere = context.where.length > 0 ? ` AND ${context.where.join(" AND ")}` : "";
+    // 筛选/全文/范围条件引用 wp 列，需要回连主表；无条件时非空区纯覆盖索引扫描。
+    const plansJoin = context.where.length > 0 ? "JOIN work_plans wp ON wp.id = csi.work_plan_id" : "";
+
+    let pageRows: Array<Record<string, unknown>> = [];
+    if (keyPos !== null) {
+      const nonNullParams: Record<string, unknown> = { ...context.params, sortFieldId: fastSort.definition.id };
+      // 非空键位推进；buildKeyset 的 `expr IS NULL` 分支在索引内恒假（空值不入表），无副作用。
+      const keysetSql = positions ? buildKeyset(levels, positions, nonNullParams) : null;
+      pageRows = this.database.sqlite
+        .prepare(
+          `SELECT csi.work_plan_id AS page_id, csi.skey AS k0, csi.start_at AS k1, csi.end_at AS k2, csi.created_at AS k3
+           FROM custom_field_sort_index csi ${plansJoin} ${filterJoins}
+           WHERE csi.field_id = @sortFieldId${keysetSql ? ` AND ${keysetSql}` : ""}${filterWhere}
+           ORDER BY csi.skey ${fastSort.dir.toUpperCase()}, csi.start_at ASC, csi.end_at DESC, csi.created_at ASC, csi.work_plan_id ASC
+           LIMIT @nonNullFetch`,
+        )
+        .all({ ...nonNullParams, nonNullFetch }) as Array<Record<string, unknown>>;
+    }
+
+    if (pageRows.length < nonNullFetch) {
+      const remaining = nonNullFetch - pageRows.length;
+      const nullParams: Record<string, unknown> = { ...context.params, sortFieldId: fastSort.definition.id };
+      // 空值区键集：仅当游标已落在空值区（k0 = null）时按链位推进；其余情形取全区。
+      let nullKeyset = "";
+      if (positions && keyPos === null) {
+        const wpChainExprs = ["wp.start_at", "wp.end_at", "wp.created_at", "wp.id"];
+        const wpChainLevels = levels.slice(1).map((level, index) => ({ ...level, expr: wpChainExprs[index]! }));
+        nullKeyset = ` AND ${buildKeyset(wpChainLevels, positions.slice(1), nullParams)}`;
+      }
+      const nullRows = this.database.sqlite
+        .prepare(
+          `SELECT wp.id AS page_id, NULL AS k0, wp.start_at AS k1, wp.end_at AS k2, wp.created_at AS k3
+           FROM work_plans wp ${filterJoins}
+           WHERE NOT EXISTS (SELECT 1 FROM custom_field_sort_index nn WHERE nn.field_id = @sortFieldId AND nn.work_plan_id = wp.id)${nullKeyset}${filterWhere}
+           ORDER BY wp.start_at ASC, wp.end_at DESC, wp.created_at ASC, wp.id ASC
+           LIMIT @remaining`,
+        )
+        .all({ ...nullParams, remaining }) as Array<Record<string, unknown>>;
+      pageRows = [...pageRows, ...nullRows];
+    }
+    if (!cursorMode) pageRows = pageRows.slice(options.offset);
+
+    if (pageRows.length === 0) return [];
+    const placeholders = pageRows.map(() => "?").join(", ");
+    const fullRows = this.database.sqlite
+      .prepare(`SELECT wp.* FROM work_plans wp WHERE wp.id IN (${placeholders})`)
+      .all(...pageRows.map((row) => row.page_id)) as WorkPlanRow[];
+    const rowById = new Map(fullRows.map((row) => [row.id, row]));
+    return pageRows.map((indexRow) => {
+      const full = rowById.get(indexRow.page_id as string);
+      if (!full) throw new Error(`物化排序索引指向缺失的计划：${indexRow.page_id}`);
+      return { ...full, k0: indexRow.k0, k1: indexRow.k1, k2: indexRow.k2, k3: indexRow.k3 } as WorkPlanRow & Record<string, unknown>;
+    });
+  }
+
+  // 快路径游标位解码：与 buildCursorPredicate 同一校验语义（指纹一致、位宽一致）。
+  private fastPathCursorPositions(request: WorkPlanQueryRequest, cursorMode: boolean, levelCount: number): unknown[] | null {
+    if (!cursorMode || !request.cursor) return null;
+    const decoded = decodeCursor(request.cursor);
+    if (decoded.fp !== queryFingerprint(request)) throw cursorMismatch();
+    if (decoded.pos.length !== levelCount) throw cursorInvalid();
+    return decoded.pos;
+  }
+
+  private runPageQuery(
+    sql: string,
+    params: Record<string, unknown>,
+    limit: number,
+    options: { offset?: number },
+  ): Array<WorkPlanRow & Record<string, unknown>> {
+    const pageParams: Record<string, unknown> = { ...params, limit: limit + (options.offset === undefined ? 1 : 0) };
+    if (options.offset !== undefined) pageParams.offset = options.offset;
+    return this.database.sqlite.prepare(`${sql}${options.offset !== undefined ? " OFFSET @offset" : ""}`).all(pageParams) as Array<
+      WorkPlanRow & Record<string, unknown>
+    >;
   }
 
   // 解析零至五项显式排序 + 排期兜底链；同一列只保留首次出现（显式方向优先，链内同级为空操作）。

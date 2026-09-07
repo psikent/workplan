@@ -1647,3 +1647,48 @@ describe("gantt fullscreen mode", () => {
     second.unmount();
   });
 });
+
+describe("查询失败保留结果（票据 18 发现的回归）", () => {
+  it("查询失败时保留上次成功结果与排序，重试后恢复", async () => {
+    let failNextQuery = false;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/export-templates") return [exportTemplate];
+      if (path === "/owner-account-mappings") return [{ ownerName: "冯铭倩", account: "fengmingqian@zh.gd.csg.cn" }];
+      if (path.startsWith("/work-plan-series")) return [];
+      if (path.startsWith("/custom-fields")) return [ownerField, effortField];
+      if (path === "/monthly-goals") return [monthlyGoal];
+      if (path === "/work-plans/query" && init?.method === "POST") {
+        if (failNextQuery) {
+          failNextQuery = false;
+          throw new Error("服务端查询失败");
+        }
+        return emulateQuery([plan], init);
+      }
+      if (path.startsWith("/work-plans")) return [plan];
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    // 添加排序字段触发新查询 → 服务端失败
+    fireEvent.click(screen.getByRole("button", { name: "排序设置" }));
+    const addSelect = screen.getByRole("combobox", { name: "添加排序字段" });
+    failNextQuery = true;
+    fireEvent.change(addSelect, { target: { value: "status" } });
+
+    await screen.findByRole("alert");
+    // 失败后上次成功结果仍在列表与甘特中（banner 承诺"最近一次成功结果"）
+    expect(screen.getByText("示例计划")).toBeInTheDocument();
+    // 面板进入失败态提示，排序项保留（面板可能已随查询失败收起，仅断言仍在打开时可见）
+    // 面板进入失败态：items 与 appliedItems 分离，显示"最近一次排序未应用成功"
+    const sortDialog = screen.getByRole("dialog", { name: "排序设置" });
+    expect(within(sortDialog).getByText("最近一次排序未应用成功，表格仍按之前的顺序显示。")).toBeInTheDocument();
+
+    // 重试恢复成功，错误横幅消失
+    fireEvent.click(within(screen.getByRole("alert")).getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(screen.getByText("示例计划")).toBeInTheDocument();
+    view.unmount();
+  });
+});

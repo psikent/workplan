@@ -327,12 +327,20 @@ export default function WorkPlansPage() {
     placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   });
-  // 已经成功应用的查询：仅由最近一次成功查询固化，导出与展示使用它，失败不污染。
+  // 已经成功应用的查询：仅由最近一次真实成功查询固化，导出与展示使用它，失败不污染。
+  // v5 的 keepPreviousData 期间 isSuccess 为 true 但 isPlaceholderData 为 true，
+  // 必须排除，否则占位数据会被当作"已成功应用"。
   const appliedQueryRef = useRef<WorkPlanQueryRequest | null>(null);
-  if (plansQuery.isSuccess) appliedQueryRef.current = queryRequest;
+  if (plansQuery.isSuccess && !plansQuery.isPlaceholderData) appliedQueryRef.current = queryRequest;
   const appliedQuery = appliedQueryRef.current;
   const appliedSort = appliedQuery?.sort ?? [];
-  const plans = plansQuery.data?.items ?? EMPTY_PLANS;
+  // 失败保留结果（规格要求）：keepPreviousData 只在 pending 期生效，查询进入 error 态后
+  // placeholder 被丢弃，因此用 ref 固化最近一次成功响应，错误态仍展示上次结果。
+  const lastSuccessQueryRef = useRef<WorkPlanQueryResponse | null>(null);
+  if (plansQuery.isSuccess && !plansQuery.isPlaceholderData) lastSuccessQueryRef.current = plansQuery.data;
+  // 错误态整体回退到最近一次成功响应：行、总数与游标同源，保留结果/排序/页上下文。
+  const retainedQuery = plansQuery.data ?? lastSuccessQueryRef.current;
+  const plans = retainedQuery?.items ?? EMPTY_PLANS;
   const canExportPlans = plansQuery.isSuccess && !plansQuery.isFetching;
   const templates = templatesQuery.data ?? [];
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null;
@@ -1062,10 +1070,10 @@ export default function WorkPlansPage() {
             </div>
           </div>
           <footer className="table-footer">
-            <span>共 {plansQuery.data ? plansQuery.data.total : "…"} 条</span>
+            <span>共 {retainedQuery ? retainedQuery.total : "…"} 条</span>
             <span className="table-pagination">
               <button className="text-button" type="button" disabled={pageCursors.length === 0 || plansQuery.isFetching} onClick={() => setPageCursors((current) => current.slice(0, -1))}>上一页</button>
-              <button className="text-button" type="button" disabled={!plansQuery.data?.nextCursor || plansQuery.isFetching} onClick={() => setPageCursors((current) => (plansQuery.data?.nextCursor ? [...current, plansQuery.data.nextCursor] : current))}>下一页</button>
+              <button className="text-button" type="button" disabled={!retainedQuery?.nextCursor || plansQuery.isFetching} onClick={() => setPageCursors((current) => (retainedQuery?.nextCursor ? [...current, retainedQuery.nextCursor] : current))}>下一页</button>
             </span>
             <span>{plansQuery.isFetching ? "正在加载…" : plansQuery.isError ? "加载失败" : scheduleMutation.isPending ? "正在保存排程…" : scheduleMutation.isError ? "排程保存失败" : "所有更改已保存"}</span>
           </footer>

@@ -63,7 +63,7 @@ export async function registerSpreadsheetTransferRoutes(app: FastifyInstance, sp
     { schema: { querystring: exportQuerySchema } },
     async (request, reply) => {
       const query = exportQuerySchema.parse(request.query);
-      const result = spreadsheetTransfer.exportXls(query.templateId, {
+      const result = await spreadsheetTransfer.exportXls(query.templateId, {
         ...(query.q ? { q: query.q } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.from ? { from: query.from } : {}),
@@ -87,7 +87,7 @@ export async function registerSpreadsheetTransferRoutes(app: FastifyInstance, sp
         range: { ...(body.from ? { from: body.from } : {}), ...(body.to ? { to: body.to } : {}) },
         sort: [],
       };
-      const result = spreadsheetTransfer.exportXlsCustom(
+      const result = await spreadsheetTransfer.exportXlsCustom(
         { columns: body.columns, sheetName: body.sheetName, ...(body.name ? { name: body.name } : {}) },
         query,
       );

@@ -154,6 +154,21 @@ export const customFieldMultiValues = sqliteTable(
   ],
 );
 
+// 自定义字段排序物化索引（票据 20）：仅存非空排序键行，skey 的存储类型随字段类型变化
+// （文本/数值/整数），维护触发器定义见 db/custom-field-sort-index.ts，Drizzle 仅作结构映射。
+export const customFieldSortIndex = sqliteTable(
+  "custom_field_sort_index",
+  {
+    fieldId: text("field_id").notNull().references(() => customFieldDefinitions.id, { onDelete: "cascade" }),
+    workPlanId: text("work_plan_id").notNull().references(() => workPlans.id, { onDelete: "cascade" }),
+    skey: text("skey"),
+    startAt: text("start_at").notNull(),
+    endAt: text("end_at").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.fieldId, table.workPlanId] })],
+);
+
 export const exportTemplates = sqliteTable("export_templates", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

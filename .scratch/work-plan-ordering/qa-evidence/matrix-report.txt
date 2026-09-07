@@ -1,0 +1,220 @@
+# 票据 18 浏览器验收矩阵 — 2026-09-07T14:46:36.386Z
+# 服务：http://127.0.0.1:4173（隔离 DATA_DIR）；浏览器：/opt/homebrew/bin/chromium（headless）
+# 窄屏 390×844；桌面 1440×900；键盘格用 Tab/focus + Enter/方向键驱动
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Administrator-desktop-mouse — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Administrator 全功能（新建入口可见；排序/导出可用）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Administrator-desktop-keyboard — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Administrator 全功能（新建入口可见；排序/导出可用）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Administrator-narrow-mouse — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Administrator 全功能（新建入口可见；排序/导出可用）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Administrator-narrow-keyboard — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Administrator 全功能（新建入口可见；排序/导出可用）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Editor-desktop-mouse — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Editor 全功能（新建入口可见；排序/导出可用）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Editor-desktop-keyboard — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Editor 全功能（新建入口可见；排序/导出可用）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Editor-narrow-mouse — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Editor 全功能（新建入口可见；排序/导出可用）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Editor-narrow-keyboard — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Editor 全功能（新建入口可见；排序/导出可用）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Viewer-desktop-mouse — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Viewer 可排序/查询/导出，无任何写入口（新建隐藏 + 只读提示）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Viewer-desktop-keyboard — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Viewer 可排序/查询/导出，无任何写入口（新建隐藏 + 只读提示）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Viewer-narrow-mouse — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Viewer 可排序/查询/导出，无任何写入口（新建隐藏 + 只读提示）✓
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
+   [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.deleted_long_ago","direction":"asc"},{"field":"title","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.deleted_long_ago"}
+✅ Viewer-narrow-keyboard — 15 项通过
+   · URL 合法 sort= 生效（自然序 + 缺失值置后）✓
+   · URL 非法 sort= 整体回退排期顺序 + 提示 + 参数移除 ✓
+   · 排序面板：添加排序字段 ✓
+   · 排序面板：方向切换 ✓
+   · 排序面板：下移/上移（含首末禁用态）✓
+   · 排序面板：移除排序项 ✓
+   · 排序面板：恢复默认（清空，URL 移除 sort=）✓
+   · 账户偏好：修改保存，刷新后恢复 ✓
+   · 账户偏好：失效字段逐项清理 + 写回 + 一次性提示 ✓
+   · 加载：请求期间保留上次结果 + 页脚「正在加载…」✓
+   · 失败：保留结果/排序/页上下文，面板进入失败态 ✓
+   · 失败：重试恢复 ✓
+   · 一致性：表格与甘特共享同一服务端顺序 ✓（12/12 行在甘特范围内）
+   · 一致性：XLS 导出携带已生效查询与排序，顺序与表格一致 ✓（12 行）
+   · 授权：Viewer 可排序/查询/导出，无任何写入口（新建隐藏 + 只读提示）✓
+# 矩阵执行完毕

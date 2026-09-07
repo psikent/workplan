@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { SORT_INDEX_DDL, rebuildCustomFieldSortIndex } from "./custom-field-sort-index.js";
 import { recomputeWorkPlanSortKeys } from "./sort-keys.js";
 
 type Migration = {
@@ -322,6 +323,16 @@ const migrations: Migration[] = [
       CREATE INDEX idx_work_plans_updated_asc ON work_plans(updated_at, start_at, end_at DESC, created_at, id);
       CREATE INDEX idx_work_plans_updated_desc ON work_plans(updated_at DESC, start_at, end_at DESC, created_at, id);
     `,
+  },
+  {
+    // 票据 20：自定义字段排序物化索引。表结构/覆盖索引/维护触发器见 custom-field-sort-index.ts，
+    // 建表后按存量值行集合式回填一次，此后一致性由触发器维护。
+    version: 14,
+    name: "custom_field_sort_index",
+    sql: SORT_INDEX_DDL,
+    backfill: (database) => {
+      rebuildCustomFieldSortIndex(database);
+    },
   },
 ];
 

@@ -23,6 +23,7 @@ Type: map
 - [规划工作计划 sortOrder 退役](./issues/05-plan-sort-order-retirement.md) — 保留自定义字段排序，工作计划人工序号按查询脱钩、API 墓碑、观察窗口和数据库删列四阶段退出。
 - [锁定验收、性能与上线边界](./issues/06-lock-acceptance-performance-and-rollout.md) — 以十万条标准数据集、500 ms 查询 p95、60 秒 XLS 和连续 14 天兼容观察作为推进门槛。
 - [形成排序需求规格与实施票据](./issues/07-produce-spec-and-implementation-tickets.md) — 正式规格与 08–17 十张实施票据已经形成，等待用户批准后从自然排序与查询计划原型开始。
+- [跟进票据 18/19/20 全部完成](./issues/18-browser-acceptance-matrix.md) — 2026-09-07：真实浏览器验收矩阵 12/12 格全过（3 角色 × 桌面/窄屏 × 鼠标/键盘，发现并当场修复"查询失败清空列表"缺陷）；XLSX 流式写路径 30.2s / 108MiB 双预算达标；自定义字段排序经物化排序索引（迁移 v14 + 触发器维护）三类用例 p95 从 562–1393ms 降至 2.0–3.7ms。排序需求至此全部收口。
 
 ## Not yet specified
 

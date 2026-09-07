@@ -6,6 +6,7 @@ import { invalidInput, notFound, versionConflict } from "../errors.js";
 import { newId, nowIso, parseJson } from "../utils.js";
 import type { CustomFieldService } from "./custom-fields.js";
 import type { WorkPlanService } from "./work-plans.js";
+import { ZipWriter, columnLetters, escapeXmlAttribute, escapeXmlText } from "./xlsx-stream.js";
 
 type TemplateRow = {
   id: string;
@@ -110,7 +111,7 @@ export class SpreadsheetTransferService {
     }
   }
 
-  exportXls(templateId: string, query: { q?: string; status?: WorkPlanStatus; from?: string; to?: string; sort?: ExportWorkPlansQuery["sort"] }): { fileName: string; data: Buffer } {
+  exportXls(templateId: string, query: { q?: string; status?: WorkPlanStatus; from?: string; to?: string; sort?: ExportWorkPlansQuery["sort"] }): Promise<{ fileName: string; data: Buffer }> {
     return this.buildXls(this.getTemplate(templateId), this.toEngineQuery(query));
   }
 
@@ -118,7 +119,7 @@ export class SpreadsheetTransferService {
   exportXlsCustom(
     input: { columns: ExportTemplateColumn[]; sheetName: string; name?: string },
     query: ExportWorkPlansQuery | { q?: string; status?: WorkPlanStatus; from?: string; to?: string },
-  ): { fileName: string; data: Buffer } {
+  ): Promise<{ fileName: string; data: Buffer }> {
     this.validateColumns(input.columns);
     const engineQuery: ExportWorkPlansQuery = "filters" in query && Array.isArray(query.filters)
       ? query
@@ -126,46 +127,135 @@ export class SpreadsheetTransferService {
     return this.buildXls({ name: input.name ?? "导出", sheetName: input.sheetName, columns: input.columns }, engineQuery);
   }
 
-  private buildXls(
+  // 流式 xlsx 写路径（票据 19）：单读事务内按键集游标分页推进全部命中行，行 XML 增量
+  // 送入 deflate 流式压缩的 zip（data descriptor），任一时刻仅持有当前页与压缩输出，
+  // 不再以 SheetJS 对象存储整表（十万行 × 25 列曾达峰值 RSS ~750MiB，超 512MiB 预算）。
+  // 数据库扫描全程同步、无事件循环让步点（审查 P1）：事务不得横跨 await 持有共享连接，
+  // 否则并发写会被并入导出事务、异常时被连带回滚；压缩由 libuv 线程池并发消化。
+  // 单元格语义与旧输出一致：日期列为 Excel 序列数 + yyyy-mm-dd hh:mm 数字格式，
+  // 文本为内联字符串，空值省略单元格（读回等价于空串）。
+  private async buildXls(
     template: { name: string; sheetName: string; columns: ExportTemplateColumn[] },
     query: ExportWorkPlansQuery,
-  ): { fileName: string; data: Buffer } {
+  ): Promise<{ fileName: string; data: Buffer }> {
     const fields = new Map(this.customFields.list(true).map((field) => [field.key, field]));
-    // 统一引擎在单个读事务内从头读取全部命中项：按键集游标分页推进，
-    // 不受旧 500/10,000/100,000 条上限约束，也不接受页面 cursor/offset。
-    const sheet = XLSX.utils.aoa_to_sheet([template.columns.map((column) => column.header)], { cellDates: true });
-    let rowCount = 0;
-    const readTransaction = this.database.sqlite.transaction(() => {
+    const columns = template.columns;
+    const columnRefs = columns.map((_, index) => columnLetters(index));
+    const isDateColumn = columns.map((column) => column.source === "startAt" || column.source === "endAt");
+    const lastColumnRef = columnRefs[Math.max(0, columns.length - 1)]!;
+    const columnWidthsXml = columns
+      .map((column, index) => {
+        const width = Math.min(42, Math.max(12, column.header.length * 2 + 4));
+        const ref = index + 1;
+        return `<col min="${ref}" max="${ref}" width="${width}" customWidth="1"/>`;
+      })
+      .join("");
+
+    const serializeCell = (value: unknown, columnIndex: number, rowNumber: number): string => {
+      if (value === null || value === undefined || value === "") return "";
+      const ref = ` r="${columnRefs[columnIndex]}${rowNumber}"`;
+      const style = isDateColumn[columnIndex] ? ' s="1"' : "";
+      if (typeof value === "number" && Number.isFinite(value)) return `<c${ref}${style}><v>${value}</v></c>`;
+      return `<c${ref} t="inlineStr"><is><t>${escapeXmlText(String(value))}</t></is></c>`;
+    };
+
+    const zip = new ZipWriter();
+    zip.addStored(
+      "[Content_Types].xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
+    );
+    zip.addStored(
+      "_rels/.rels",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    );
+    zip.addStored(
+      "xl/workbook.xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${escapeXmlAttribute(template.sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    );
+    zip.addStored(
+      "xl/_rels/workbook.xml.rels",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    );
+    zip.addStored(
+      "xl/styles.xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd hh:mm"/></numFmts><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`,
+    );
+
+    const sink = zip.beginDeflated("xl/worksheets/sheet1.xml");
+    try {
+      this.scanIntoSink(template, query, fields, { serializeCell, columnWidthsXml, lastColumnRef, write: (chunk) => sink.write(chunk) });
+    } catch (error) {
+      sink.abort();
+      throw error;
+    }
+    await sink.finish();
+    const data = zip.finish();
+    const safeName = template.name.replace(/[\\/:*?"<>|]/g, "-");
+    return { fileName: `${safeName}-${formatFileTimestamp(new Date())}.xlsx`, data };
+  }
+
+  // 工作表内容扫描：表头 + 分页行 + 收尾（autoFilter 需要总行数，只能在扫描结束后产出）。
+  // 整个扫描处于一个读事务（BEGIN…COMMIT；引擎内层事务自动降级为 SAVEPOINT），
+  // 且必须保持同步——任何 await 都会让出事件循环，破坏单连接上的事务独占。
+  private scanIntoSink(
+    template: { columns: ExportTemplateColumn[] },
+    query: ExportWorkPlansQuery,
+    fields: Map<string, CustomFieldDefinition>,
+    layout: {
+      serializeCell: (value: unknown, columnIndex: number, rowNumber: number) => string;
+      columnWidthsXml: string;
+      lastColumnRef: string;
+      write: (chunk: Buffer) => void;
+    },
+  ): void {
+    const sqlite = this.database.sqlite;
+    sqlite.exec("BEGIN");
+    try {
+      layout.write(
+        Buffer.from(
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>${layout.columnWidthsXml}</cols><sheetData>`,
+          "utf8",
+        ),
+      );
+      const headerCells = template.columns.map((column, index) => layout.serializeCell(column.header, index, 1)).join("");
+      layout.write(Buffer.from(`<row r="1">${headerCells}</row>`, "utf8"));
+
+      let rowCount = 0;
       let cursor: string | null = null;
       for (;;) {
+        // 统一引擎在单个读事务内从头读取全部命中项：按键集游标分页推进，
+        // 不受旧 500/10,000/100,000 条上限约束，也不接受页面 cursor/offset。
         const request: WorkPlanQueryRequest = { ...query, limit: 1_000 };
         if (cursor) request.cursor = cursor;
         const page = this.queryEngine.query(request);
         if (cursor && page.items.length === 0) break; // 传入游标首页为空说明已到末页
-        const rows = page.items.map((plan) => template.columns.map((column) => this.exportValue(plan, column, fields)));
-        XLSX.utils.sheet_add_aoa(sheet, rows, { origin: -1 });
-        rowCount += rows.length;
+        const rowsXml = page.items
+          .map((plan, index) => {
+            const rowNumber = rowCount + index + 2;
+            const cells = template.columns.map((column, columnIndex) => layout.serializeCell(this.exportValue(plan, column, fields), columnIndex, rowNumber)).join("");
+            return `<row r="${rowNumber}">${cells}</row>`;
+          })
+          .join("");
+        rowCount += page.items.length;
+        if (rowsXml) layout.write(Buffer.from(rowsXml, "utf8"));
         if (!page.nextCursor) break;
         cursor = page.nextCursor;
       }
-    });
-    readTransaction();
-    sheet["!cols"] = template.columns.map((column) => ({ wch: Math.min(42, Math.max(12, column.header.length * 2 + 4)) }));
-    sheet["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(Math.max(0, template.columns.length - 1))}${Math.max(1, rowCount + 1)}` };
-    template.columns.forEach((column, columnIndex) => {
-      if (column.source !== "startAt" && column.source !== "endAt") return;
-      for (let rowIndex = 1; rowIndex <= rowCount; rowIndex += 1) {
-        const cell = sheet[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })];
-        if (cell) cell.z = "yyyy-mm-dd hh:mm";
+      layout.write(Buffer.from(`</sheetData><autoFilter ref="A1:${layout.lastColumnRef}${rowCount + 1}"/></worksheet>`, "utf8"));
+      sqlite.exec("COMMIT");
+    } catch (error) {
+      try {
+        sqlite.exec("ROLLBACK");
+      } catch {
+        // COMMIT 后才发生的异常无事务可回滚，忽略并保留原始错误
       }
-    });
-    // 容器为 xlsx：biff8（.xls）存在 65,536 行硬上限，且十万行写入实测 137-147s、RSS ~750MiB，
-    // 均违反规格预算；xlsx 全路径实测 38s / RSS 达标（票据 15 基准）。导入仍接受 .xls。
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, template.sheetName);
-    const data = XLSX.write(workbook, { type: "buffer", bookType: "xlsx", cellDates: true }) as Buffer;
-    const safeName = template.name.replace(/[\\/:*?"<>|]/g, "-");
-    return { fileName: `${safeName}-${formatFileTimestamp(new Date())}.xlsx`, data };
+      throw error;
+    }
   }
 
   importXls(templateId: string, fileData: Buffer): { imported: number } {
