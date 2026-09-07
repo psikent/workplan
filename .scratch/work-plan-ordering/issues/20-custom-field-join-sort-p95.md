@@ -49,7 +49,7 @@ Scope: work-plan-query 引擎自定义字段排序执行计划、索引/预计�
 | 自定义数字 | 223.9ms | **2.0ms** | 647.0ms ❌ | **2.4ms** | 500ms ✅ |
 | 自定义单选（双 JOIN） | 1292.8ms ❌ | **3.7ms** | 900.7ms ❌ | **2.4ms** | 500ms ✅ |
 
-p99 全部 ≤3.9ms（预算 1000ms）。EXPLAIN QUERY PLAN 实际执行确认三用例 `SEARCH csi USING COVERING INDEX idx_custom_sort_index_asc/desc (field_id=?)`，无 TEMP B-TREE。
+p99 全部 ≤3.9ms（预算 1000ms）。EXPLAIN QUERY PLAN 实际执行确认三用例 `SEARCH csi USING COVERING INDEX idx_custom_sort_index_asc/desc (field_id=?)`，无 TEMP B-TREE。审查修正（offset 模式回落 JOIN 路径）后的最终轮复测（15:12Z）同为 2.8 / 3.0 / 2.8ms 首页 p95，全部达标；以 `../perf-report.md` 最终版为权威记录。
 
 **无回退**：排期默认 4.2ms、标题自然序 3.3ms、状态顺序 31.3ms、持续时长 2.0ms、五级混合 95.9ms、工作台 26.2ms、十并发 0.0ms——全部维持达标。
 

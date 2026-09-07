@@ -1,4 +1,4 @@
-# 票据 18 浏览器验收矩阵 — 2026-09-07T14:46:36.386Z
+# 票据 18 浏览器验收矩阵 — 2026-09-07T15:19:25.104Z
 # 服务：http://127.0.0.1:4173（隔离 DATA_DIR）；浏览器：/opt/homebrew/bin/chromium（headless）
 # 窄屏 390×844；桌面 1440×900；键盘格用 Tab/focus + Enter/方向键驱动
    [net] 422 {"filters":[],"range":{"from":"2026-08-31T16:00:00.000Z","to":"2026-09-30T16:00:00.000Z"},"sort":[{"field":"custom.not_exists","direction":"asc"}],"limit":200} => {"type":"https://workplan.local/problems/sort_field_invalid","title":"SORT_FIELD_INVALID","status":422,"code":"SORT_FIELD_INVALID","detail":"未知排序字段：custom.not_exists"}
