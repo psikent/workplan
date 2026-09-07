@@ -227,3 +227,9 @@ JSON 业务备份只保证数据语义，不保证数据库表物理行序。
 - [16 — 生产启用并完成十四天兼容观察](./issues/16-production-rollout-and-observation.md)
 - [17 — 删除工作计划 sortOrder 数据库遗留](./issues/17-remove-work-plan-sort-order-storage.md)
 
+后续跟进（2026-09-07 开票，承接票据 15/16 确认接受的遗留项，相互独立可并行）：
+
+- [18 — 真实浏览器排序验收矩阵（无头自动化）](./issues/18-browser-acceptance-matrix.md)
+- [19 — XLSX 导出流式写路径（内存回预算）](./issues/19-xlsx-streaming-writer.md)
+- [20 — 自定义字段 JOIN 排序 p95 达标（≤500ms）](./issues/20-custom-field-join-sort-p95.md)
+
