@@ -1,6 +1,6 @@
 # 01 — 服务端：选项重排端点
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: none
 Spec: ../spec.md
 Scope: apps/server/src/modules/custom-fields.ts、apps/server/src/routes/custom-fields.ts、apps/server/test/*
@@ -29,4 +29,14 @@ Scope: apps/server/src/modules/custom-fields.ts、apps/server/src/routes/custom-
 - 与规格 R1/验收标准 3 一致：不完整列表拒绝、并发最后写入胜出、事务原子（中途失败不落半套顺序）。
 - `corepack pnpm --filter @workplan/server typecheck && corepack pnpm --filter @workplan/server test` 全绿，既有用例零回归。
 
-## Comments
+## Answer
+
+已完成（本次会话实现，代码审核通过）。
+
+改动：
+- `apps/server/src/modules/custom-fields.ts`：新增 `reorderOptions(fieldId, orderedIds)`——字段不存在 404；orderedIds 经"长度相等 + 去重相等 + 全部属于该字段"三重校验（鸽笼推导为精确全覆盖，含归档），不满足 422；事务内 `UPDATE custom_field_options SET sort_order = 0..n-1`，不动 version 与归档位；返回更新后的字段定义。
+- `apps/server/src/routes/custom-fields.ts`：`POST /api/v1/custom-fields/:id/options/reorder`，内联 zod `{ orderedIds: uuid[] min 1 }`，`config: { authorization: "admin" }`（镜像字段 reorder）。
+- `apps/server/test/custom-field-option-reorder.test.ts`（新）：6 例——含归档选项的全量重排（顺序/标签/归档位/version 保持断言）、缺 id 422、未知 id 与跨字段 id 422、重复 id 422、字段不存在 404、editor 403。
+- `apps/server/test/viewer-authorization.test.ts`：admin-only 请求清单补入新端点。
+
+验收：`pnpm typecheck` 全绿；server 测试 195 例全过（含新增 6 例）。

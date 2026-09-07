@@ -26,11 +26,23 @@ const secondField = field({
   label: "字段乙",
   sortOrder: 1,
 });
+const remarksField = field({
+  id: "4b8a1f20-9c14-4a5e-8f3d-2a7c6b1e0d55",
+  key: "remarks",
+  label: "备注",
+  type: "single_select",
+  sortOrder: 0,
+  options: [
+    { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e01", value: "duty", label: "1.值班", sortOrder: 0, archivedAt: null, version: 1 },
+    { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e02", value: "automation", label: "4.自动化", sortOrder: 1, archivedAt: null, version: 1 },
+    { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e03", value: "trip", label: "3.出差", sortOrder: 2, archivedAt: "2026-09-01T00:00:00.000Z", version: 2 },
+  ],
+});
 
 beforeEach(() => {
   apiMock.mockReset();
   apiMock.mockImplementation(async (path: string) => {
-    if (path === "/custom-fields?includeArchived=true") return [firstField, secondField];
+    if (path === "/custom-fields?includeArchived=true") return [remarksField, firstField, secondField];
     return {};
   });
 });
@@ -89,9 +101,81 @@ describe("custom field management", () => {
       "/custom-fields/reorder",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ orderedIds: [secondField.id, firstField.id] }),
+        body: JSON.stringify({ orderedIds: [remarksField.id, secondField.id, firstField.id] }),
       }),
     ));
+    view.unmount();
+  });
+});
+
+describe("custom field option reorder", () => {
+  it("renders option move controls with boundary and archived rows still sortable", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+    fireEvent.click(screen.getByRole("button", { name: "编辑 备注" }));
+    await screen.findByPlaceholderText("选项 1");
+
+    expect(screen.getByRole("button", { name: "上移选项 1.值班" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下移选项 1.值班" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "上移选项 3.出差" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "下移选项 3.出差" })).toBeDisabled();
+    view.unmount();
+  });
+
+  it("keeps moved options in the draft and submits one reorder call on save, including archived rows", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+    fireEvent.click(screen.getByRole("button", { name: "编辑 备注" }));
+    await screen.findByPlaceholderText("选项 1");
+
+    fireEvent.click(screen.getByRole("button", { name: "下移选项 1.值班" }));
+    expect(apiMock).not.toHaveBeenCalledWith(
+      `/custom-fields/${remarksField.id}/options/reorder`,
+      expect.anything(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "保存字段" }));
+
+    const [duty, automation, trip] = remarksField.options;
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      `/custom-fields/${remarksField.id}/options/reorder`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ orderedIds: [automation!.id, duty!.id, trip!.id] }),
+      }),
+    ));
+    expect(await screen.findByText("字段已保存")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("skips the reorder call when the option order is unchanged", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+    fireEvent.click(screen.getByRole("button", { name: "编辑 备注" }));
+    await screen.findByPlaceholderText("选项 1");
+
+    fireEvent.click(screen.getByRole("button", { name: "保存字段" }));
+
+    await screen.findByText("字段已保存");
+    expect(apiMock).not.toHaveBeenCalledWith(
+      `/custom-fields/${remarksField.id}/options/reorder`,
+      expect.anything(),
+    );
+    view.unmount();
+  });
+
+  it("discards draft moves on cancel without any write call", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+    fireEvent.click(screen.getByRole("button", { name: "编辑 备注" }));
+    await screen.findByPlaceholderText("选项 1");
+
+    fireEvent.click(screen.getByRole("button", { name: "下移选项 1.值班" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    const writes = apiMock.mock.calls.filter(([path, options]) =>
+      path !== "/custom-fields?includeArchived=true" && (options as { method?: string } | undefined)?.method);
+    expect(writes).toEqual([]);
     view.unmount();
   });
 });

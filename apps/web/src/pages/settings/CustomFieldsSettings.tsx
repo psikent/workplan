@@ -63,7 +63,10 @@ export default function CustomFieldsSettings() {
 
   const editMutation = useMutation({
     mutationFn: async ({ field, nextDraft }: { field: CustomFieldDefinition; nextDraft: FieldDraft }) => {
-      if (["single_select", "multi_select"].includes(field.type)) await syncOptions(field, nextDraft.options);
+      if (["single_select", "multi_select"].includes(field.type)) {
+        const submittedIds = await syncOptions(field, nextDraft.options);
+        await syncOptionOrder(field, submittedIds);
+      }
       return api(`/custom-fields/${field.id}`, {
         method: "PATCH",
         ...jsonBody({
@@ -158,22 +161,39 @@ export default function CustomFieldsSettings() {
     }
   }
 
-  async function syncOptions(field: CustomFieldDefinition, nextOptions: OptionDraft[]) {
+  // 选项同步：返回与草稿行对齐的选项 id 序列（新建选项取创建响应的 id，跳过的草稿行不计入）。
+  async function syncOptions(field: CustomFieldDefinition, nextOptions: OptionDraft[]): Promise<string[]> {
     const currentById = new Map(field.options.map((option) => [option.id, option]));
-    const requests = nextOptions.flatMap((option) => {
+    const submissions = nextOptions.map(async (option): Promise<string | null> => {
       if (!option.id) {
-        return option.archived || !option.label.trim()
-          ? []
-          : [api(`/custom-fields/${field.id}/options`, { method: "POST", ...jsonBody({ value: option.value, label: option.label }) })];
+        if (option.archived || !option.label.trim()) return null;
+        const created = await api<{ id: string }>(`/custom-fields/${field.id}/options`, { method: "POST", ...jsonBody({ value: option.value, label: option.label }) });
+        return created.id;
       }
       const current = currentById.get(option.id);
-      if (!current || (current.label === option.label && Boolean(current.archivedAt) === option.archived)) return [];
-      return [api(`/custom-field-options/${option.id}`, {
-        method: "PATCH",
-        ...jsonBody({ label: option.label, archived: option.archived, version: option.version }),
-      })];
+      if (current && (current.label !== option.label || Boolean(current.archivedAt) !== option.archived)) {
+        await api(`/custom-field-options/${option.id}`, {
+          method: "PATCH",
+          ...jsonBody({ label: option.label, archived: option.archived, version: option.version }),
+        });
+      }
+      return option.id;
     });
-    await Promise.all(requests);
+    const ids = await Promise.all(submissions);
+    return ids.filter((id): id is string => Boolean(id));
+  }
+
+  // 顺序随「保存字段」提交：草稿顺序与弹窗打开时一致则直接跳过（并发新增的选项本就追加末尾，
+  // 无需重排也不必校验，避免误伤并发保存）；确有移动时与保存后的实际选项序列比较，有变化才调一次重排（含归档行，ADR-0009）。
+  async function syncOptionOrder(field: CustomFieldDefinition, submittedIds: string[]) {
+    const originalIds = field.options.map((option) => option.id);
+    if (originalIds.length === submittedIds.length && originalIds.every((id, index) => id === submittedIds[index])) return;
+    if (submittedIds.length === 0) return;
+    const fresh = (await api<CustomFieldDefinition[]>("/custom-fields?includeArchived=true")).find((item) => item.id === field.id);
+    if (!fresh) return;
+    const currentIds = fresh.options.map((option) => option.id);
+    if (currentIds.length === submittedIds.length && currentIds.every((id, index) => id === submittedIds[index])) return;
+    await api(`/custom-fields/${field.id}/options/reorder`, { method: "POST", ...jsonBody({ orderedIds: submittedIds }) });
   }
 
   function commitOrder(next: CustomFieldDefinition[]) {
@@ -279,6 +299,8 @@ function SortableFieldRow({ field, index, count, onEdit, onMove, onArchive }: {
 }
 
 function OptionEditor({ options, onChange }: { options: OptionDraft[]; onChange: (options: OptionDraft[]) => void }) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const optionKey = (option: OptionDraft) => option.id ?? option.value;
   function update(index: number, changes: Partial<OptionDraft>) {
     onChange(options.map((option, optionIndex) => optionIndex === index ? { ...option, ...changes } : option));
   }
@@ -286,18 +308,66 @@ function OptionEditor({ options, onChange }: { options: OptionDraft[]; onChange:
     const suffix = `${Date.now().toString(36)}_${options.length + 1}`;
     onChange([...options, { value: `option_${suffix}`, label: "", archived: false }]);
   }
+  function moveOption(key: string, direction: -1 | 1) {
+    const index = options.findIndex((option) => optionKey(option) === key);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= options.length) return;
+    onChange(arrayMove(options, index, nextIndex));
+  }
+  function handleDragEnd(event: DragEndEvent) {
+    if (!event.over || event.active.id === event.over.id) return;
+    const oldIndex = options.findIndex((option) => optionKey(option) === event.active.id);
+    const newIndex = options.findIndex((option) => optionKey(option) === event.over!.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    onChange(arrayMove(options, oldIndex, newIndex));
+  }
   return (
     <div className="field full option-editor">
       <div className="option-editor-header"><span>选项 <b>*</b></span><button className="text-button" type="button" onClick={addOption}><Plus />添加选项</button></div>
-      <div className="option-editor-list">
-        {options.map((option, index) => (
-          <div className={option.archived ? "archived" : ""} key={option.id ?? option.value}>
-            <input value={option.label} disabled={option.archived} required={!option.archived} onChange={(event) => update(index, { label: event.target.value })} placeholder={`选项 ${index + 1}`} />
-            <button className="icon-button" type="button" aria-label={option.archived ? `恢复选项 ${option.label}` : `移除选项 ${option.label || index + 1}`} onClick={() => option.id ? update(index, { archived: !option.archived }) : onChange(options.filter((_, optionIndex) => optionIndex !== index))}>{option.archived ? <RotateCcw /> : <Archive />}</button>
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <SortableContext items={options.map(optionKey)} strategy={verticalListSortingStrategy}>
+          <div className="option-editor-list">
+            {options.map((option, index) => (
+              <SortableOptionRow
+                key={optionKey(option)}
+                option={option}
+                index={index}
+                count={options.length}
+                onUpdate={(changes) => update(index, changes)}
+                onMove={moveOption}
+                onUnsavedRemove={() => onChange(options.filter((_, optionIndex) => optionIndex !== index))}
+              />
+            ))}
           </div>
-        ))}
-      </div>
+        </SortableContext>
+      </DndContext>
       {activeOptions(options).length === 0 ? <small>单选和多选字段至少需要一个选项。</small> : null}
+    </div>
+  );
+}
+
+// 选项行：拖拽手柄 + 上移/下移（归档行同样可排，其顺序位决定历史值的单选排序位置）；改动仅落在草稿。
+function SortableOptionRow({ option, index, count, onUpdate, onMove, onUnsavedRemove }: {
+  option: OptionDraft;
+  index: number;
+  count: number;
+  onUpdate: (changes: Partial<OptionDraft>) => void;
+  onMove: (key: string, direction: -1 | 1) => void;
+  onUnsavedRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: option.id ?? option.value });
+  const style = { transform: CSS.Transform.toString(transform), transition } as CSSProperties;
+  const key = option.id ?? option.value;
+  const rowLabel = option.label || `选项 ${index + 1}`;
+  return (
+    <div ref={setNodeRef} style={style} className={`option-row ${option.archived ? "archived" : ""} ${isDragging ? "dragging" : ""}`}>
+      <button className="field-sort-handle" type="button" aria-label={`拖动排序选项 ${rowLabel}`} {...attributes} {...listeners}><GripVertical /></button>
+      <input value={option.label} disabled={option.archived} required={!option.archived} onChange={(event) => onUpdate({ label: event.target.value })} placeholder={`选项 ${index + 1}`} />
+      <div className="option-row-actions">
+        <button className="icon-button" type="button" aria-label={`上移选项 ${rowLabel}`} disabled={index === 0} onClick={() => onMove(key, -1)}><ArrowUp /></button>
+        <button className="icon-button" type="button" aria-label={`下移选项 ${rowLabel}`} disabled={index === count - 1} onClick={() => onMove(key, 1)}><ArrowDown /></button>
+        <button className="icon-button" type="button" aria-label={option.archived ? `恢复选项 ${rowLabel}` : `移除选项 ${rowLabel}`} onClick={() => option.id ? onUpdate({ archived: !option.archived }) : onUnsavedRemove()}>{option.archived ? <RotateCcw /> : <Archive />}</button>
+      </div>
     </div>
   );
 }

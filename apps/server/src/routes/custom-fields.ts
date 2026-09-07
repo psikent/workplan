@@ -51,6 +51,12 @@ export async function registerCustomFieldRoutes(app: FastifyInstance, customFiel
     },
   );
 
+  app.post(
+    "/api/v1/custom-fields/:id/options/reorder",
+    { schema: { params: idParams, body: z.object({ orderedIds: z.array(z.string().uuid()).min(1) }) }, config: { authorization: "admin" } },
+    async (request) => customFields.reorderOptions((request.params as { id: string }).id, (request.body as { orderedIds: string[] }).orderedIds),
+  );
+
   app.patch(
     "/api/v1/custom-field-options/:id",
     { schema: { params: idParams, body: updateCustomFieldOptionSchema }, config: { authorization: "admin" } },

@@ -236,6 +236,7 @@ const adminOnlyRequests = (ids: { templateId: string; fieldId: string; optionId:
   { method: "POST", url: "/api/v1/custom-fields/reorder", payload: { orderedIds: [ids.fieldId] } },
   { method: "POST", url: `/api/v1/custom-fields/${ids.fieldId}/options`, payload: { value: "blocked", label: "被阻止" } },
   { method: "PATCH", url: `/api/v1/custom-field-options/${ids.optionId}`, payload: { label: "被阻止", version: 1 } },
+  { method: "POST", url: `/api/v1/custom-fields/${ids.fieldId}/options/reorder`, payload: { orderedIds: [ids.optionId] } },
   { method: "POST", url: "/api/v1/owner-account-mappings", payload: { ownerName: "被阻止", account: "blocked@example.com" } },
   { method: "PUT", url: "/api/v1/owner-account-mappings/被阻止", payload: { ownerName: "被阻止", account: "blocked2@example.com" } },
   { method: "DELETE", url: "/api/v1/owner-account-mappings/被阻止" },

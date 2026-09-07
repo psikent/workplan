@@ -208,6 +208,23 @@ export class CustomFieldService {
     execute();
   }
 
+  // 选项重排按最后写入胜出（与字段 reorder 一致）；orderedIds 必须恰好覆盖全部选项（含归档），
+  // 归档选项的顺序位决定持有其历史值的计划在单选排序中的位置（ADR-0009）。
+  reorderOptions(fieldId: string, orderedIds: string[]): CustomFieldDefinition {
+    const field = this.list(true).find((item) => item.id === fieldId);
+    if (!field) throw notFound("自定义字段不存在");
+    const optionIds = new Set(field.options.map((option) => option.id));
+    const uniqueIds = new Set(orderedIds);
+    if (orderedIds.length !== field.options.length || uniqueIds.size !== orderedIds.length || orderedIds.some((id) => !optionIds.has(id))) {
+      throw invalidInput("orderedIds 必须恰好覆盖该字段全部选项（含已归档），不得重复");
+    }
+    const execute = this.database.sqlite.transaction(() => {
+      orderedIds.forEach((id, index) => this.database.sqlite.prepare("UPDATE custom_field_options SET sort_order = ? WHERE id = ?").run(index, id));
+    });
+    execute();
+    return this.list(true).find((item) => item.id === fieldId)!;
+  }
+
   addOption(fieldId: string, input: { value: string; label: string }) {
     const field = this.list(true).find((item) => item.id === fieldId);
     if (!field) throw notFound("自定义字段不存在");
