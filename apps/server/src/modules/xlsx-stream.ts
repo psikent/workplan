@@ -1,5 +1,4 @@
 import { createDeflateRaw } from "node:zlib";
-import { once } from "node:events";
 
 // 流式 xlsx 写路径（票据 19）：替代 SheetJS 的整表对象存储——十万行 × 25 列
 // 峰值 RSS ~750MiB 超出 512MiB 预算。这里按 OOXML 规范手写工作表 XML，
@@ -110,14 +109,23 @@ export class ZipWriter {
     const deflate = createDeflateRaw({ level: 1 });
     const compressed: Buffer[] = [];
     deflate.on("data", (chunk: Buffer) => compressed.push(chunk));
+    // zlib 的写错误经 'error' 事件异步投递：记录并在 finish 时上抛，避免无监听崩溃或挂起
+    let compressionError: Error | null = null;
+    deflate.on("error", (error: Error) => {
+      compressionError = error;
+    });
     let crc = CRC32_INIT;
     let uncompressedSize = 0;
     let sealed = false;
     const seal = async () => {
       if (sealed) return;
       sealed = true;
+      if (compressionError) throw compressionError;
       deflate.end();
-      await once(deflate, "end");
+      await new Promise<void>((resolve, reject) => {
+        deflate.once("end", resolve);
+        deflate.once("error", reject);
+      });
       const data = Buffer.concat(compressed);
       this.push(data);
       const finalCrc = crcFinish(crc);
