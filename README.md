@@ -80,7 +80,7 @@ corepack pnpm install
 corepack pnpm dev
 ```
 
-前端运行在 `http://localhost:5173`，开发后端运行在 `http://localhost:3002`，前端会将 `/api` 和 `/health` 转发到开发后端。开发数据库固定为源码根目录的 `data\workplan.db`，与正式数据库完全独立。
+前端运行在 `http://localhost:5173`，开发后端运行在 `http://localhost:3002`，前端会将 `/api` 和 `/health` 转发到开发后端。开发数据库固定为源码根目录的 `data/workplan.db`，与正式数据库完全独立。
 
 常用检查：
 
@@ -116,8 +116,8 @@ corepack pnpm build
 - 前端对只读账户隐藏业务写入口，仅用于体验；服务端按路由能力授权是最终安全边界。
 - 外部客户端可以创建个人访问令牌，以 `Authorization: Bearer wp_...` 调用 `/api/v1`。
 - 密码使用 Argon2id；访问令牌和会话令牌只保存 SHA-256 哈希。
-- JSON 导入会在单个事务内替换业务数据，但不会修改管理员账户、会话或访问令牌。
-- SQLite 使用 WAL。复制数据库前应停止对应环境，或使用 SQLite Backup API/设置页 JSON 导出。
+- JSON 导入会在单个事务内替换业务数据，但不会修改管理员账户、会话或访问令牌。导入器接受格式版本 1–5，旧版本文件中的遗留字段（如已删除的工作计划 `sort_order`）会按目标表实际列自动忽略；新导出为版本 5。
+- SQLite 使用 WAL。复制数据库前应停止对应环境，或使用在线快照：`sqlite3 <数据库路径> ".backup '/目标路径'"`（Linux 生产已安装 sqlite3 CLI，WAL 下在线一致）。常规发布会自动在 `data/pre-release-backups/` 留下最近 5 份数据库快照（见 ADR-0010）；设置页 JSON 导出为业务数据版本 5 格式。
 - 每个数据库只运行一个服务进程，避免 SQLite 写入和内置调度器重复执行。
 
 登录后可在 `/api/docs` 查看 OpenAPI 文档；健康检查为 `/health/live` 与 `/health/ready`。

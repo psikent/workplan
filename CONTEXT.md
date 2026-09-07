@@ -24,6 +24,10 @@ _Avoid_: Browser fullscreen, native fullscreen
 The canonical total order for Work Plans: earlier start first, then later end first, then earlier creation first, with identity as the final stable tie-breaker. It is the default and fallback order rather than a manually maintained rank.
 _Avoid_: Manual order, task priority, `sortOrder`
 
+**Explicit Sort (显式排序)**:
+The user-defined ordering for the Work Plan page: zero to five distinct sortable fields, each ascending or descending, applied ahead of the Schedule Order tie-breaker. It is expressed in the sort panel, the URL `sort=` parameter, and per-account preferences, and drives the table, Gantt, and XLS export alike; it is never a stored rank on Work Plans.
+_Avoid_: Manual order, drag rank, `sortOrder`, 人工排序
+
 **Automatic Status**:
 The effective Work Plan status derived from its time range: pending before the start, in progress during the range, and completed after the end.
 _Avoid_: Default status, calculated flag
