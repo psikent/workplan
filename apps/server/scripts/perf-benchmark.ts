@@ -214,11 +214,14 @@ async function main() {
   const started = performance.now();
   const database = openDatabase(dbPath);
   // 建库与排序键回填都是批量装载：挂起排序索引逐行触发器，最后集合式重建（票据 20）。
-  const { dataset, backfill } = withSortIndexBulkLoad(database.sqlite, () => {
-    const built = buildDataset(database.sqlite);
-    const keys = recomputeWorkPlanSortKeys(database.sqlite);
-    return { dataset: built, backfill: keys };
-  });
+  // 事务包裹：中途被杀不会留下触发器缺失的半成品落盘库。
+  const { dataset, backfill } = database.sqlite.transaction(() =>
+    withSortIndexBulkLoad(database.sqlite, () => {
+      const built = buildDataset(database.sqlite);
+      const keys = recomputeWorkPlanSortKeys(database.sqlite);
+      return { dataset: built, backfill: keys };
+    }),
+  )();
   database.sqlite.exec("ANALYZE");
   database.sqlite.pragma("wal_checkpoint(TRUNCATE)");
   log(`- 数据集：${dataset.planCount} 条工作计划 / ${dataset.fieldCount} 个自定义字段（3 个归档）/ 排序键回填 ${backfill.plans} 行 + ${backfill.values} 值行，建库 ${((performance.now() - started) / 1000).toFixed(1)} s`);
