@@ -386,6 +386,59 @@ export function previousReleaseRoot(targetRoot) {
   return `${targetRoot}.previous-release`;
 }
 
+export const databaseBackupRetention = 5;
+
+// 发布前置数据库备份：对现有 workplan.db 做 sqlite3 在线一致性快照（WAL 安全），
+// 存入 dataDir/pre-release-backups 并只保留最近 databaseBackupRetention 份。
+// 数据库不存在（全新安装）时跳过；备份或完整性校验失败时抛错中止发布——
+// 快照文件 0600，ownership 步骤后归服务账户所有。
+export function backupDatabaseBeforeRelease({ dataDir, runCommand, log, now = new Date() }) {
+  const databasePath = path.join(dataDir, "workplan.db");
+  if (!fs.existsSync(databasePath)) {
+    log("数据库备份：未发现现有 workplan.db（全新安装），跳过。");
+    return null;
+  }
+  const backupDir = path.join(dataDir, "pre-release-backups");
+  fs.mkdirSync(backupDir, { recursive: true });
+  const stamp = `${now.toISOString().replace(/[-:]/g, "").slice(0, 15)}-${process.pid}`;
+  const destination = path.join(backupDir, `workplan-${stamp}.db`);
+  const runSqlite = (args) => {
+    try {
+      return runCommand("sqlite3", args);
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        throw new Error("发布前数据库备份失败：sqlite3 CLI 不可用，请先安装（Debian/Ubuntu：sudo apt-get install sqlite3）");
+      }
+      throw error;
+    }
+  };
+  try {
+    const result = runSqlite([databasePath, `.backup '${destination}'`]);
+    if (result.status !== 0) {
+      const detail = (result.stderr || result.stdout || "").trim().slice(0, 800);
+      throw new Error(`发布前数据库备份失败（退出码 ${result.status}）${detail ? `：${detail}` : ""}`);
+    }
+    fs.chmodSync(destination, 0o600);
+    const verify = runSqlite([destination, "PRAGMA integrity_check;"]);
+    if (verify.status !== 0 || verify.stdout.trim() !== "ok") {
+      throw new Error(`发布前数据库备份校验失败：integrity_check=${verify.stdout.trim() || "（无输出）"}`);
+    }
+  } catch (error) {
+    // 半写入的快照（磁盘满等）不是可恢复备份：清掉再中止发布。
+    fs.rmSync(destination, { force: true });
+    throw error;
+  }
+  const backups = fs
+    .readdirSync(backupDir)
+    .filter((name) => /^workplan-\d{8}T\d{6}-\d+\.db$/.test(name))
+    .sort();
+  for (const stale of backups.slice(0, Math.max(0, backups.length - databaseBackupRetention))) {
+    fs.rmSync(path.join(backupDir, stale), { force: true });
+  }
+  log(`数据库备份：${databasePath} → ${destination}（integrity ok，保留最近 ${databaseBackupRetention} 份）`);
+  return destination;
+}
+
 export function promoteStaging(stagingRoot, targetRoot) {
   const previousRoot = previousReleaseRoot(targetRoot);
   fs.mkdirSync(targetRoot, { recursive: true });
@@ -1084,6 +1137,12 @@ export async function runSystemdRelease({
         throw new Error(`生成的 unit 配置无效：${renderErrors.join("；")}`);
       }
     }
+
+    // ---- R4.5 发布前数据库备份 ----
+    // 可恢复备份是数据库迁移类发布的硬性前置条件（规格 Rollout and Rollback）：
+    // 停服与迁移前对现有 workplan.db 做在线一致性快照，失败即中止发布。
+    await beforeStep("database-backup");
+    backupDatabaseBeforeRelease({ dataDir: unit.dataDir, runCommand: (command, args) => ioRun(command, args), log });
 
     // ---- R5: build ----
     await beforeStep("build");

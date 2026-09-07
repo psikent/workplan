@@ -25,7 +25,7 @@ sudo node scripts/release.mjs --install-systemd
 sudo node scripts/release.mjs
 ```
 
-发布顺序固定为：预检（Linux、root、`systemctl`/`systemd-analyze`、运行中的 systemd 管理器、现有 unit 安全）→ 构建 → 准备暂存 → `systemctl stop` → 提升程序文件 → 安装生产依赖 → 初始化生产配置 → 应用所有权权限 → 启动 → 验收。
+发布顺序固定为：预检（Linux、root、`systemctl`/`systemd-analyze`、运行中的 systemd 管理器、现有 unit 安全）→ **数据库备份**（对现有 `data/workplan.db` 做 `sqlite3` 在线一致性快照，存入 `data/pre-release-backups/`，保留最近 5 份；无现有库时跳过，备份或完整性校验失败即中止发布）→ 构建 → 准备暂存 → `systemctl stop` → 提升程序文件 → 安装生产依赖 → 初始化生产配置 → 应用所有权权限 → 启动 → 验收。前置依赖：服务器需安装 `sqlite3` CLI（Debian/Ubuntu：`sudo apt-get install sqlite3`）。
 
 - 常规发布**必须**存在且安全的 `workplan.service`；缺失或不安全时发布会中止并提示先运行 `--install-systemd`，**绝不会**回退到 `node workplan.mjs start`。
 - 验收项：`systemd-analyze verify` 通过、`is-enabled`/`is-active` 成功、MainPID 为正且用户/组为 `workplan:workplan`、可执行文件与工作目录为正式路径、仅 `127.0.0.1:3000` 一个监听（无通配/公网绑定）、`/health/ready` 返回 `status=ready` 且 `database=ok`。

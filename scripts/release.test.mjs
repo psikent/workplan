@@ -13,8 +13,10 @@ const skipOnWindows = { skip: onWindows && "仅适用于 Linux systemd 产物，
 
 import {
   assertInstallSystemdPreconditions,
+  backupDatabaseBeforeRelease,
   buildSystemdOwnershipPlan,
   corepackCommand,
+  databaseBackupRetention,
   evaluateSystemdReleaseEvidence,
   groupListenersByPid,
   launchdControlCommands,
@@ -704,6 +706,18 @@ function defaultResponder(ctx, command, args) {
       if (args.includes("txt")) return ok(`n${ctx.nodeExecutable}\n`);
       return fail("unexpected lsof");
     }
+    case "sqlite3": {
+      const dotCommand = args.find((arg) => arg.startsWith(".backup"));
+      if (dotCommand) {
+        const destination = dotCommand.match(/'(.*)'/)?.[1];
+        if (!destination) return fail("unparsable .backup target");
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        fs.writeFileSync(destination, `sqlite-backup-of:${args[0]}`);
+        return ok();
+      }
+      if (args.includes("PRAGMA integrity_check;")) return ok("ok\n");
+      return fail("unexpected sqlite3");
+    }
     default:
       throw new Error(`unexpected command: ${command} ${args.join(" ")}`);
   }
@@ -965,6 +979,112 @@ test("a failed verify rolls back files, .env and starts the previous version", a
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
     fs.rmSync(targetRoot, { recursive: true, force: true });
+  }
+});
+
+test("systemd release backs up the database before stopping the service and keeps the newest five", skipOnWindows, async () => {
+  const workspace = makeFixtureWorkspace();
+  const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wp-rel-"));
+  const unitPath = path.join(targetRoot, "workplan.service");
+  makeTargetRelease(targetRoot, "1");
+  const backupDir = path.join(targetRoot, "data", "pre-release-backups");
+  fs.mkdirSync(backupDir, { recursive: true });
+  for (let day = 1; day <= 6; day += 1) {
+    fs.writeFileSync(path.join(backupDir, `workplan-2025010${day}T000000-1.db`), `old-${day}`);
+  }
+  const ctx = makeContext({ targetRoot, enabled: true, started: true });
+  try {
+    fs.writeFileSync(unitPath, renderSystemdUnit(systemdUnitSpec({ targetRoot, nodeExecutable: ctx.nodeExecutable, unitPath })));
+    const { error, io } = await runRelease({ workspace, targetRoot, ctx, unitPath });
+    assert.equal(error, null, error?.message);
+
+    const remaining = fs.readdirSync(backupDir).sort();
+    assert.equal(remaining.length, databaseBackupRetention, "retention keeps the newest five");
+    assert.ok(!remaining.includes("workplan-20250101T000000-1.db"), "prunes the oldest backup");
+    assert.ok(remaining.includes("workplan-20250106T000000-1.db"), "keeps the newest stale backup");
+    const todayPrefix = new Date().toISOString().replace(/[-:]/g, "").slice(0, 8);
+    assert.ok(remaining.some((name) => name.startsWith(`workplan-${todayPrefix}`)), "creates today's snapshot");
+
+    const calls = io.calls.map((entry) => entry.join(" "));
+    assert.ok(calls.some((call) => call.includes(".backup ") && call.includes(`sqlite3 ${path.join(targetRoot, "data", "workplan.db")}`)), "snapshots the live database");
+    assert.ok(calls.some((call) => call.includes("PRAGMA integrity_check")), "verifies the snapshot integrity");
+    assert.match(io.logs.join("\n"), /数据库备份：.*integrity ok/);
+
+    const backupIndex = io.calls.findIndex(([command]) => command === "sqlite3");
+    const stopIndex = io.calls.findIndex(([command, action]) => command === "systemctl" && action === "stop");
+    assert.ok(backupIndex !== -1, "backup must run");
+    assert.ok(stopIndex === -1 || backupIndex < stopIndex, "backup must happen before the service is stopped");
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(targetRoot, { recursive: true, force: true });
+  }
+});
+
+test("database backup failure aborts the release before any mutation", skipOnWindows, async () => {
+  const workspace = makeFixtureWorkspace();
+  const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wp-rel-"));
+  const unitPath = path.join(targetRoot, "workplan.service");
+  makeTargetRelease(targetRoot, "1");
+  const ctx = makeContext({ targetRoot, enabled: true, started: true });
+  try {
+    fs.writeFileSync(unitPath, renderSystemdUnit(systemdUnitSpec({ targetRoot, nodeExecutable: ctx.nodeExecutable, unitPath })));
+    const { error } = await runRelease({
+      workspace,
+      targetRoot,
+      ctx,
+      unitPath,
+      rules: [{
+        match: (command) => command === "sqlite3",
+        respond: () => ({ status: 1, stdout: "", stderr: "Error: disk I/O error" }),
+      }],
+    });
+    assert.match(error?.message ?? "", /发布前数据库备份失败/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(targetRoot, "package.json"), "utf8")).version, "1", "current release untouched");
+    assert.ok(!fs.existsSync(previousReleaseRoot(targetRoot)), "nothing was promoted");
+    assert.equal(ctx.stops, 0, "service must not be stopped");
+    assert.equal(ctx.starts, 0, "service must not be restarted");
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(targetRoot, { recursive: true, force: true });
+  }
+});
+
+test("database backup is skipped on fresh installs without an existing database", () => {
+  const logs = [];
+  const result = backupDatabaseBeforeRelease({
+    dataDir: path.join(os.tmpdir(), `wp-no-db-${process.pid}-${Date.now()}`),
+    runCommand: () => {
+      throw new Error("must not run sqlite3 when the database does not exist");
+    },
+    log: (message) => logs.push(message),
+  });
+  assert.equal(result, null);
+  assert.match(logs.join("\n"), /跳过/);
+});
+
+test("database backup reports an actionable error when the sqlite3 CLI is missing", () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "wp-no-cli-"));
+  const destinationCandidates = [];
+  try {
+    fs.writeFileSync(path.join(dataDir, "workplan.db"), "db");
+    let error = null;
+    try {
+      backupDatabaseBeforeRelease({
+        dataDir,
+        runCommand: (command, args) => {
+          destinationCandidates.push(args.find((arg) => arg.startsWith(".backup")));
+          throw Object.assign(new Error("spawn sqlite3 ENOENT"), { code: "ENOENT" });
+        },
+        log: () => {},
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    assert.match(error?.message ?? "", /sqlite3 CLI 不可用/);
+    assert.match(error?.message ?? "", /apt-get install sqlite3/);
+    assert.equal(destinationCandidates.length, 1, "fails on the snapshot attempt");
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
 
