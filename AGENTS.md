@@ -14,7 +14,7 @@ For GitHub-related operations (PRs, issues, API queries, releases), prefer `gh` 
 
 ### New feature requests
 
-When the user proposes a new feature or requirement, run the `grill-with-docs` skill: grill the idea with the `grilling` protocol and `domain-modeling` docs, then present the requirements plan (spec + tickets) for approval before developing.
+When the user proposes a new feature or requirement, run the `grill-with-docs` skill: grill the idea with the `grilling` protocol and `domain-modeling` docs, then present the requirements plan (spec + tickets) for approval before developing. Before the grilling starts, use interactive Q&A (`AskUserQuestion`) to remind the user to switch to a stronger model for the session. After the spec and tickets land, offer the user the choice: stop at the docs and implement later, or start implementing now.
 
 ### Issue tracker
 
