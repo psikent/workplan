@@ -1,6 +1,6 @@
 # Spec: 工作台展示负责人与风险等级（Workbench Owner & Risk Display）
 
-> Status: **已入库待开发**（2026-09-08 方案获批，开发延后；票据 01/02 均 ready-for-agent）
+> Status: **已实现**（e01991c，2026-09-08） — 票据索引：01 服务端负责人与风险标签投影 | 02 Web 负责人药丸与风险徽章。依赖：02 ← 01。
 >
 > 领域词汇：Risk Level（风险等级）、Work Plan 已入 CONTEXT.md，无需新增词条。无需 ADR：展示层规则、可逆，决策随本 spec 记录。
 

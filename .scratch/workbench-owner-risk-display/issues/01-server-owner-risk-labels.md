@@ -1,9 +1,15 @@
 # 01 — 服务端：工作台行投影负责人与风险标签
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: none
 Spec: ../spec.md
 Scope: apps/server/src/modules/workbench.ts、packages/contracts/src/index.ts、apps/server/test/*
+
+## Answer
+
+实现于 e01991c。contracts 新增 `workbenchPlanSchema = workPlanSchema.extend({ ownerLabel, riskLabel })`（加性，全局 `workPlanSchema` 不动），`workbenchBlockSchema.items` 改用之。`WorkbenchService.overview()` 求值时 `customFields.list(true)` 只取一次定义（审核采纳 P3：与 productionFilter 共用，同提醒模块复用先例），`optionLabelIndex` 按非归档 single_select 建选项 value→label 映射；`projectRow` 投影三区块行——owner 不可解析（未填/字段缺失/归档/类型不符/选项归档/值非字符串）为 null，risk 同类回退「低」，可解析 label（含四档外自定义档）原样下发。
+
+测试 `workbench-owner-risk.test.ts` 五例：value 刻意≠label 钉死换算（acct_zhang↔张三、opt_medium↔中）、owner/risk 未填、字段缺失、类型不符（short_text，审核采纳 P3 补例）、选项归档（owner 回退 null、risk 回退「低」、未归档行不受影响）。server 217 用例全绿（含既有 workbench/production-only 零回归），隔离实例 API 实测 overview 行携带正确 label。
 
 ## 背景
 

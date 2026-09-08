@@ -1,9 +1,15 @@
 # 02 — Web：工作台行内负责人药丸与风险徽章
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/web/src/pages/OverviewPage.tsx、apps/web/src/components/*、apps/web/src/styles.css、apps/web/test/*
+
+## Answer
+
+实现于 e01991c。新组件 `RiskBadge.tsx`：`RiskBadge` 按label 映射 `risk-acceptable/low/medium/high` 四档配色（复用状态徽章 token），未知档回退 `risk-unknown` 中性灰保留文字；`OwnerBadge` 非空显示人名（slate 中性药丸＋圆点），null 显示虚线「未指定」（更弱中性）。三区块行第二行 `<small>` 内、起止时间之前插入 `.plan-meta-pills` 药丸组（`OverviewPage.tsx:68`）；提醒区块、汇总栏、空状态零改动；移动端规则只隐藏 `.status-badge`，药丸在 1fr 列内不受影响。
+
+测试：`RiskBadge.test.tsx` 四档各一例＋未知回退＋null→未指定；`OverviewPage.test.tsx` 夹具升级 `WorkbenchPlan` 并新增用例钉住药丸位置（第二行内、时间之前）与状态徽章/起止时间不回归。web 308 用例全绿；隔离实例浏览器双主题（深/浅）截图验收：张三+中(琥珀)、未指定+低(绿)、李四+高(珊瑚红)、王五+可接受(灰)、张三+极高(未知回退灰) 全部正确。
 
 ## 背景
 
