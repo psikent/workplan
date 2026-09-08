@@ -334,6 +334,15 @@ const migrations: Migration[] = [
       rebuildCustomFieldSortIndex(database);
     },
   },
+  {
+    // 字段定义折叠配置（呈现层收纳）：抽屉把折叠字段收进底部「更多信息」区，
+    // 不改变数据与校验；存量字段默认 false，行为不变。
+    version: 15,
+    name: "custom_field_definitions_collapsed",
+    sql: `
+      ALTER TABLE custom_field_definitions ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 export function migrate(database: Database.Database): void {

@@ -26,6 +26,7 @@ const ownerField: CustomFieldDefinition = {
   description: "",
   type: "single_select",
   required: false,
+  collapsed: false,
   defaultValue: null,
   sortOrder: 0,
   archivedAt: null,

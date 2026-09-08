@@ -77,6 +77,7 @@ const ownerField: CustomFieldDefinition = {
   description: "",
   type: "short_text",
   required: false,
+  collapsed: false,
   sortOrder: 0,
   defaultValue: null,
   archivedAt: null,

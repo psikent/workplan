@@ -30,6 +30,7 @@ test("computes an Environment Configuration Package from a development database"
       description: "关联实现票",
       type: "short_text",
       required: false,
+      collapsed: false,
       defaultValue: null,
       options: [],
     });
@@ -56,6 +57,7 @@ test("computes an Environment Configuration Package from a development database"
       description: "关联实现票",
       type: "short_text",
       required: false,
+      collapsed: false,
       defaultValue: null,
       options: [],
       sortOrder: 0,

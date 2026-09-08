@@ -25,6 +25,7 @@ const secondField = field({
   key: "second",
   label: "字段乙",
   sortOrder: 1,
+  collapsed: true,
 });
 const remarksField = field({
   id: "4b8a1f20-9c14-4a5e-8f3d-2a7c6b1e0d55",
@@ -104,6 +105,60 @@ describe("custom field management", () => {
         body: JSON.stringify({ orderedIds: [remarksField.id, secondField.id, firstField.id] }),
       }),
     ));
+    view.unmount();
+  });
+
+  it("renders the collapsed column from the field definition", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+
+    expect(screen.getByText("折叠")).toBeTruthy();
+    const rows = document.querySelectorAll(".fields-table:not(.table-head)");
+    expect(rows.length).toBe(3);
+    // 列序：拖拽把手/名称/稳定键/类型/必填/折叠/默认值 → 索引 5 为折叠列。
+    const collapsedCells = [...rows].map((row) => row.children[5]!.textContent);
+    expect(collapsedCells).toEqual(["否", "否", "是"]);
+    view.unmount();
+  });
+
+  it("sends collapsed on create when the dialog switch is turned on", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+
+    fireEvent.click(screen.getByRole("button", { name: "新建字段" }));
+    fireEvent.change(screen.getByLabelText(/字段名称/), { target: { value: "补充说明" } });
+    fireEvent.click(screen.getByRole("button", { name: "折叠" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存字段" }));
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      "/custom-fields",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"collapsed":true'),
+      }),
+    ));
+    expect(await screen.findByText("字段已创建")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("sends collapsed on edit when the dialog switch is toggled", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑 字段甲" }));
+    expect((screen.getByRole("button", { name: "折叠" }).getAttribute("aria-pressed"))).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "折叠" }));
+    expect((screen.getByRole("button", { name: "折叠" }).getAttribute("aria-pressed"))).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "保存字段" }));
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      `/custom-fields/${firstField.id}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining('"collapsed":true'),
+      }),
+    ));
+    expect(await screen.findByText("字段已保存")).toBeTruthy();
     view.unmount();
   });
 });
@@ -188,6 +243,7 @@ function field(overrides: Partial<CustomFieldDefinition>): CustomFieldDefinition
     description: "",
     type: "short_text",
     required: false,
+    collapsed: false,
     defaultValue: null,
     sortOrder: 0,
     archivedAt: null,

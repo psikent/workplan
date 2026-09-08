@@ -47,6 +47,7 @@ export class EnvConfigService {
         description: field.description,
         type: field.type,
         required: field.required,
+        collapsed: field.collapsed,
         defaultValue: field.defaultValue,
         options: field.options
           .filter((option) => !option.archivedAt)
@@ -113,6 +114,7 @@ export class EnvConfigService {
             description: field.description,
             type: field.type,
             required: field.required,
+            collapsed: field.collapsed,
             defaultValue: field.defaultValue,
             options: field.options,
           });
@@ -298,6 +300,7 @@ export class EnvConfigService {
       || JSON.stringify(field.defaultValue ?? null) !== JSON.stringify(local.defaultValue ?? null)
       || (field.sortOrder ?? index) !== local.sortOrder
       || field.required !== local.required
+      || field.collapsed !== local.collapsed
       || Boolean(local.archivedAt);
     if (!fieldChanged && options.length === 0) return null;
     return {
@@ -350,6 +353,7 @@ export class EnvConfigService {
           description: field.description,
           type: field.type,
           required: field.required,
+          collapsed: field.collapsed,
           defaultValue: field.defaultValue,
           options: field.options,
         });
@@ -387,6 +391,7 @@ export class EnvConfigService {
         label: field.label,
         description: field.description,
         required: field.required,
+        collapsed: field.collapsed,
         defaultValue: field.defaultValue,
         ...(local.archivedAt ? { archived: false } : {}),
         version: local.version,

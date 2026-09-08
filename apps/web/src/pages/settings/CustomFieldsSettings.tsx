@@ -34,6 +34,7 @@ type FieldDraft = {
   description: string;
   type: CustomFieldType;
   required: boolean;
+  collapsed: boolean;
   defaultValue: string;
   options: OptionDraft[];
 };
@@ -41,7 +42,7 @@ type FieldDraft = {
 const fieldsQueryKey = ["custom-fields", "all"] as const;
 
 function emptyDraft(): FieldDraft {
-  return { key: "", label: "", description: "", type: "short_text", required: false, defaultValue: "", options: [] };
+  return { key: "", label: "", description: "", type: "short_text", required: false, collapsed: false, defaultValue: "", options: [] };
 }
 
 export default function CustomFieldsSettings() {
@@ -73,6 +74,7 @@ export default function CustomFieldsSettings() {
           label: nextDraft.label,
           description: nextDraft.description,
           required: nextDraft.required,
+          collapsed: nextDraft.collapsed,
           defaultValue: parseDefault(nextDraft.type, nextDraft.defaultValue, activeOptions(nextDraft.options)),
           version: field.version,
         }),
@@ -120,6 +122,7 @@ export default function CustomFieldsSettings() {
       description: field.description,
       type: field.type,
       required: field.required,
+      collapsed: field.collapsed,
       defaultValue: formatDefaultForInput(field),
       options: field.options.map((option) => ({
         id: option.id,
@@ -150,6 +153,7 @@ export default function CustomFieldsSettings() {
           description: draft.description,
           type: draft.type,
           required: draft.required,
+          collapsed: draft.collapsed,
           defaultValue: parseDefault(draft.type, draft.defaultValue, options),
           options,
         });
@@ -228,7 +232,7 @@ export default function CustomFieldsSettings() {
           <div><SlidersHorizontal /><strong>字段定义</strong></div>
           <span className="settings-panel-header-actions"><span>{reorderMutation.isPending ? "正在保存顺序…" : `${fields.data?.length ?? 0} 个字段`}</span><button className="primary-button" type="button" onClick={openCreate}><Plus />新建字段</button></span>
         </div>
-        <div className="fields-table table-head"><span /><span>字段名称</span><span>稳定键</span><span>字段类型</span><span>必填</span><span>默认值</span><span /></div>
+        <div className="fields-table table-head"><span /><span>字段名称</span><span>稳定键</span><span>字段类型</span><span>必填</span><span>折叠</span><span>默认值</span><span /></div>
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext items={(fields.data ?? []).map((field) => field.id)} strategy={verticalListSortingStrategy}>
             {fields.data?.map((field, index) => (
@@ -257,6 +261,8 @@ export default function CustomFieldsSettings() {
               <label className="field"><span>稳定键 <b>*</b></span><input value={draft.key} disabled={editingField !== "new"} onChange={(event) => setDraft((current) => ({ ...current, key: event.target.value.toLocaleLowerCase().replace(/[^a-z0-9_]/g, "") }))} pattern="[a-z][a-z0-9_]{1,63}" required placeholder="owner_role" /></label>
               <label className="field"><span>字段类型 <b>*</b></span><select value={draft.type} disabled={editingField !== "new"} onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value as CustomFieldType, defaultValue: "", options: [] }))}>{Object.entries(typeLabels).map(([value, typeLabel]) => <option key={value} value={value}>{typeLabel}</option>)}</select></label>
               <label className="field toggle-field"><span>必填</span><button className={`switch ${draft.required ? "on" : ""}`} type="button" aria-pressed={draft.required} onClick={() => setDraft((current) => ({ ...current, required: !current.required }))}><i /></button></label>
+              <div className="field toggle-field"><span>折叠</span><button className={`switch ${draft.collapsed ? "on" : ""}`} type="button" aria-pressed={draft.collapsed} aria-label="折叠" onClick={() => setDraft((current) => ({ ...current, collapsed: !current.collapsed }))}><i /></button></div>
+              <div className="field full field-hint"><small>折叠：字段收入计划抽屉底部「更多信息」折叠区，展开后仍可查看和编辑。</small></div>
               <label className="field full"><span>字段说明</span><textarea rows={2} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} maxLength={500} /></label>
               {["single_select", "multi_select"].includes(draft.type) ? <OptionEditor options={draft.options} onChange={(options) => setDraft((current) => ({ ...current, options }))} /> : null}
               <label className="field full"><span>默认值{draft.required ? " *" : ""}</span><input value={draft.defaultValue} onChange={(event) => setDraft((current) => ({ ...current, defaultValue: event.target.value }))} required={draft.required} placeholder={draft.type === "boolean" ? "true 或 false" : ["single_select", "multi_select"].includes(draft.type) ? "填写选项名称，多选用逗号分隔" : "可选"} /></label>
@@ -287,6 +293,7 @@ function SortableFieldRow({ field, index, count, onEdit, onMove, onArchive }: {
       <code>{field.key}</code>
       <span>{typeLabels[field.type]}</span>
       <span>{field.required ? "是" : "否"}</span>
+      <span>{field.collapsed ? "是" : "否"}</span>
       <span className="truncate">{field.defaultValue == null ? "—" : String(field.defaultValue)}</span>
       <div className="field-row-actions">
         <button className="icon-button" type="button" aria-label={`上移 ${field.label}`} disabled={index === 0} onClick={() => onMove(field.id, -1)}><ArrowUp /></button>

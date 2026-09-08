@@ -11,6 +11,7 @@ type FieldRow = {
   description: string;
   type: CustomFieldType;
   required: number;
+  collapsed: number;
   default_value_json: string | null;
   sort_order: number;
   archived_at: string | null;
@@ -35,6 +36,7 @@ export type CreateFieldInput = {
   description: string;
   type: CustomFieldType;
   required: boolean;
+  collapsed: boolean;
   defaultValue: unknown | null;
   options: Array<{ value: string; label: string }>;
 };
@@ -77,6 +79,7 @@ export class CustomFieldService {
       description: row.description,
       type: row.type,
       required: Boolean(row.required),
+      collapsed: Boolean(row.collapsed),
       defaultValue: parseJson<unknown | null>(row.default_value_json, null),
       sortOrder: row.sort_order,
       archivedAt: row.archived_at,
@@ -121,7 +124,7 @@ export class CustomFieldService {
     const execute = this.database.sqlite.transaction(() => {
       this.validateValue(input.type, input.defaultValue, input.options, false);
       this.database.sqlite
-        .prepare("INSERT INTO custom_field_definitions(id, key, label, description, type, required, default_value_json, sort_order, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)")
+        .prepare("INSERT INTO custom_field_definitions(id, key, label, description, type, required, collapsed, default_value_json, sort_order, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)")
         .run(
           id,
           input.key,
@@ -129,6 +132,7 @@ export class CustomFieldService {
           input.description,
           input.type,
           input.required ? 1 : 0,
+          input.collapsed ? 1 : 0,
           input.defaultValue == null ? null : JSON.stringify(input.defaultValue),
           order.value,
           timestamp,
@@ -154,6 +158,7 @@ export class CustomFieldService {
       label?: string | undefined;
       description?: string | undefined;
       required?: boolean | undefined;
+      collapsed?: boolean | undefined;
       defaultValue?: unknown | null | undefined;
       archived?: boolean | undefined;
       version: number;
@@ -162,6 +167,7 @@ export class CustomFieldService {
     const current = this.list(true).find((field) => field.id === id);
     if (!current) throw notFound("自定义字段不存在");
     const required = input.required ?? current.required;
+    const collapsed = input.collapsed ?? current.collapsed;
     const defaultValue = Object.prototype.hasOwnProperty.call(input, "defaultValue") ? input.defaultValue : current.defaultValue;
     const count = this.database.sqlite.prepare("SELECT COUNT(*) AS count FROM work_plans").get() as { count: number };
     if (required && !current.required && count.count > 0 && defaultValue == null) {
@@ -177,11 +183,12 @@ export class CustomFieldService {
     // 定义更新与存量回填同一事务：回填中途失败不能留下"部分计划缺必填值"的状态。
     const execute = this.database.sqlite.transaction(() => {
       const result = this.database.sqlite
-        .prepare("UPDATE custom_field_definitions SET label = ?, description = ?, required = ?, default_value_json = ?, archived_at = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?")
+        .prepare("UPDATE custom_field_definitions SET label = ?, description = ?, required = ?, collapsed = ?, default_value_json = ?, archived_at = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?")
         .run(
           input.label ?? current.label,
           input.description ?? current.description,
           required ? 1 : 0,
+          collapsed ? 1 : 0,
           defaultValue == null ? null : JSON.stringify(defaultValue),
           archivedAt,
           nowIso(),

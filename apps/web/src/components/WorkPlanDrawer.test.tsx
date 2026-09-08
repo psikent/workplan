@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { CustomFieldDefinition, MonthlyGoal, WorkPlan, WorkPlanSeries } from "@workplan/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WorkPlanDrawer from "./WorkPlanDrawer";
@@ -457,6 +457,95 @@ describe("WorkPlanDrawer", () => {
     });
   });
 
+  describe("更多信息折叠区 (规格 R4/R5)", () => {
+    it("折叠字段收进「更多信息」区，展开后可编辑并随保存提交", async () => {
+      const effort = customField({ id: "d9da12af-f852-4ccf-b523-572c8bd35cb9", key: "effort", label: "工时", type: "number", sortOrder: 0 });
+      const notes = customField({ id: "c1867260-2641-4777-8de1-e7113c352c34", key: "notes", label: "备注", sortOrder: 1, collapsed: true });
+      const onSave = vi.fn().mockResolvedValue(undefined);
+      const view = render(
+        <WorkPlanDrawer plan={null} fields={[effort, notes]} open saving={false} onClose={vi.fn()} onSave={onSave} />,
+      );
+
+      const toggle = screen.getByRole("button", { name: "更多信息 (1)" });
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByLabelText("备注")).toBeNull();
+      const mainGroup = screen.getByRole("group", { name: "自定义字段" });
+      expect(within(mainGroup).getByLabelText("工时")).toBeTruthy();
+
+      fireEvent.click(toggle);
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      fireEvent.change(screen.getByLabelText("备注"), { target: { value: "补充内容" } });
+      fireEvent.change(screen.getByLabelText(/工作内容/), { target: { value: "新计划" } });
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+      expect(onSave.mock.calls[0]?.[0]).toMatchObject({ customFields: { notes: "补充内容" } });
+      view.unmount();
+    });
+
+    it("每次打开抽屉重置为收起", async () => {
+      const notes = customField({ key: "notes", label: "备注", collapsed: true });
+      const view = render(
+        <WorkPlanDrawer plan={null} fields={[notes]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "更多信息 (1)" }));
+      expect(screen.getByLabelText("备注")).toBeTruthy();
+
+      view.rerender(
+        <WorkPlanDrawer plan={null} fields={[notes]} open={false} saving={false} onClose={vi.fn()} onSave={vi.fn()} />,
+      );
+      view.rerender(
+        <WorkPlanDrawer plan={null} fields={[notes]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} />,
+      );
+
+      expect(screen.getByRole("button", { name: "更多信息 (1)" }).getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByLabelText("备注")).toBeNull();
+      view.unmount();
+    });
+
+    it("全部折叠时主分区不渲染空壳；owner 折叠时冲突区与派生账号随入折叠区", () => {
+      const owner = customField({
+        id: "f9a9dc48-e819-4b1b-89a3-ee680649e842",
+        key: "owner",
+        label: "工作负责人",
+        type: "single_select",
+        options: [
+          { id: "44a6325a-caa8-43e1-b998-567a816ec272", value: "fengmingqian", label: "冯铭倩", sortOrder: 0, archivedAt: null, version: 1 },
+          { id: "a1a22ca6-4a22-496d-9ac0-077dd5278463", value: "linyaqian", label: "林雅茜", sortOrder: 1, archivedAt: null, version: 1 },
+        ],
+        collapsed: true,
+      });
+      const view = render(
+        <WorkPlanDrawer plan={null} fields={[owner]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} ownerAccountMappings={[{ ownerName: "冯铭倩", account: "fengmingqian@example.com" }]} />,
+      );
+
+      expect(screen.queryByRole("group", { name: "自定义字段" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "更多信息 (1)" }));
+      expect(screen.getByLabelText("工作负责人")).toBeTruthy();
+      expect(screen.getByLabelText("工作负责人账号")).toBeTruthy();
+      view.unmount();
+    });
+
+    it("保存失败时自动展开折叠区并滚动定位到匹配的折叠字段", async () => {
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      const notes = customField({ key: "notes", label: "备注", required: true, collapsed: true });
+      const onSave = vi.fn().mockRejectedValue(new Error("自定义字段“备注”为必填项"));
+      const view = render(
+        <WorkPlanDrawer plan={null} fields={[notes]} open saving={false} onClose={vi.fn()} onSave={onSave} />,
+      );
+      expect(screen.getByRole("button", { name: "更多信息 (1)" }).getAttribute("aria-expanded")).toBe("false");
+
+      fireEvent.change(screen.getByLabelText(/工作内容/), { target: { value: "新计划" } });
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("为必填项"));
+      expect(screen.getByRole("button", { name: "更多信息 (1)" }).getAttribute("aria-expanded")).toBe("true");
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+      view.unmount();
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    });
+  });
+
   describe("monthly goal section", () => {
     const freeGoals: MonthlyGoal[] = [
       monthlyGoal({ id: "11111111-1111-4111-8111-111111111111", title: "官网改版", year: 2026, month: 8, createdAt: "2026-08-01T00:00:00.000Z" }),
@@ -727,6 +816,7 @@ function customField(overrides: Partial<CustomFieldDefinition>): CustomFieldDefi
     description: "",
     type: "short_text",
     required: false,
+    collapsed: false,
     sortOrder: 0,
     defaultValue: null,
     archivedAt: null,

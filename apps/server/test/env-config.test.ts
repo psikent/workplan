@@ -146,6 +146,7 @@ const autoRestorePackage: EnvConfigPackage = {
       description: "从开发种子恢复",
       type: "short_text",
       required: false,
+      collapsed: false,
       defaultValue: null,
       options: [],
       sortOrder: 0,
@@ -188,6 +189,7 @@ describe("development Environment Configuration Package auto-restore", () => {
       description: "不得被种子区段补充",
       type: "short_text",
       required: false,
+      collapsed: false,
       defaultValue: null,
       options: [],
     });
@@ -596,6 +598,7 @@ describe("EnvConfigService sync import", () => {
           description: "",
           type: "single_select",
           required: false,
+          collapsed: false,
           defaultValue: null,
           options: [
             { value: "fengmingqian", label: "冯铭倩" },
@@ -610,6 +613,7 @@ describe("EnvConfigService sync import", () => {
           description: "补充说明",
           type: "short_text",
           required: false,
+          collapsed: false,
           defaultValue: null,
           options: [],
           sortOrder: 1,

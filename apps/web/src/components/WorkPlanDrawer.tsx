@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
 import type { CreateWorkPlan, CustomFieldDefinition, MonthlyGoal, OwnerAccountMapping, OwnerConflictCounterpart, WorkPlan, WorkPlanConflictCheckResponse, WorkPlanSeries, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
-import { Archive, CalendarClock, Copy, Repeat2, Target, X } from "lucide-react";
+import { Archive, CalendarClock, ChevronDown, Copy, Repeat2, Target, X } from "lucide-react";
 import { api, jsonBody } from "../lib/api";
 import { formatDate, fromDateTimeLocal, statusLabels, toDateTimeLocal } from "../lib/format";
 import { rangeOverlapsMonth } from "../lib/period";
@@ -66,6 +66,8 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [interval, setIntervalValue] = useState(1);
   const [error, setError] = useState("");
+  // 更多信息折叠区（规格 D5）：每次打开抽屉默认收起，不持久化。
+  const [moreInfoOpen, setMoreInfoOpen] = useState(false);
   const selectedMonthlyGoalIds = useMemo(() => new Set(monthlyGoalIds), [monthlyGoalIds]);
   const visibleMonthlyGoals = useMemo(
     () => sortedMonthlyGoals.filter((goal) => (
@@ -98,6 +100,7 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
     setRecurrence("none");
     setIntervalValue(1);
     setError("");
+    setMoreInfoOpen(false);
   }, [initialDate, open, plan]);
 
   // 系列计划的周期字段随 series 异步载入回填：只动 recurrence/interval，不重置其他字段。
@@ -177,7 +180,7 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
     const startIso = fromDateTimeLocal(startAt);
     const endIso = fromDateTimeLocal(endAt);
     if (Date.parse(startIso) >= Date.parse(endIso)) {
-      setError("结束时间必须晚于开始时间");
+      handleSaveFailure("结束时间必须晚于开始时间");
       return;
     }
     try {
@@ -197,8 +200,23 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
         recurrence === "none" ? null : { frequency: recurrence, interval, timeZone: "Asia/Shanghai" },
       );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "保存失败");
+      handleSaveFailure(caught instanceof Error ? caught.message : "保存失败");
     }
+  }
+
+  // 校验兜底（规格 R5/D4）：保存失败时自动展开折叠区；错误文本能匹配某个折叠字段
+  // label（如服务端必填错误「自定义字段”X“为必填项」）时，滚动定位到该字段控件。
+  function handleSaveFailure(message: string) {
+    setError(message);
+    const target = collapsedFields.find((field) => message.includes(field.label));
+    if (collapsedFields.length > 0) setMoreInfoOpen(true);
+    if (!target) return;
+    const reveal = () => document
+      .querySelector(`[data-custom-field="${target.key}"]`)
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    // 刚触发展开时控件尚未挂载，等一帧再定位。
+    if (moreInfoOpen) reveal();
+    else window.setTimeout(reveal, 80);
   }
 
   async function duplicate() {
@@ -228,6 +246,9 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   const activeFields = fields
     .filter((field) => !field.archivedAt)
     .sort((left, right) => Number(right.required) - Number(left.required) || left.sortOrder - right.sortOrder);
+  // 折叠分流（规格 R4）：未折叠字段留在主分区，折叠字段划入底部「更多信息」区；排序规则不变。
+  const mainFields = activeFields.filter((field) => !field.collapsed);
+  const collapsedFields = activeFields.filter((field) => field.collapsed);
   const ownerField = activeFields.find((field) => field.key === "owner");
   const ownerOption = ownerField?.options.find((option) => option.value === customValues.owner);
   const accountByOwnerName = new Map(ownerAccountMappings.map((mapping) => [mapping.ownerName, mapping.account]));
@@ -237,6 +258,23 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
     : ownerAccountMappingsError
       ? "映射加载失败"
       : ownerAccount ?? "未配置";
+
+  // 单字段渲染：owner 特例（冲突提示区 + 派生「工作负责人账号」只读字段）整体随所在分区入座。
+  const renderCustomField = (field: CustomFieldDefinition) => (
+    field.key === "owner" ? (
+      <div className={`owner-conflict-zone${conflictCounterparts ? " owner-conflict-active" : ""}`}>
+        <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} dataCustomField={field.key} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
+        <label className="field derived-field"><span>工作负责人账号</span><input value={ownerAccountDisplay} readOnly aria-readonly="true" /></label>
+        {conflictCounterparts ? (
+          <p className="owner-conflict-hint" role="status">
+            该负责人在此时段已有其他任务：{conflictCounterparts.map((counterpart) => `与【${counterpart.label}】${formatDate(counterpart.startAt, true)} - ${formatDate(counterpart.endAt, true)} 时间冲突`).join("；")}
+          </p>
+        ) : null}
+      </div>
+    ) : (
+      <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} dataCustomField={field.key} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
+    )
+  );
 
   return (
     <>
@@ -308,27 +346,32 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
             ) : <p className="recurrence-summary">计划覆盖月份内暂无可关联月目标</p>}
           </fieldset>
 
-          {activeFields.length > 0 ? (
+          {mainFields.length > 0 ? (
             <fieldset className="form-section full">
               <legend><CalendarClock />自定义字段</legend>
-              <div className="custom-field-list">{activeFields.map((field) => (
-                <Fragment key={field.id}>
-                  {field.key === "owner" ? (
-                    <div className={`owner-conflict-zone${conflictCounterparts ? " owner-conflict-active" : ""}`}>
-                      <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
-                      <label className="field derived-field"><span>工作负责人账号</span><input value={ownerAccountDisplay} readOnly aria-readonly="true" /></label>
-                      {conflictCounterparts ? (
-                        <p className="owner-conflict-hint" role="status">
-                          该负责人在此时段已有其他任务：{conflictCounterparts.map((counterpart) => `与【${counterpart.label}】${formatDate(counterpart.startAt, true)} - ${formatDate(counterpart.endAt, true)} 时间冲突`).join("；")}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
-                  )}
-                </Fragment>
+              <div className="custom-field-list">{mainFields.map((field) => (
+                <Fragment key={field.id}>{renderCustomField(field)}</Fragment>
               ))}</div>
             </fieldset>
+          ) : null}
+          {collapsedFields.length > 0 ? (
+            <section className="form-section full more-info-section">
+              <button
+                className="more-info-toggle"
+                type="button"
+                aria-expanded={moreInfoOpen}
+                aria-controls="drawer-more-info-fields"
+                onClick={() => setMoreInfoOpen((current) => !current)}
+              >
+                <ChevronDown aria-hidden />
+                更多信息 ({collapsedFields.length})
+              </button>
+              {moreInfoOpen ? (
+                <div id="drawer-more-info-fields" className="custom-field-list">{collapsedFields.map((field) => (
+                  <Fragment key={field.id}>{renderCustomField(field)}</Fragment>
+                ))}</div>
+              ) : null}
+            </section>
           ) : null}
           {error ? <div className="form-error full" role="alert">{error}</div> : null}
           <footer className="drawer-actions full">
@@ -348,13 +391,15 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   );
 }
 
-function CustomFieldControl({ field, value, onChange, disabled = false }: { field: CustomFieldDefinition; value: unknown; onChange: (value: unknown) => void; disabled?: boolean }) {
+function CustomFieldControl({ field, value, onChange, disabled = false, dataCustomField }: { field: CustomFieldDefinition; value: unknown; onChange: (value: unknown) => void; disabled?: boolean; dataCustomField?: string }) {
+  // data-custom-field 供保存失败时滚动定位控件（规格 R5）。
+  const slotProps = dataCustomField ? { "data-custom-field": dataCustomField } : undefined;
   const label = <span>{field.label}{field.required ? <b> *</b> : null}</span>;
-  if (field.type === "boolean") return <label className="field toggle-field">{label}<button className={`switch ${value ? "on" : ""}`} type="button" disabled={disabled} onClick={() => onChange(!value)}><i /></button></label>;
-  if (field.type === "single_select") return <label className="field">{label}<select value={String(value ?? "")} disabled={disabled} onChange={(event) => onChange(event.target.value || null)} required={field.required}><option value="">请选择</option>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select></label>;
-  if (field.type === "multi_select") return <label className="field">{label}<select multiple disabled={disabled} value={Array.isArray(value) ? value as string[] : []} onChange={(event) => onChange(Array.from(event.target.selectedOptions, (option) => option.value))}>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select></label>;
-  if (field.type === "long_text") return <label className="field">{label}<textarea rows={2} value={String(value ?? "")} disabled={disabled} onChange={(event) => onChange(event.target.value)} required={field.required} /></label>;
+  if (field.type === "boolean") return <label className="field toggle-field" {...slotProps}>{label}<button className={`switch ${value ? "on" : ""}`} type="button" disabled={disabled} onClick={() => onChange(!value)}><i /></button></label>;
+  if (field.type === "single_select") return <label className="field" {...slotProps}>{label}<select value={String(value ?? "")} disabled={disabled} onChange={(event) => onChange(event.target.value || null)} required={field.required}><option value="">请选择</option>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select></label>;
+  if (field.type === "multi_select") return <label className="field" {...slotProps}>{label}<select multiple disabled={disabled} value={Array.isArray(value) ? value as string[] : []} onChange={(event) => onChange(Array.from(event.target.selectedOptions, (option) => option.value))}>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select></label>;
+  if (field.type === "long_text") return <label className="field" {...slotProps}>{label}<textarea rows={2} value={String(value ?? "")} disabled={disabled} onChange={(event) => onChange(event.target.value)} required={field.required} /></label>;
   const inputType = field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "datetime" ? "datetime-local" : field.type === "url" ? "url" : "text";
   const shownValue = field.type === "datetime" && typeof value === "string" ? toDateTimeLocal(value) : value == null ? "" : String(value);
-  return <label className="field">{label}<input type={inputType} value={shownValue} disabled={disabled} onChange={(event) => onChange(field.type === "number" ? (event.target.value === "" ? null : Number(event.target.value)) : field.type === "datetime" && event.target.value ? fromDateTimeLocal(event.target.value) : event.target.value)} required={field.required} /></label>;
+  return <label className="field" {...slotProps}>{label}<input type={inputType} value={shownValue} disabled={disabled} onChange={(event) => onChange(field.type === "number" ? (event.target.value === "" ? null : Number(event.target.value)) : field.type === "datetime" && event.target.value ? fromDateTimeLocal(event.target.value) : event.target.value)} required={field.required} /></label>;
 }

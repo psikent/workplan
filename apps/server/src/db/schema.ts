@@ -94,6 +94,7 @@ export const customFieldDefinitions = sqliteTable(
     description: text("description").notNull().default(""),
     type: text("type").$type<CustomFieldType>().notNull(),
     required: integer("required", { mode: "boolean" }).notNull().default(false),
+    collapsed: integer("collapsed", { mode: "boolean" }).notNull().default(false),
     defaultValueJson: text("default_value_json"),
     sortOrder: integer("sort_order").notNull(),
     archivedAt: text("archived_at"),

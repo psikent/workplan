@@ -585,6 +585,7 @@ export const customFieldDefinitionSchema = z.object({
   description: z.string(),
   type: customFieldTypeSchema,
   required: z.boolean(),
+  collapsed: z.boolean(),
   defaultValue: z.unknown().nullable(),
   sortOrder: z.number().int(),
   archivedAt: isoDateTimeSchema.nullable(),
@@ -600,6 +601,7 @@ export const createCustomFieldSchema = z.object({
   description: z.string().max(500).default(""),
   type: customFieldTypeSchema,
   required: z.boolean().default(false),
+  collapsed: z.boolean().default(false),
   defaultValue: z.unknown().nullable().default(null),
   options: z
     .array(z.object({ value: z.string().trim().min(1).max(80), label: z.string().trim().min(1).max(80) }))
@@ -611,6 +613,7 @@ export const updateCustomFieldSchema = z.object({
   label: z.string().trim().min(1).max(80).optional(),
   description: z.string().max(500).optional(),
   required: z.boolean().optional(),
+  collapsed: z.boolean().optional(),
   defaultValue: z.unknown().nullable().optional(),
   archived: z.boolean().optional(),
   version: z.number().int().positive(),

@@ -373,9 +373,16 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .status-mode-help small { font-size: 10px; line-height: 1.45; }
 .status-mode-help .text-button { min-height: 24px; flex: 0 0 auto; padding: 0 4px; font-size: 10px; }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; }
+.field-grid .field-hint { margin-top: -8px; }
 .field-grid > .full { grid-column: 1 / -1; }
 .field-grid.compact { gap: 10px; }
 .custom-field-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.more-info-section { padding: 0; }
+.more-info-toggle { display: flex; width: 100%; align-items: center; gap: 7px; padding: 12px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--text-soft); font-size: 12px; font-weight: 650; cursor: pointer; }
+.more-info-toggle:hover { color: var(--text); }
+.more-info-toggle svg { width: 15px; height: 15px; color: var(--accent); transition: transform .16s ease; }
+.more-info-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.more-info-section > .custom-field-list { padding: 0 14px 14px; }
 /* 负责人冲突提醒（规格 R7/R8）：外层容器边框警示色 + 小字提醒，仅提示不阻止保存；
    常驻透明边框与负边距抵消，避免冲突出现/消失时布局跳动 */
 .owner-conflict-zone { display: grid; gap: 14px; padding: 8px; margin: -9px; border: 1px solid transparent; border-radius: 8px; }
@@ -403,7 +410,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .settings-panel-header > div { display: flex; align-items: center; gap: 9px; }.settings-panel-header svg { color: var(--accent); }
 .settings-panel-header > span { color: var(--muted); font-size: 12px; }
 .settings-panel-header-actions { display: flex; align-items: center; gap: 12px; }.settings-panel-header-actions > span { color: var(--muted); font-size: 12px; }.settings-panel-header-actions .primary-button { min-height: 34px; }
-.fields-table { min-height: 55px; display: grid; grid-template-columns: 32px minmax(150px, 1.5fr) minmax(120px, 1fr) 100px 70px minmax(100px, 1fr) 152px; align-items: center; gap: 8px; padding: 0 15px; border-bottom: 1px solid var(--line-soft); background: var(--surface); font-size: 12px; }
+.fields-table { min-height: 55px; display: grid; grid-template-columns: 32px minmax(150px, 1.5fr) minmax(120px, 1fr) 100px 70px 70px minmax(100px, 1fr) 152px; align-items: center; gap: 8px; padding: 0 15px; border-bottom: 1px solid var(--line-soft); background: var(--surface); font-size: 12px; }
 .fields-table.table-head { min-height: 42px; background: var(--surface-muted); color: var(--muted); font-weight: 650; }
 .field-sort-handle { width: 28px; height: 38px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--muted); cursor: grab; }.field-sort-handle:active { cursor: grabbing; }.field-sort-handle svg { width: 16px; }
 .fields-table code { width: fit-content; padding: 3px 5px; border-radius: 4px; background: var(--surface-muted); color: var(--text-soft); font-size: 11px; }
