@@ -1,9 +1,13 @@
 # 01 — 服务端：工作台生产类过滤与 scope 标记
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: none
 Spec: ../spec.md
 Scope: apps/server/src/modules/workbench.ts、packages/contracts/src/index.ts、apps/server/test/*
+
+## Answer
+
+实现于 ed2d164。`productionFilter()` 经 `customFields.list(true)` 解析非归档 single_select `plan_nature` 及其非归档 label=「生产类」选项，恰好一个匹配才注入 `custom.plan_nature eq <value>` 到三区块与四计数，否则回退全量；审查采纳 P3 收紧——多个非归档选项同 label 视为歧义回退（而非静默取 sort_order 第一项）。`workbenchOverviewSchema` 加性新增 `productionOnly`。测试 `workbench-production-only.test.ts` 六例：齐备过滤（value 刻意≠label 钉死解析陷阱）+ 四例回退（字段缺失/字段归档/选项归档/类型不符/同 label 歧义）。server 212 用例全绿，隔离实例 API 验收通过。
 
 ## 背景
 

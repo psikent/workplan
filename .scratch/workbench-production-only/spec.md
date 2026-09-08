@@ -1,6 +1,6 @@
 # Spec: 工作台只展示生产类工作（Workbench Production Scope）
 
-> Status: **已定稿，待批准开发** — 票据索引：01 服务端生产类过滤与 scope 标记 | 02 Web 仅生产类标注。依赖：02 ← 01。
+> Status: **已实现**（ed2d164，2026-09-08） — 票据索引：01 服务端生产类过滤与 scope 标记 | 02 Web 仅生产类标注。依赖：02 ← 01。
 >
 > 领域词汇：Plan Nature（计划性质）、Production Work（生产类工作）已入 CONTEXT.md。无需 ADR：代码级规则、可逆，决策随本 spec 记录。
 

@@ -1,9 +1,13 @@
 # 02 — Web：工作台"仅生产类"标注
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/web/src/pages/OverviewPage.tsx
+
+## Answer
+
+实现于 ed2d164。副标题按 `data?.productionOnly` 切换：true 时「仅展示生产类工作——今天需要关注的工作计划，一眼看清。」，false/加载中保持原文案。OverviewPage.test.tsx 新增 true/false 两用例（301→303）。隔离实例浏览器验收（临时 DATA_DIR，端口 3111）：过滤生效时区块只含生产类且副标题带标注；API 归档「生产类」选项后刷新，回退全量且副标题恢复原文案。
 
 ## 背景
 
