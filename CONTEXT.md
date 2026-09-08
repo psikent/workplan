@@ -155,6 +155,10 @@ _Avoid_: Needs-ticket flag
 The single_select Custom Field (key `risk`) on a Work Plan rating the riskiness of the work; values 可接受, 低, 中, 高; defaults to 低.
 _Avoid_: Priority, severity
 
+**Plan Nature (计划性质)**:
+The single_select Custom Field (key `plan_nature`) on a Work Plan classifying the work as 生产类 or 非生产类; it may be left unset and has no default.
+_Avoid_: 工作类别, Work Class, work type
+
 **Bark Push (Bark 推送)**:
 The output channel that repeats a Work Order Reminder to the single Bark device configured by the Administrator. One push is sent daily at 09:30 Asia/Shanghai, starting on the Reminder Date and ending the day before the Work Plan starts; pushing stops immediately when the plan is cancelled or manually completed. An empty device key disables pushing. The push is text-only (no deep link).
 _Avoid_: 推送通知, notification, push notification
@@ -170,3 +174,7 @@ _Avoid_: Ongoing work, in-progress filter
 **Upcoming Window (接下来的窗口)**:
 The calendar range after today through the seventh Working Day from today, including the boundary and intervening weekends. The workbench 接下来的计划 group lists non-completed, non-cancelled Work Plans whose local start day falls in this window, regardless of end day.
 _Avoid_: Next week, seven-day window
+
+**Production Work (生产类工作)**:
+A Work Plan whose Plan Nature is 生产类; an unset or 非生产类 Plan Nature is not Production Work. The workbench plan groups and the workbench status summary cover Production Work only; Reminders are independent of Plan Nature.
+_Avoid_: 生产计划, production plan, 生产任务
