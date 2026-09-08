@@ -32,3 +32,12 @@ Scope: apps/web/src/components/WorkPlanDrawer.tsx
 - 校验兜底（R5/D4）：前端区间校验失败与服务端拒绝统一走 handleSaveFailure——置错、折叠区自动展开、错误文本含折叠字段 label 时滚动定位（展开刚触发时延时 80ms 等挂载）。
 - 测试：WorkPlanDrawer 新增 4 例（分流+展开可编辑+保存携带、重开重置、全折叠空壳+owner 随折叠、保存失败自动展开+定位）；jsdom 补填标题以通过原生必填校验。
 - 隔离实例手工验收：三模式折叠区行为、owner 随折叠、必填折叠字段保存失败自动展开且控件入视口、环境包导出→Additive 导入保留 collapsed、Sync 校验预览非破坏且导入对齐——全部通过。
+
+### 2026-09-08 正式代码审查（reviewer 子代理，对提交 09e7d94）
+
+- 结论：**No P0 / No P1，Merge verdict OK**，无需跟进修复提交。SQL 列/参数对齐、乐观锁路径、R1–R6 逐条核验通过；R6 经全仓 grep 确认 collapsed 仅抽屉消费。
+- P2 报告项（知悉/可选优化，未修改）：
+  1. 错误文本 label 匹配为纯子串（`message.includes(field.label)`），折叠字段 label 恰为无关错误子串时会误滚动定位（如 label「时间」命中「结束时间必须晚于开始时间」）；如需收紧可匹配服务端模板「自定义字段”X“为必填项」。
+  2. reveal 定时器 80ms 启发式、无重试；重渲染慢时定位静默失效（展开与错误提示不受影响）。
+  3. 保存 in-flight 期间手动展开后失败，闭包旧值走 setTimeout 分支；因元素已挂载，定位结果相同，行为无差异。
+  4. 旧 schemaVersion 2 包缺 collapsed 经 zod default=false，sync 会把本地 true 对齐回 false（与既有 required default 语义一致）。
