@@ -52,6 +52,10 @@ _Avoid_: Metadata blob, task field
 The administrator-maintained sequence of a select Custom Field's options. It is authoritative for option display everywhere and for single_select Work Plan sorting; it is never derived from option label text.
 _Avoid_: 标签排序, label sort, alphabetical order
 
+**Field Collapse (字段折叠)**:
+An Administrator-maintained flag on a Custom Field definition that presents the field inside the collapsed "更多信息" section at the bottom of the Work Plan drawer, in every drawer mode. The field stays viewable and editable once the section is expanded; the flag never hides the field, changes its data, or affects any view other than the drawer.
+_Avoid_: 隐藏字段, Hidden field, drawer visibility, 浏览器列设置
+
 **Monthly Goal**:
 A per-month work objective, defined by an Administrator or an Editor, with its own title, description, and month. It links to at most one Work Plan and derives its completion from that Work Plan's effective status.
 _Avoid_: Goal tag, milestone, target
