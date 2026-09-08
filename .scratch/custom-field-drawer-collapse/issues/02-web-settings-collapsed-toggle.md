@@ -1,6 +1,6 @@
 # 02 — 前端:字段定义页呈现「折叠」配置
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/web/src/pages/settings/CustomFieldsSettings.tsx、apps/web/src/pages/settings/CustomFieldsSettings.test.tsx
@@ -22,3 +22,11 @@ Scope: apps/web/src/pages/settings/CustomFieldsSettings.tsx、apps/web/src/pages
 
 - 对应规格 R3 与验收标准 1 的 web 部分。
 - `corepack pnpm --filter @workplan/web typecheck && corepack pnpm --filter @workplan/web test` 全绿。
+
+## Comments
+
+### 2026-09-08 实施完成
+
+- 表格新增「折叠」列（是/否，风格同「必填」，grid 增至 8 列）。
+- 弹窗新增「折叠」开关（aria-label="折叠"，aria-pressed）+ 常驻说明文案（收入抽屉底部「更多信息」，展开后仍可查看/编辑）；新建 POST 与编辑 PATCH 均携带 collapsed。
+- 测试：表格列随 collapsed 呈现是/否；新建/编辑开关切换后请求体携带 collapsed；既有 7 例零回归。web 315 用例全绿。

@@ -1,6 +1,6 @@
 # 01 — 服务端+契约:字段定义新增 collapsed 配置
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: none
 Spec: ../spec.md
 Scope: packages/contracts/src/index.ts、apps/server/src/db/schema.ts、apps/server/src/db/migrate.ts、apps/server/src/modules/custom-fields.ts、apps/server/src/modules/env-config.ts、apps/server/test/*
@@ -28,3 +28,12 @@ Scope: packages/contracts/src/index.ts、apps/server/src/db/schema.ts、apps/ser
 
 - 对应规格 R1/R2 与验收标准 1 的 server 部分。
 - `corepack pnpm --filter @workplan/server typecheck && corepack pnpm --filter @workplan/server test` 全绿。
+
+## Comments
+
+### 2026-09-08 实施完成
+
+- 契约：`customFieldDefinitionSchema` 输出 `collapsed`；`createCustomFieldSchema` 增 `collapsed`（缺省 false）；`updateCustomFieldSchema` 增可选 `collapsed`。`envConfigPackageFieldSchema` 经 extend 自动继承（旧包缺省 false，新导出显式携带），与包内既有字段风格一致。
+- DB：`collapsed INTEGER NOT NULL DEFAULT 0`（schema.ts）+ 内联迁移 v15 `custom_field_definitions_collapsed`（migrate.ts）。
+- 服务端：创建写入 collapsed；更新未传保持现状（version 乐观锁与事务沿用）；序列化携带 collapsed。env-config 导出携带、Additive 透传创建、Sync 对齐（collapsed-only 差异 → update/safe 非破坏）。
+- 测试：新增 `apps/server/test/custom-field-collapsed.test.ts`（创建缺省/显式、列表序列化、PATCH 切换含 version 冲突 409、导出/导入保留、Additive 跳过不覆盖、Sync 非破坏对齐）；migrate/sort-order-removal/env-config 既有断言随 v15 与导出形状同步更新。server 222 用例全绿，typecheck 绿。

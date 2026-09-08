@@ -1,6 +1,6 @@
 # 03 — 前端:抽屉底部「更多信息」折叠区
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/web/src/components/WorkPlanDrawer.tsx
@@ -21,3 +21,14 @@ Scope: apps/web/src/components/WorkPlanDrawer.tsx
 
 - 对应规格 R4/R5 与验收标准 2:隔离实例手工验证——折叠字段入「更多信息」、展开可编辑;默认收起、重开重置;owner 随折叠;必填折叠字段留空保存→自动展开并定位;未折叠字段行为与现状一致。
 - `corepack pnpm --filter @workplan/web typecheck` 全绿(本组件如无既有测试覆盖,不强制新增单测,以隔离实例手工验收为准)。
+
+## Comments
+
+### 2026-09-08 实施完成
+
+- 分流：`mainFields`（未折叠）留「自定义字段」分区；`collapsedFields` 入底部「更多信息 (N)」区（section.more-info-section，位于主分区与底部按钮之间）；区内同排序规则（必填优先+sortOrder）、同控件渲染（CustomFieldControl，含 data-custom-field 供定位）。
+- 默认收起（aria-expanded）、每次打开抽屉重置（D5）；N=0 不渲染该区；全折叠时主分区不渲染空壳。
+- owner 特例：owner 折叠时冲突提示区 + 派生「工作负责人账号」整体随入折叠区。
+- 校验兜底（R5/D4）：前端区间校验失败与服务端拒绝统一走 handleSaveFailure——置错、折叠区自动展开、错误文本含折叠字段 label 时滚动定位（展开刚触发时延时 80ms 等挂载）。
+- 测试：WorkPlanDrawer 新增 4 例（分流+展开可编辑+保存携带、重开重置、全折叠空壳+owner 随折叠、保存失败自动展开+定位）；jsdom 补填标题以通过原生必填校验。
+- 隔离实例手工验收：三模式折叠区行为、owner 随折叠、必填折叠字段保存失败自动展开且控件入视口、环境包导出→Additive 导入保留 collapsed、Sync 校验预览非破坏且导入对齐——全部通过。
