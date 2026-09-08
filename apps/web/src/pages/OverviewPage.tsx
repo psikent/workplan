@@ -52,7 +52,7 @@ export default function OverviewPage() {
   ];
   return (
     <section className="content-page narrow-page overview-page">
-      <header className="page-header"><div><h1>工作台</h1><p>今天需要关注的工作计划，一眼看清。</p></div><Link className="primary-button" to="/work-plans">打开时间轴<ArrowRight /></Link></header>
+      <header className="page-header"><div><h1>工作台</h1><p>{data?.productionOnly ? "仅展示生产类工作——今天需要关注的工作计划，一眼看清。" : "今天需要关注的工作计划，一眼看清。"}</p></div><Link className="primary-button" to="/work-plans">打开时间轴<ArrowRight /></Link></header>
       <div className="summary-rail">{summary.map(({ label, value, icon: Icon }) => <div key={label}><Icon /><span><strong>{value}</strong><small>{label}</small></span></div>)}</div>
       <div className="overview-panels">
         {reminderRows.length > 0 ? (

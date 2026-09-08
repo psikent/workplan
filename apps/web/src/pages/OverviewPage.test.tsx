@@ -48,6 +48,7 @@ function emptyOverview(): WorkbenchOverview {
     continuingToday: { items: [], total: 0 },
     upcoming: { items: [], total: 0 },
     summary: { all: 0, pending: 0, inProgress: 0, completed: 0 },
+    productionOnly: false,
   };
 }
 
@@ -169,6 +170,23 @@ describe("OverviewPage", () => {
 
     const link = await screen.findByRole("link", { name: /逾期检修/ });
     expect(link).toHaveTextContent("原提醒日 2026/08/20");
+    view.unmount();
+  });
+
+  it("marks the production-only scope in the subtitle when the server filtered", async () => {
+    apiMock.mockResolvedValue({ ...emptyOverview(), productionOnly: true });
+    const view = renderPage();
+
+    expect(await screen.findByText("仅展示生产类工作——今天需要关注的工作计划，一眼看清。")).toBeInTheDocument();
+    view.unmount();
+  });
+
+  it("keeps the plain subtitle when the server reports no production filter", async () => {
+    apiMock.mockResolvedValue({ ...emptyOverview(), productionOnly: false });
+    const view = renderPage();
+
+    expect(await screen.findByText("今天需要关注的工作计划，一眼看清。")).toBeInTheDocument();
+    expect(screen.queryByText(/仅展示生产类工作/)).not.toBeInTheDocument();
     view.unmount();
   });
 

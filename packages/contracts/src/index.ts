@@ -955,6 +955,8 @@ export const workbenchOverviewSchema = z.object({
     inProgress: z.number().int().min(0),
     completed: z.number().int().min(0),
   }),
+  // true：本次响应已按生产类（计划性质）过滤；false：判别不可解析，回退展示全部。
+  productionOnly: z.boolean(),
 });
 
 export type WorkbenchBlock = z.infer<typeof workbenchBlockSchema>;
