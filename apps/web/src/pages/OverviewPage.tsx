@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ReminderType, WorkbenchOverview } from "@workplan/contracts";
 import { ArrowRight, CalendarClock, CircleCheckBig, Clock3, PlayCircle } from "lucide-react";
 import { Link } from "react-router-dom";
+import { OwnerBadge, RiskBadge } from "../components/RiskBadge";
 import { StatusBadge } from "../components/StatusBadge";
 import { api, fetchReminders } from "../lib/api";
 import { formatDate, toLocalDateString } from "../lib/format";
@@ -64,7 +65,7 @@ export default function OverviewPage() {
         {planGroups.map(({ key, heading, description, items, viewAll }) => items.length === 0 ? null : (
           <section className="upcoming-section" key={key}>
             <header><div><h2>{heading}</h2><p>{description}</p></div>{viewAll ? <Link to="/work-plans">查看全部<ArrowRight /></Link> : null}</header>
-            <div className="upcoming-list">{items.map((plan) => <Link to={workPlanTimelineLink(plan)} key={plan.id}><span className={`upcoming-date status-rail-${plan.status}`}><strong>{new Date(plan.startAt).getDate()}</strong><small>{new Intl.DateTimeFormat("zh-CN", { month: "short" }).format(new Date(plan.startAt))}</small></span><span className="upcoming-title"><strong>{plan.title}</strong><small>{formatDate(plan.startAt, true)} — {formatDate(plan.endAt, true)}</small></span><StatusBadge status={plan.status} /><ArrowRight /></Link>)}</div>
+            <div className="upcoming-list">{items.map((plan) => <Link to={workPlanTimelineLink(plan)} key={plan.id}><span className={`upcoming-date status-rail-${plan.status}`}><strong>{new Date(plan.startAt).getDate()}</strong><small>{new Intl.DateTimeFormat("zh-CN", { month: "short" }).format(new Date(plan.startAt))}</small></span><span className="upcoming-title"><strong>{plan.title}</strong><small><span className="plan-meta-pills"><OwnerBadge label={plan.ownerLabel} /><RiskBadge label={plan.riskLabel} /></span>{formatDate(plan.startAt, true)} — {formatDate(plan.endAt, true)}</small></span><StatusBadge status={plan.status} /><ArrowRight /></Link>)}</div>
           </section>
         ))}
         {showEmptyState ? (

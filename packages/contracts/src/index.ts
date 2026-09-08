@@ -936,8 +936,18 @@ export const importWorkPlansXlsSchema = z.object({
 
 // ---------- 工作台（Overview）响应契约：成员/计数/顺序由服务端统一产生 ----------
 
+// 工作台行投影：在 workPlanSchema 上加性换算 owner/risk 单选的 label（换算在服务端完成，
+// 前端不访问字段定义）；全局 workPlanSchema 不动，同提醒模块自有投影的先例。
+export const workbenchPlanSchema = workPlanSchema.extend({
+  // 负责人选项 label；值未填或字段/选项不可解析为 null。
+  ownerLabel: z.string().nullable(),
+  // 风险选项 label（可能是四档外的自定义 label，原样下发）；不可解析回退默认「低」。
+  riskLabel: z.string(),
+});
+export type WorkbenchPlan = z.infer<typeof workbenchPlanSchema>;
+
 export const workbenchBlockSchema = z.object({
-  items: z.array(workPlanSchema),
+  items: z.array(workbenchPlanSchema),
   total: z.number().int().min(0),
 });
 

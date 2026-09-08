@@ -258,6 +258,17 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .status-in_progress { color: var(--green-text); background: var(--green-soft); }.status-in_progress i { background: var(--green); }
 .status-completed { color: var(--slate-text); background: var(--slate-soft); }.status-completed i { background: var(--slate); }
 .status-cancelled { color: var(--coral-text); background: var(--coral-soft); }.status-cancelled i { background: var(--coral); }
+/* 工作台行第二行小药丸（负责人＋风险）：状态徽章的软底＋圆点模式缩小版，颜色全部复用现有 token。 */
+.plan-meta-pills { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; vertical-align: 1px; }
+.owner-badge, .risk-badge { display: inline-flex; align-items: center; gap: 4px; min-height: 15px; padding: 0 5px; border-radius: 8px; white-space: nowrap; font-size: 9px; font-weight: 620; }
+.owner-badge i, .risk-badge i { width: 5px; height: 5px; border-radius: 50%; }
+.owner-badge { color: var(--slate-text); background: var(--slate-soft); }.owner-badge i { background: var(--slate); }
+.owner-badge-unassigned { color: var(--muted); background: transparent; border: 1px dashed var(--line-strong); }
+.risk-acceptable { color: var(--slate-text); background: var(--slate-soft); }.risk-acceptable i { background: var(--slate); }
+.risk-low { color: var(--green-text); background: var(--green-soft); }.risk-low i { background: var(--green); }
+.risk-medium { color: var(--amber-text); background: var(--amber-soft); }.risk-medium i { background: var(--amber); }
+.risk-high { color: var(--coral-text); background: var(--coral-soft); }.risk-high i { background: var(--coral); }
+.risk-unknown { color: var(--muted); background: var(--surface-muted); }.risk-unknown i { background: var(--muted); }
 .plan-list-empty { min-height: 230px; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
 .timeline-empty { position: absolute; z-index: 2; inset: 46px 0 0; display: grid; place-items: center; min-height: 0; color: var(--muted); font-size: 13px; pointer-events: none; }
 .table-footer { display: flex; align-items: center; justify-content: space-between; padding: 0 17px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }

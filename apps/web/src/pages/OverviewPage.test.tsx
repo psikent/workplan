@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
-import type { ListRemindersResponse, Reminder, WorkPlan, WorkbenchOverview } from "@workplan/contracts";
+import type { ListRemindersResponse, Reminder, WorkbenchOverview, WorkbenchPlan } from "@workplan/contracts";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import OverviewPage from "./OverviewPage";
@@ -15,7 +15,7 @@ vi.mock("../lib/api", () => ({ api: apiMock, fetchReminders: fetchRemindersMock 
 
 const now = Date.now();
 
-function makePlan(overrides: Partial<WorkPlan> & { id: string; title: string }): WorkPlan {
+function makePlan(overrides: Partial<WorkbenchPlan> & { id: string; title: string }): WorkbenchPlan {
   return {
     description: "",
     status: "pending",
@@ -30,6 +30,8 @@ function makePlan(overrides: Partial<WorkPlan> & { id: string; title: string }):
     monthlyGoalIds: [],
     ownerAccount: null,
     ownerConflict: null,
+    ownerLabel: null,
+    riskLabel: "低",
     createdAt: new Date(now).toISOString(),
     updatedAt: new Date(now).toISOString(),
     ...overrides,
@@ -196,6 +198,31 @@ describe("OverviewPage", () => {
     await screen.findByRole("heading", { name: "工作台" });
     expect(screen.queryByRole("heading", { name: "今日提醒" })).not.toBeInTheDocument();
     expect(screen.queryByText("检修单提醒", { exact: true })).not.toBeInTheDocument();
+    view.unmount();
+  });
+
+  it("renders owner and risk pills before the time range in each plan row's second line", async () => {
+    apiMock.mockResolvedValue({
+      ...emptyOverview(),
+      startingToday: { items: [makePlan({ id: "0a1b9f74-3d2e-4f5a-8c6b-7d9e0f1a2b3c", title: "今天开工", ownerLabel: "张三", riskLabel: "中" })], total: 1 },
+      upcoming: { items: [makePlan({ id: "f6251b28-a2d2-4f7f-bff1-b901cb1d9a53", title: "下周计划", ownerLabel: null, riskLabel: "低" })], total: 1 },
+    });
+    const view = renderPage();
+
+    expect(await screen.findByText("张三")).toBeInTheDocument();
+    // 未指定负责人显示「未指定」；风险四档配色各按 label 落到对应 class。
+    expect(screen.getByText("未指定")).toBeInTheDocument();
+    expect(screen.getByText("中")).toHaveClass("risk-medium");
+    expect(screen.getByText("低")).toHaveClass("risk-low");
+    // 两枚药丸在第二行 <small> 内、起止时间之前；起止时间与状态徽章不回归。
+    const pillGroup = screen.getByText("张三").closest(".plan-meta-pills")!;
+    expect(pillGroup.firstElementChild).toHaveClass("owner-badge");
+    const secondLine = pillGroup.closest("small")!;
+    expect(secondLine).toHaveTextContent("—");
+    // 状态徽章仍在行内（与药丸同处一条链接），位置不回归。
+    const row = pillGroup.closest("a")!;
+    expect(row).toHaveTextContent("待开始");
+    expect(row.querySelector(".status-badge")).not.toBeNull();
     view.unmount();
   });
 });
