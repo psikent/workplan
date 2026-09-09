@@ -54,17 +54,7 @@
   --shadow-strong: rgb(15 23 42 / 24%);
   --shadow-drawer: -12px 0 36px rgb(15 23 42 / 14%);
   --gantt-bar: #67e8f9;
-  --gantt-bar-progress: #22d3ee;
   --gantt-bar-conflict: #b45309;
-  --gantt-bar-conflict-progress: #92400e;
-  --gantt-in-progress: #10b981;
-  --gantt-in-progress-progress: #059669;
-  --gantt-pending: #f59e0b;
-  --gantt-pending-progress: #d97706;
-  --gantt-completed: #94a3b8;
-  --gantt-completed-progress: #64748b;
-  --gantt-cancelled: #cbd5e1;
-  --gantt-cancelled-progress: #94a3b8;
   --gantt-label: #1e293b;
   --gantt-label-stroke: rgb(255 255 255 / 94%);
   --gantt-handle-fill: rgb(255 255 255 / 18%);
@@ -207,6 +197,10 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .table-toolbar-left { display: flex; align-items: center; gap: 12px; }
 .table-toolbar-center { position: relative; grid-column: 2; display: inline-flex; align-items: center; }
 .table-toolbar-center > strong { font-size: 14px; font-weight: 650; white-space: nowrap; }
+/* 甘特备注颜色图例（spec gantt-color-by-remarks R6）：面板头部中央，按选项顺序 + 末尾「未设置」。 */
+.gantt-legend { display: inline-flex; align-items: center; gap: 12px; margin-left: 14px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.gantt-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.gantt-legend-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gantt-bar); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .18); }
 /* 全屏入口：绝对锚定在中央日期标题右侧，不占布局空间，标题视觉中心不变 */
 .gantt-fullscreen-toggle { position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); width: 32px; min-height: 32px; }
 .range-controls { display: flex; gap: 6px; align-items: center; }
@@ -291,21 +285,20 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .gantt-mount .lower-text, .gantt-mount .upper-text { fill: var(--muted); font-family: inherit; font-size: 11px; }
 /* 月份信息改由 .timeline-range-title 居中展示；上层标签仅保留在 DOM 中供 frappe-gantt 内部定位。 */
 .gantt-mount .upper-text { display: none; }
-.gantt-mount .bar { fill: var(--gantt-bar); stroke: none; rx: 4px; }
-.gantt-mount .bar-progress { fill: var(--gantt-bar-progress); }
+/* 条形填充按备注选项色（spec gantt-color-by-remarks R4）：后渲染在 bar 元素上设
+   --gantt-bar-fill；未设置/归档选项值/字段缺失时不设该属性，回退默认灰 --gantt-bar。
+   frappe 库样式 .gantt .bar-wrapper .bar 特异性 (0,3,0) 且源序不定，需 !important 压制
+   （bar-label 既有先例）；冲突规则同为 important 且特异性更高，保持覆盖（D5）。
+   状态退出甘特视觉（R5）：无状态条色、无进度暗条（.bar-progress 宽度恒 0）。 */
+.gantt-mount .bar { fill: var(--gantt-bar-fill, var(--gantt-bar)) !important; stroke: none; rx: 4px; }
 .gantt-mount .bar-label,
 .gantt-mount .bar-label.big { fill: var(--gantt-label) !important; stroke: var(--gantt-label-stroke); stroke-width: 2.4px; stroke-linejoin: round; paint-order: stroke fill; text-anchor: middle; font-family: inherit; font-size: 11px; font-weight: 650; pointer-events: none; }
 .gantt-mount .bar-wrapper { cursor: grab; }
 .gantt-mount .bar-wrapper.schedule-dragging { cursor: grabbing; }
 .gantt-mount .handle { fill: var(--gantt-handle-fill); stroke: var(--gantt-handle-stroke); stroke-width: 1px; opacity: .88; cursor: ew-resize; }
 .gantt-mount .handle.active, .gantt-mount .handle.visible { opacity: 1; }
-.gantt-mount .gantt-in_progress .bar { fill: var(--gantt-in-progress); }.gantt-mount .gantt-in_progress .bar-progress { fill: var(--gantt-in-progress-progress); }
-.gantt-mount .gantt-pending .bar { fill: var(--gantt-pending); }.gantt-mount .gantt-pending .bar-progress { fill: var(--gantt-pending-progress); }
-.gantt-mount .gantt-completed .bar { fill: var(--gantt-completed); }.gantt-mount .gantt-completed .bar-progress { fill: var(--gantt-completed-progress); }
-.gantt-mount .gantt-cancelled .bar { fill: var(--gantt-cancelled); }.gantt-mount .gantt-cancelled .bar-progress { fill: var(--gantt-cancelled-progress); }
-/* 冲突条（规格 R4/R8）：与状态类同权重、按源序靠后覆盖，整条（含进度）用冲突警示色 */
-.gantt-mount .gantt-conflict .bar { fill: var(--gantt-bar-conflict); }
-.gantt-mount .gantt-conflict .bar-progress { fill: var(--gantt-bar-conflict-progress); }
+/* 冲突条（spec D5）：important 层内特异性高于默认条规则，覆盖任何备注色 */
+.gantt-mount .gantt-conflict .bar { fill: var(--gantt-bar-conflict) !important; }
 .gantt-mount .popup-wrapper { font-family: inherit; border: 1px solid var(--line); box-shadow: 0 10px 30px var(--shadow-medium); pointer-events: none; }
 /* 冲突浮动提示（规格 R6/R8）：强制负责人行警示色 + 冲突清单区块 */
 .gantt-mount .popup-wrapper .gantt-conflict-block { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--amber-line); }
@@ -428,6 +421,8 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .field input:disabled, .field select:disabled { background: var(--surface-muted); color: var(--muted); cursor: not-allowed; }
 .derived-field input[readonly] { background: var(--surface-muted); color: var(--text-soft); cursor: text; }
 .option-editor { gap: 8px; }.option-editor-header { display: flex; align-items: center; justify-content: space-between; }.option-editor-header .text-button { min-height: 30px; }.option-editor-header svg { width: 14px; }.option-editor-list { display: grid; gap: 7px; }.option-editor-list > .option-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) 36px 36px 36px; align-items: center; gap: 7px; }.option-row.archived { opacity: .58; }.option-row.dragging { z-index: 1; }.option-row-actions { grid-column: 3 / -1; display: flex; justify-content: flex-end; gap: 4px; }.option-editor-list .icon-button { width: 36px; min-height: 36px; padding: 0; }.option-editor-list svg { width: 15px; }
+/* 备注选项色板行：落在选项行第二行（把手/输入/操作钮之下），8 色点选 + 「无色」清除。 */
+.option-row.with-color { grid-template-rows: auto auto; }.option-color-picker { grid-column: 2 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }.color-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .18); padding: 0; cursor: pointer; }.color-swatch.selected { border-color: var(--text); }.color-swatch:disabled { cursor: default; opacity: .45; }.color-swatch-none { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); position: relative; }.color-swatch-none::after { content: ""; position: absolute; inset: 4px; background: linear-gradient(to top right, transparent calc(50% - 1px), currentColor calc(50% - 1px), currentColor calc(50% + 1px), transparent calc(50% + 1px)); }
 
 .settings-tabbar { position: sticky; top: 0; z-index: 15; margin: 0 0 16px; background: var(--canvas); }
 .settings-tablist { display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
@@ -610,17 +605,7 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
   --shadow-strong: rgb(0 0 0 / 52%);
   --shadow-drawer: -12px 0 36px rgb(0 0 0 / 45%);
   --gantt-bar: #22d3ee;
-  --gantt-bar-progress: #0891b2;
   --gantt-bar-conflict: #d97706;
-  --gantt-bar-conflict-progress: #b45309;
-  --gantt-in-progress: #34d399;
-  --gantt-in-progress-progress: #059669;
-  --gantt-pending: #fbbf24;
-  --gantt-pending-progress: #d97706;
-  --gantt-completed: #64748b;
-  --gantt-completed-progress: #475569;
-  --gantt-cancelled: #475569;
-  --gantt-cancelled-progress: #334155;
   --gantt-label: #f1f5f9;
   --gantt-label-stroke: rgb(2 6 23 / 70%);
   --gantt-handle-fill: rgb(255 255 255 / 18%);

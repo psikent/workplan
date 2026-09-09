@@ -43,7 +43,11 @@ vi.mock("../lib/gantt", () => ({
       bar.setAttribute("class", "bar");
       bar.setAttribute("x", "0");
       bar.setAttribute("width", "100");
-      barWrapper.append(bar);
+      const barProgress = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      barProgress.setAttribute("class", "bar-progress");
+      barProgress.setAttribute("x", "0");
+      barProgress.setAttribute("width", "50");
+      barWrapper.append(bar, barProgress);
       const gridRow = document.createElementNS("http://www.w3.org/2000/svg", "g");
       gridRow.setAttribute("class", "grid-row");
       svg.append(barWrapper, gridRow);
@@ -214,7 +218,8 @@ describe("GanttTimeline adapter", () => {
     );
 
     await waitFor(() => expect(ganttMock.element?.querySelector(".bar-wrapper")?.classList.contains("gantt-conflict")).toBe(true));
-    expect(ganttMock.tasks[0]?.custom_class).toBe("gantt-pending");
+    // 状态退出甘特视觉（R5）：不再注入 gantt-<status> 单 token 类。
+    expect(ganttMock.tasks[0]?.custom_class).toBeUndefined();
 
     // 冲突出现/消失必须触发甘特重渲染（ganttInputSignature 纳入 counterparts 标记）并同步类
     const rendersBefore = ganttMock.renderCount;
@@ -386,6 +391,67 @@ describe("GanttTimeline adapter", () => {
     const html = popup!({ task: { id: plan.id } });
     expect(html).toContain("设计评审");
     expect(html).toContain("待开始");
+  });
+});
+
+describe("甘特备注着色（spec gantt-color-by-remarks R4/R5）", () => {
+  beforeEach(() => {
+    ganttMock.injectInteractiveDom = true;
+  });
+
+  const remarksOptions = [
+    { value: "option_1", label: "1.值班", color: "#3b82f6" },
+    { value: "option_2", label: "4.自动化", color: "#10b981" },
+    { value: "option_3", label: "无色选项", color: null },
+  ];
+
+  function renderGantt(currentPlan: WorkPlan) {
+    return render(
+      <GanttTimeline
+        plans={[currentPlan]}
+        remarksOptions={remarksOptions}
+        view="week"
+        rangeStart={new Date(2026, 7, 3)}
+        rangeEnd={new Date(2026, 7, 10)}
+        onScheduleChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+  }
+
+  it("sets --gantt-bar-fill from the matched remarks option color", async () => {
+    const view = renderGantt({ ...plan, customFields: { remarks: "option_2" } });
+    await waitFor(() => {
+      const bar = ganttMock.element?.querySelector<SVGRectElement>(".bar");
+      expect(bar?.style.getPropertyValue("--gantt-bar-fill")).toBe("#10b981");
+    });
+    view.unmount();
+  });
+
+  it("removes --gantt-bar-fill for unset remarks, uncolored options and archived option values", async () => {
+    for (const customFields of [{}, { remarks: "option_3" }, { remarks: "option_archived" }]) {
+      const view = renderGantt({ ...plan, customFields });
+      // 先等后渲染几何同步完成（进度宽 50 → 0），再断言着色变量未被设置。
+      await waitFor(() => expect(ganttMock.element?.querySelector<SVGRectElement>(".bar-progress")?.getAttribute("width")).toBe("0"));
+      expect(ganttMock.element?.querySelector<SVGRectElement>(".bar")?.style.getPropertyValue("--gantt-bar-fill")).toBe("");
+      view.unmount();
+    }
+  });
+
+  it("keeps progress at zero and the conflict class above any remarks color", async () => {
+    const conflicted: WorkPlan = {
+      ...plan,
+      customFields: { remarks: "option_1" },
+      ownerConflict: {
+        owner: "lxj",
+        counterparts: [{ id: "c1ee0e58-5d1c-4f0e-9b6f-0a4ac1a2b3c4", label: "现场勘查", startAt: plan.startAt, endAt: plan.endAt }],
+      },
+    };
+    const view = renderGantt(conflicted);
+    await waitFor(() => expect(ganttMock.element?.querySelector(".bar-wrapper")?.classList.contains("gantt-conflict")).toBe(true));
+    expect(ganttMock.element?.querySelector<SVGRectElement>(".bar")?.style.getPropertyValue("--gantt-bar-fill")).toBe("#3b82f6");
+    expect(ganttMock.element?.querySelector<SVGRectElement>(".bar-progress")?.getAttribute("width")).toBe("0");
+    view.unmount();
   });
 });
 

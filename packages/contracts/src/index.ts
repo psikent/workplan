@@ -569,10 +569,27 @@ function periodKey(period: { year: number; month: number }): number {
   return period.year * 12 + period.month - 1;
 }
 
+// 选项预设色板（8 色，浅/暗主题单值通用）：自由 hex 不接受，null = 无色。
+export const customFieldOptionColorPalette: readonly string[] = [
+  "#3b82f6",
+  "#06b6d4",
+  "#10b981",
+  "#84cc16",
+  "#f59e0b",
+  "#f97316",
+  "#f43f5e",
+  "#8b5cf6",
+];
+
+export const customFieldOptionColorSchema = z
+  .string()
+  .refine((value) => customFieldOptionColorPalette.includes(value), { message: "颜色必须是预设色板内颜色" });
+
 export const customFieldOptionSchema = z.object({
   id: z.string().uuid(),
   value: z.string(),
   label: z.string(),
+  color: z.string().nullable(),
   sortOrder: z.number().int(),
   archivedAt: isoDateTimeSchema.nullable(),
   version: z.number().int(),
@@ -604,7 +621,13 @@ export const createCustomFieldSchema = z.object({
   collapsed: z.boolean().default(false),
   defaultValue: z.unknown().nullable().default(null),
   options: z
-    .array(z.object({ value: z.string().trim().min(1).max(80), label: z.string().trim().min(1).max(80) }))
+    .array(
+      z.object({
+        value: z.string().trim().min(1).max(80),
+        label: z.string().trim().min(1).max(80),
+        color: customFieldOptionColorSchema.nullable().optional(),
+      }),
+    )
     .max(100)
     .default([]),
 });
@@ -622,11 +645,13 @@ export const updateCustomFieldSchema = z.object({
 export const createCustomFieldOptionSchema = z.object({
   value: z.string().trim().min(1).max(80),
   label: z.string().trim().min(1).max(80),
+  color: customFieldOptionColorSchema.nullable().optional(),
 });
 
 export const updateCustomFieldOptionSchema = z.object({
   label: z.string().trim().min(1).max(80).optional(),
   archived: z.boolean().optional(),
+  color: customFieldOptionColorSchema.nullable().optional(),
   version: z.number().int().positive(),
 });
 
@@ -859,6 +884,7 @@ export const envConfigOptionPlanItemSchema = z.object({
   reason: envConfigSkipReasonSchema.nullable(),
   value: z.string(),
   label: z.string(),
+  color: z.string().nullable().optional(),
 });
 
 export const envConfigFieldPlanItemSchema = envConfigPlanItemSchema.extend({

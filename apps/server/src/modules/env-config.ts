@@ -51,7 +51,7 @@ export class EnvConfigService {
         defaultValue: field.defaultValue,
         options: field.options
           .filter((option) => !option.archivedAt)
-          .map((option) => ({ value: option.value, label: option.label })),
+          .map((option) => ({ value: option.value, label: option.label, color: option.color })),
         sortOrder: field.sortOrder,
       })),
       ownerAccountMappings: this.ownerAccounts.list(),
@@ -312,7 +312,7 @@ export class EnvConfigService {
     };
   }
 
-  /** 选项按 value 匹配：包内缺项补增，标签漂移或已归档的选项恢复，本地多出的活动选项退休。 */
+  /** 选项按 value 匹配：包内缺项补增，标签/颜色漂移或已归档的选项恢复，本地多出的活动选项退休。 */
   private planOptionDiff(field: PackageField, local: CustomFieldDefinition): EnvConfigOptionPlanItem[] {
     const items: EnvConfigOptionPlanItem[] = [];
     const localByValue = new Map(local.options.map((option) => [option.value, option]));
@@ -320,9 +320,9 @@ export class EnvConfigService {
     for (const option of field.options) {
       const localOption = localByValue.get(option.value);
       if (!localOption) {
-        items.push({ action: "add_option", grade: "safe", reason: null, value: option.value, label: option.label });
-      } else if (localOption.archivedAt || localOption.label !== option.label) {
-        items.push({ action: "update_option", grade: "safe", reason: null, value: option.value, label: option.label });
+        items.push({ action: "add_option", grade: "safe", reason: null, value: option.value, label: option.label, color: option.color ?? null });
+      } else if (localOption.archivedAt || localOption.label !== option.label || (localOption.color ?? null) !== (option.color ?? null)) {
+        items.push({ action: "update_option", grade: "safe", reason: null, value: option.value, label: option.label, color: option.color ?? null });
       }
     }
     for (const option of local.options) {
@@ -375,7 +375,7 @@ export class EnvConfigService {
       const localOptionByValue = new Map(local.options.map((option) => [option.value, option]));
       for (const option of options) {
         if (option.action !== "add_option") continue;
-        this.customFields.addOption(local.id, { value: option.value, label: option.label });
+        this.customFields.addOption(local.id, { value: option.value, label: option.label, color: option.color ?? null });
       }
       for (const option of options) {
         if (option.action !== "update_option") continue;
@@ -383,6 +383,7 @@ export class EnvConfigService {
         if (!localOption) continue;
         this.customFields.updateOption(localOption.id, {
           label: option.label,
+          color: option.color ?? null,
           ...(localOption.archivedAt ? { archived: false } : {}),
           version: localOption.version,
         });

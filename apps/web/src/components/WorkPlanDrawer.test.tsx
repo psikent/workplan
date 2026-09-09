@@ -224,8 +224,8 @@ describe("WorkPlanDrawer", () => {
       label: "工作负责人",
       type: "single_select",
       options: [
-        { id: "44a6325a-caa8-43e1-b998-567a816ec272", value: "fengmingqian", label: "冯铭倩", sortOrder: 0, archivedAt: null, version: 1 },
-        { id: "a1a22ca6-4a22-496d-9ac0-077dd5278463", value: "linyaqian", label: "林雅茜", sortOrder: 1, archivedAt: null, version: 1 },
+        { id: "44a6325a-caa8-43e1-b998-567a816ec272", value: "fengmingqian", label: "冯铭倩", color: null, sortOrder: 0, archivedAt: null, version: 1 },
+        { id: "a1a22ca6-4a22-496d-9ac0-077dd5278463", value: "linyaqian", label: "林雅茜", color: null, sortOrder: 1, archivedAt: null, version: 1 },
       ],
     });
     const view = render(
@@ -365,8 +365,8 @@ describe("WorkPlanDrawer", () => {
       label: "工作负责人",
       type: "single_select",
       options: [
-        { id: "44a6325a-caa8-43e1-b998-567a816ec272", value: "fengmingqian", label: "冯铭倩", sortOrder: 0, archivedAt: null, version: 1 },
-        { id: "a1a22ca6-4a22-496d-9ac0-077dd5278463", value: "linyaqian", label: "林雅茜", sortOrder: 1, archivedAt: null, version: 1 },
+        { id: "44a6325a-caa8-43e1-b998-567a816ec272", value: "fengmingqian", label: "冯铭倩", color: null, sortOrder: 0, archivedAt: null, version: 1 },
+        { id: "a1a22ca6-4a22-496d-9ac0-077dd5278463", value: "linyaqian", label: "林雅茜", color: null, sortOrder: 1, archivedAt: null, version: 1 },
       ],
     });
     const counterpart = { id: "8b6c2c1e-9b0d-4f8e-a1c2-3d4e5f6a7b8c", label: "现场勘查", startAt: plan.startAt, endAt: plan.endAt };
@@ -510,8 +510,8 @@ describe("WorkPlanDrawer", () => {
         label: "工作负责人",
         type: "single_select",
         options: [
-          { id: "44a6325a-caa8-43e1-b998-567a816ec272", value: "fengmingqian", label: "冯铭倩", sortOrder: 0, archivedAt: null, version: 1 },
-          { id: "a1a22ca6-4a22-496d-9ac0-077dd5278463", value: "linyaqian", label: "林雅茜", sortOrder: 1, archivedAt: null, version: 1 },
+          { id: "44a6325a-caa8-43e1-b998-567a816ec272", value: "fengmingqian", label: "冯铭倩", color: null, sortOrder: 0, archivedAt: null, version: 1 },
+          { id: "a1a22ca6-4a22-496d-9ac0-077dd5278463", value: "linyaqian", label: "林雅茜", color: null, sortOrder: 1, archivedAt: null, version: 1 },
         ],
         collapsed: true,
       });

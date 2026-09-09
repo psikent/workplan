@@ -4,6 +4,7 @@ import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } f
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { CustomFieldDefinition, CustomFieldType } from "@workplan/contracts";
+import { customFieldOptionColorPalette } from "@workplan/contracts";
 import { Archive, ArrowDown, ArrowUp, GripVertical, Pencil, Plus, RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import { useToast } from "../../components/ToastProvider";
 import { api, jsonBody } from "../../lib/api";
@@ -24,6 +25,7 @@ type OptionDraft = {
   id?: string;
   value: string;
   label: string;
+  color?: string | null | undefined;
   archived: boolean;
   version?: number;
 };
@@ -128,6 +130,7 @@ export default function CustomFieldsSettings() {
         id: option.id,
         value: option.value,
         label: option.label,
+        color: option.color,
         archived: Boolean(option.archivedAt),
         version: option.version,
       })),
@@ -166,19 +169,31 @@ export default function CustomFieldsSettings() {
   }
 
   // 选项同步：返回与草稿行对齐的选项 id 序列（新建选项取创建响应的 id，跳过的草稿行不计入）。
+  // 颜色口径：选项更新路径仅备注字段随 payload 携带 color（D8：其余字段无配色控件，不传即不丢本地已有色）；
+  // 创建路径的 color 列对所有单选字段通用，activeOptions 对非备注草稿恒提交 null，与空值等效。
   async function syncOptions(field: CustomFieldDefinition, nextOptions: OptionDraft[]): Promise<string[]> {
+    const colorEditable = field.key === "remarks" && field.type === "single_select";
     const currentById = new Map(field.options.map((option) => [option.id, option]));
     const submissions = nextOptions.map(async (option): Promise<string | null> => {
       if (!option.id) {
         if (option.archived || !option.label.trim()) return null;
-        const created = await api<{ id: string }>(`/custom-fields/${field.id}/options`, { method: "POST", ...jsonBody({ value: option.value, label: option.label }) });
+        const created = await api<{ id: string }>(`/custom-fields/${field.id}/options`, {
+          method: "POST",
+          ...jsonBody({ value: option.value, label: option.label, ...(colorEditable ? { color: option.color ?? null } : {}) }),
+        });
         return created.id;
       }
       const current = currentById.get(option.id);
-      if (current && (current.label !== option.label || Boolean(current.archivedAt) !== option.archived)) {
+      const colorChanged = colorEditable && (current?.color ?? null) !== (option.color ?? null);
+      if (current && (current.label !== option.label || Boolean(current.archivedAt) !== option.archived || colorChanged)) {
         await api(`/custom-field-options/${option.id}`, {
           method: "PATCH",
-          ...jsonBody({ label: option.label, archived: option.archived, version: option.version }),
+          ...jsonBody({
+            label: option.label,
+            archived: option.archived,
+            ...(colorEditable ? { color: option.color ?? null } : {}),
+            version: option.version,
+          }),
         });
       }
       return option.id;
@@ -264,7 +279,7 @@ export default function CustomFieldsSettings() {
               <div className="field toggle-field"><span>折叠</span><button className={`switch ${draft.collapsed ? "on" : ""}`} type="button" aria-pressed={draft.collapsed} aria-label="折叠" onClick={() => setDraft((current) => ({ ...current, collapsed: !current.collapsed }))}><i /></button></div>
               <div className="field full field-hint"><small>折叠：字段收入计划抽屉底部「更多信息」折叠区，展开后仍可查看和编辑。</small></div>
               <label className="field full"><span>字段说明</span><textarea rows={2} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} maxLength={500} /></label>
-              {["single_select", "multi_select"].includes(draft.type) ? <OptionEditor options={draft.options} onChange={(options) => setDraft((current) => ({ ...current, options }))} /> : null}
+              {["single_select", "multi_select"].includes(draft.type) ? <OptionEditor options={draft.options} showColor={draft.key === "remarks" && draft.type === "single_select"} onChange={(options) => setDraft((current) => ({ ...current, options }))} /> : null}
               <label className="field full"><span>默认值{draft.required ? " *" : ""}</span><input value={draft.defaultValue} onChange={(event) => setDraft((current) => ({ ...current, defaultValue: event.target.value }))} required={draft.required} placeholder={draft.type === "boolean" ? "true 或 false" : ["single_select", "multi_select"].includes(draft.type) ? "填写选项名称，多选用逗号分隔" : "可选"} /></label>
             </div>
             {error ? <div className="form-error" role="alert">{error}</div> : null}
@@ -305,7 +320,7 @@ function SortableFieldRow({ field, index, count, onEdit, onMove, onArchive }: {
   );
 }
 
-function OptionEditor({ options, onChange }: { options: OptionDraft[]; onChange: (options: OptionDraft[]) => void }) {
+function OptionEditor({ options, showColor, onChange }: { options: OptionDraft[]; showColor: boolean; onChange: (options: OptionDraft[]) => void }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const optionKey = (option: OptionDraft) => option.id ?? option.value;
   function update(index: number, changes: Partial<OptionDraft>) {
@@ -340,6 +355,7 @@ function OptionEditor({ options, onChange }: { options: OptionDraft[]; onChange:
                 option={option}
                 index={index}
                 count={options.length}
+                showColor={showColor}
                 onUpdate={(changes) => update(index, changes)}
                 onMove={moveOption}
                 onUnsavedRemove={() => onChange(options.filter((_, optionIndex) => optionIndex !== index))}
@@ -354,10 +370,12 @@ function OptionEditor({ options, onChange }: { options: OptionDraft[]; onChange:
 }
 
 // 选项行：拖拽手柄 + 上移/下移（归档行同样可排，其顺序位决定历史值的单选排序位置）；改动仅落在草稿。
-function SortableOptionRow({ option, index, count, onUpdate, onMove, onUnsavedRemove }: {
+// 备注单选字段额外渲染色板行（8 色点选 + 「无色」清除），其余字段不出现配色控件（D8）。
+function SortableOptionRow({ option, index, count, showColor, onUpdate, onMove, onUnsavedRemove }: {
   option: OptionDraft;
   index: number;
   count: number;
+  showColor: boolean;
   onUpdate: (changes: Partial<OptionDraft>) => void;
   onMove: (key: string, direction: -1 | 1) => void;
   onUnsavedRemove: () => void;
@@ -366,8 +384,9 @@ function SortableOptionRow({ option, index, count, onUpdate, onMove, onUnsavedRe
   const style = { transform: CSS.Transform.toString(transform), transition } as CSSProperties;
   const key = option.id ?? option.value;
   const rowLabel = option.label || `选项 ${index + 1}`;
+  const currentColor = option.color ?? null;
   return (
-    <div ref={setNodeRef} style={style} className={`option-row ${option.archived ? "archived" : ""} ${isDragging ? "dragging" : ""}`}>
+    <div ref={setNodeRef} style={style} className={`option-row ${showColor ? "with-color" : ""} ${option.archived ? "archived" : ""} ${isDragging ? "dragging" : ""}`}>
       <button className="field-sort-handle" type="button" aria-label={`拖动排序选项 ${rowLabel}`} {...attributes} {...listeners}><GripVertical /></button>
       <input value={option.label} disabled={option.archived} required={!option.archived} onChange={(event) => onUpdate({ label: event.target.value })} placeholder={`选项 ${index + 1}`} />
       <div className="option-row-actions">
@@ -375,12 +394,36 @@ function SortableOptionRow({ option, index, count, onUpdate, onMove, onUnsavedRe
         <button className="icon-button" type="button" aria-label={`下移选项 ${rowLabel}`} disabled={index === count - 1} onClick={() => onMove(key, 1)}><ArrowDown /></button>
         <button className="icon-button" type="button" aria-label={option.archived ? `恢复选项 ${rowLabel}` : `移除选项 ${rowLabel}`} onClick={() => option.id ? onUpdate({ archived: !option.archived }) : onUnsavedRemove()}>{option.archived ? <RotateCcw /> : <Archive />}</button>
       </div>
+      {showColor ? (
+        <div className="option-color-picker" role="group" aria-label={`选项颜色 ${rowLabel}`}>
+          {customFieldOptionColorPalette.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className={`color-swatch ${currentColor === color ? "selected" : ""}`}
+              style={{ backgroundColor: color }}
+              aria-label={`选项颜色 ${color}`}
+              aria-pressed={currentColor === color}
+              disabled={option.archived}
+              onClick={() => onUpdate({ color })}
+            />
+          ))}
+          <button
+            type="button"
+            className={`color-swatch color-swatch-none ${currentColor === null ? "selected" : ""}`}
+            aria-label="清除选项颜色"
+            aria-pressed={currentColor === null}
+            disabled={option.archived}
+            onClick={() => onUpdate({ color: null })}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function activeOptions(options: OptionDraft[]) {
-  return options.filter((option) => !option.archived && option.label.trim()).map((option) => ({ value: option.value, label: option.label.trim() }));
+  return options.filter((option) => !option.archived && option.label.trim()).map((option) => ({ value: option.value, label: option.label.trim(), color: option.color ?? null }));
 }
 
 function slugify(value: string) {

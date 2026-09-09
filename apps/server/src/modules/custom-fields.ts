@@ -1,4 +1,5 @@
 import type { CustomFieldDefinition, CustomFieldType } from "@workplan/contracts";
+import { customFieldOptionColorPalette } from "@workplan/contracts";
 import type { DatabaseBundle } from "../db/index.js";
 import { naturalSortKey, normalizeDateTimeForSort } from "@workplan/contracts";
 import { AppError, invalidInput, notFound, versionConflict } from "../errors.js";
@@ -25,6 +26,7 @@ type OptionRow = {
   field_id: string;
   value: string;
   label: string;
+  color: string | null;
   sort_order: number;
   archived_at: string | null;
   version: number;
@@ -38,8 +40,14 @@ export type CreateFieldInput = {
   required: boolean;
   collapsed: boolean;
   defaultValue: unknown | null;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; color?: string | null | undefined }>;
 };
+
+// 色板白名单在契约层已校验；服务层复检一次，兜住环境包导入等绕过 HTTP 校验的路径。
+function assertOptionColor(color: string | null | undefined, context: string): void {
+  if (color == null) return;
+  if (!customFieldOptionColorPalette.includes(color)) throw invalidInput(`${context}的颜色不在预设色板内：${color}`);
+}
 
 const scalarColumnByType: Partial<Record<CustomFieldType, string>> = {
   short_text: "text_value",
@@ -88,6 +96,7 @@ export class CustomFieldService {
         id: option.id,
         value: option.value,
         label: option.label,
+        color: option.color,
         sortOrder: option.sort_order,
         archivedAt: option.archived_at,
         version: option.version,
@@ -139,9 +148,10 @@ export class CustomFieldService {
           timestamp,
         );
       input.options.forEach((option, index) => {
+        assertOptionColor(option.color, `选项「${option.value}」`);
         this.database.sqlite
-          .prepare("INSERT INTO custom_field_options(id, field_id, value, label, sort_order, version) VALUES (?, ?, ?, ?, ?, 1)")
-          .run(newId(), id, option.value, option.label, index);
+          .prepare("INSERT INTO custom_field_options(id, field_id, value, label, color, sort_order, version) VALUES (?, ?, ?, ?, ?, ?, 1)")
+          .run(newId(), id, option.value, option.label, option.color ?? null, index);
       });
       if (input.defaultValue != null) {
         const plans = this.database.sqlite.prepare("SELECT id FROM work_plans").all() as Array<{ id: string }>;
@@ -232,16 +242,17 @@ export class CustomFieldService {
     return this.list(true).find((item) => item.id === fieldId)!;
   }
 
-  addOption(fieldId: string, input: { value: string; label: string }) {
+  addOption(fieldId: string, input: { value: string; label: string; color?: string | null | undefined }) {
     const field = this.list(true).find((item) => item.id === fieldId);
     if (!field) throw notFound("自定义字段不存在");
     if (!["single_select", "multi_select"].includes(field.type)) throw invalidInput("只有单选或多选字段可以添加选项");
+    assertOptionColor(input.color, `字段「${field.label}」选项「${input.value}」`);
     const sortOrder = field.options.length;
     const id = newId();
     try {
       this.database.sqlite
-        .prepare("INSERT INTO custom_field_options(id, field_id, value, label, sort_order, version) VALUES (?, ?, ?, ?, ?, 1)")
-        .run(id, fieldId, input.value, input.label, sortOrder);
+        .prepare("INSERT INTO custom_field_options(id, field_id, value, label, color, sort_order, version) VALUES (?, ?, ?, ?, ?, ?, 1)")
+        .run(id, fieldId, input.value, input.label, input.color ?? null, sortOrder);
     } catch (error) {
       if (String(error).includes("UNIQUE")) throw new AppError(409, "OPTION_VALUE_EXISTS", "选项值已经存在");
       throw error;
@@ -249,13 +260,15 @@ export class CustomFieldService {
     return this.list(true).find((item) => item.id === fieldId)!.options.find((option) => option.id === id)!;
   }
 
-  updateOption(optionId: string, input: { label?: string | undefined; archived?: boolean | undefined; version: number }) {
+  updateOption(optionId: string, input: { label?: string | undefined; archived?: boolean | undefined; color?: string | null | undefined; version: number }) {
     const option = this.database.sqlite.prepare("SELECT * FROM custom_field_options WHERE id = ?").get(optionId) as OptionRow | undefined;
     if (!option) throw notFound("字段选项不存在");
+    assertOptionColor(input.color, `字段选项「${option.value}」`);
     const archivedAt = input.archived === undefined ? option.archived_at : input.archived ? nowIso() : null;
+    const color = input.color === undefined ? option.color : input.color;
     const result = this.database.sqlite
-      .prepare("UPDATE custom_field_options SET label = ?, archived_at = ?, version = version + 1 WHERE id = ? AND version = ?")
-      .run(input.label ?? option.label, archivedAt, optionId, input.version);
+      .prepare("UPDATE custom_field_options SET label = ?, color = ?, archived_at = ?, version = version + 1 WHERE id = ? AND version = ?")
+      .run(input.label ?? option.label, color, archivedAt, optionId, input.version);
     if (result.changes === 0) throw versionConflict();
     const field = this.list(true).find((item) => item.id === option.field_id)!;
     return field.options.find((item) => item.id === optionId)!;

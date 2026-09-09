@@ -112,6 +112,7 @@ export const customFieldOptions = sqliteTable(
     fieldId: text("field_id").notNull().references(() => customFieldDefinitions.id, { onDelete: "cascade" }),
     value: text("value").notNull(),
     label: text("label").notNull(),
+    color: text("color"),
     sortOrder: integer("sort_order").notNull(),
     archivedAt: text("archived_at"),
     version: integer("version").notNull().default(1),

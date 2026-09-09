@@ -34,9 +34,9 @@ const remarksField = field({
   type: "single_select",
   sortOrder: 0,
   options: [
-    { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e01", value: "duty", label: "1.值班", sortOrder: 0, archivedAt: null, version: 1 },
-    { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e02", value: "automation", label: "4.自动化", sortOrder: 1, archivedAt: null, version: 1 },
-    { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e03", value: "trip", label: "3.出差", sortOrder: 2, archivedAt: "2026-09-01T00:00:00.000Z", version: 2 },
+    { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e01", value: "duty", label: "1.值班", color: "#3b82f6", sortOrder: 0, archivedAt: null, version: 1 },
+    { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e02", value: "automation", label: "4.自动化", color: null, sortOrder: 1, archivedAt: null, version: 1 },
+    { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e03", value: "trip", label: "3.出差", color: null, sortOrder: 2, archivedAt: "2026-09-01T00:00:00.000Z", version: 2 },
   ],
 });
 
@@ -231,6 +231,106 @@ describe("custom field option reorder", () => {
     const writes = apiMock.mock.calls.filter(([path, options]) =>
       path !== "/custom-fields?includeArchived=true" && (options as { method?: string } | undefined)?.method);
     expect(writes).toEqual([]);
+    view.unmount();
+  });
+});
+
+describe("remarks option color editor", () => {
+  it("shows the palette for the remarks single-select field, marks the current color and submits it on save", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+    fireEvent.click(screen.getByRole("button", { name: "编辑 备注" }));
+    await screen.findByPlaceholderText("选项 1");
+
+    const swatches = screen.getAllByRole("button", { name: "选项颜色 #3b82f6" });
+    expect(swatches).toHaveLength(3);
+    expect(swatches[0]!.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "选项颜色 #10b981" })[0]!);
+    expect(screen.getAllByRole("button", { name: "选项颜色 #10b981" })[0]!.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "保存字段" }));
+
+    const dutyOption = remarksField.options[0]!;
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      `/custom-field-options/${dutyOption.id}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining('"color":"#10b981"'),
+      }),
+    ));
+    expect(await screen.findByText("字段已保存")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("clears the color and submits color null on save", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+    fireEvent.click(screen.getByRole("button", { name: "编辑 备注" }));
+    await screen.findByPlaceholderText("选项 1");
+
+    const clearButtons = screen.getAllByRole("button", { name: "清除选项颜色" });
+    expect(clearButtons).toHaveLength(3);
+    expect(clearButtons[0]!.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(clearButtons[0]!);
+    expect(clearButtons[0]!.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "保存字段" }));
+
+    const dutyOption = remarksField.options[0]!;
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      `/custom-field-options/${dutyOption.id}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining('"color":null'),
+      }),
+    ));
+    expect(await screen.findByText("字段已保存")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("keeps the stored color when a remarks option is saved without color changes", async () => {
+    const view = renderSettings();
+    await screen.findByText("字段甲");
+    fireEvent.click(screen.getByRole("button", { name: "编辑 备注" }));
+    await screen.findByPlaceholderText("选项 1");
+
+    fireEvent.change(screen.getByPlaceholderText("选项 1"), { target: { value: "1.节假日值班" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存字段" }));
+
+    const dutyOption = remarksField.options[0]!;
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+      `/custom-field-options/${dutyOption.id}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining('"color":"#3b82f6"'),
+      }),
+    ));
+    expect(await screen.findByText("字段已保存")).toBeTruthy();
+    view.unmount();
+  });
+
+  it("hides the palette for single-select fields other than remarks", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/custom-fields?includeArchived=true") {
+        return [field({
+          id: "7b3c9a10-5f2e-4c8d-9a1b-6e0d4c2b8a11",
+          key: "owner",
+          label: "工作负责人",
+          type: "single_select",
+          sortOrder: 0,
+          options: [
+            { id: "8c4d0b21-6a3f-4d9e-0b2c-7f1e5d3c9b22", value: "a", label: "甲", color: null, sortOrder: 0, archivedAt: null, version: 1 },
+          ],
+        })];
+      }
+      return {};
+    });
+    const view = renderSettings();
+    await screen.findByText("工作负责人");
+    fireEvent.click(screen.getByRole("button", { name: "编辑 工作负责人" }));
+    await screen.findByPlaceholderText("选项 1");
+
+    expect(screen.queryAllByRole("button", { name: /选项颜色 #/ })).toEqual([]);
+    expect(screen.queryAllByRole("button", { name: "清除选项颜色" })).toEqual([]);
     view.unmount();
   });
 });

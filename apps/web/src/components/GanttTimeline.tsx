@@ -8,6 +8,9 @@ export type GanttDisplayProperty =
   | { id: "title"; label: string; field?: undefined }
   | { id: `custom:${string}`; label: string; field: CustomFieldDefinition };
 
+// 备注选项（甘特着色数据源，spec gantt-color-by-remarks R4）：仅活动选项，按选项顺序。
+export type GanttRemarkOption = { value: string; label: string; color: string | null };
+
 export type GanttDisplayId = GanttDisplayProperty["id"];
 
 // Bar labels are a single SVG text line with no overflow handling, so the work
@@ -21,6 +24,8 @@ type Props = {
   displayProperties?: GanttDisplayProperty[];
   tooltipProperties?: GanttDisplayProperty[];
   ownerField?: CustomFieldDefinition | undefined;
+  // 备注选项 value→color 着色数据（未传/为空 → 全部回退默认灰）。
+  remarksOptions?: GanttRemarkOption[];
   view: "week" | "month";
   rangeStart: Date;
   rangeEnd: Date;
@@ -55,10 +60,11 @@ const FRAPPE_HEADER_HEIGHT_PADDING = 10;
 const REMINDER_BELL_ICON = '<svg class="reminder-bell-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
 const EMPTY_DISPLAY_PROPERTIES: GanttDisplayProperty[] = [];
 const EMPTY_REMINDER_DAYS: ReminderDay[] = [];
+const EMPTY_REMARKS_OPTIONS: GanttRemarkOption[] = [];
 const EMPTY_TIMELINE_TASK_ID = "__empty-timeline__";
 const BAR_DOUBLE_CLICK_WINDOW_MS = 500;
 
-function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, ownerField, view, rangeStart, rangeEnd, verticalScrollPeerRef, taskListCollapsed = false, onScheduleChange, onSelect, onReminderSelect, onCreateAt, readOnly = false, rebuildKey = 0 }: Props) {
+function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, ownerField, remarksOptions = EMPTY_REMARKS_OPTIONS, view, rangeStart, rangeEnd, verticalScrollPeerRef, taskListCollapsed = false, onScheduleChange, onSelect, onReminderSelect, onCreateAt, readOnly = false, rebuildKey = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
@@ -73,12 +79,14 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
   const rangeEndTime = rangeEnd.getTime();
   const dayCount = calendarDaySpan(rangeStart, rangeEnd);
   const columnWidth = availableWidth > 0 ? Math.max(MIN_DAY_COLUMN_WIDTH, availableWidth / dayCount) : 0;
+  // 备注着色映射：只收已配色的活动选项；未配色/归档值/字段缺失都不命中 → 默认灰（D4）。
+  const remarksColorByValue = useMemo(() => new Map(remarksOptions.flatMap((option) => option.color ? [[option.value, option.color] as const] : [])), [remarksOptions]);
   const ganttInputSignature = useMemo(() => JSON.stringify(plans.map((plan) => [
     plan.id,
     plan.startAt,
     plan.endAt,
-    plan.status,
     formatGanttLabel(plan, displayProperties),
+    plan.customFields.remarks ?? "",
     conflictSignature(plan),
   ])), [displayProperties, plans]);
   const remindersSignature = useMemo(() => JSON.stringify(reminders), [reminders]);
@@ -154,11 +162,9 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
           name: formatGanttLabel(plan, displayProperties),
           start: startOfLocalDay(new Date(plan.startAt)),
           end: endOfLocalDay(new Date(plan.endAt)),
-          progress: plan.status === "completed" ? 100 : plan.status === "in_progress" ? 50 : 0,
+          // 状态退出甘特视觉（R5）：无进度暗条；条形填充色在渲染后按备注着色（R4）。
+          progress: 0,
           dependencies: "",
-          // frappe 的 custom_class 只接受单 token（内部 classList.add）；
-          // 冲突警示类在渲染后的 applyWholeDayBarGeometry 里统一同步
-          custom_class: `gantt-${plan.status}`,
         }))
         : [{
           id: EMPTY_TIMELINE_TASK_ID,
@@ -235,7 +241,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
        }
       ensureCurrentDateMarker(gantt, containerRef.current, exactRangeStart, exactRangeEnd);
       centerDateMarkersWithinDayColumns(containerRef.current, columnWidth);
-      applyWholeDayBarGeometry(containerRef.current, plansById, exactRangeStart, columnWidth);
+      applyWholeDayBarGeometry(containerRef.current, plansById, exactRangeStart, columnWidth, remarksColorByValue);
       alignCurrentDateMarker(containerRef.current);
       cleanupCenteredLabels = keepGanttLabelsCentered(containerRef.current);
       trimGanttToPlanRows(containerRef.current, Math.max(plans.length, 1));
@@ -293,7 +299,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
        cleanupDateCellAffordance();
        cleanupReminderBells();
     };
-  }, [columnWidth, ganttInputSignature, rebuildKey, remindersSignature, rangeEndTime, rangeStartTime, readOnly, taskListCollapsed, verticalScrollPeerRef]);
+  }, [columnWidth, ganttInputSignature, rebuildKey, remarksColorByValue, remindersSignature, rangeEndTime, rangeStartTime, readOnly, taskListCollapsed, verticalScrollPeerRef]);
 
   return (
     <div className="gantt-shell">
@@ -765,14 +771,21 @@ function isStartOfLocalDay(date: Date) {
     && date.getMilliseconds() === 0;
 }
 
-function applyWholeDayBarGeometry(mount: HTMLElement, plansById: Map<string, WorkPlan>, rangeStart: Date, columnWidth: number) {
+function applyWholeDayBarGeometry(mount: HTMLElement, plansById: Map<string, WorkPlan>, rangeStart: Date, columnWidth: number, remarksColorByValue: ReadonlyMap<string, string>) {
   for (const wrapper of mount.querySelectorAll<SVGGElement>(".bar-wrapper")) {
     const plan = plansById.get(wrapper.dataset.id ?? "");
     const bar = wrapper.querySelector<SVGRectElement>(".bar");
     if (!plan || !bar) continue;
 
-    // 冲突警示类（规格 R4）：随甘特重渲染同步，冲突出现/消失即生效
+    // 冲突警示类（规格 R4）：随甘特重渲染同步，冲突出现/消失即生效。
+    // 冲突规则特异性高于默认条规则，覆盖任何备注色（spec D5）。
     wrapper.classList.toggle("gantt-conflict", Boolean(plan.ownerConflict));
+
+    // 备注着色（R4）：与冲突类同一趟后渲染同步；在 bar 元素上设 CSS 自定义属性，
+    // 未命中（未设置/归档选项值/字段缺失）时移除，样式回退默认灰 --gantt-bar。
+    const remarksFill = typeof plan.customFields.remarks === "string" ? remarksColorByValue.get(plan.customFields.remarks) : undefined;
+    if (remarksFill) bar.style.setProperty("--gantt-bar-fill", remarksFill);
+    else bar.style.removeProperty("--gantt-bar-fill");
 
     const x = timelineDayPosition(new Date(plan.startAt), rangeStart, columnWidth);
     const end = new Date(plan.endAt);
@@ -783,12 +796,12 @@ function applyWholeDayBarGeometry(mount: HTMLElement, plansById: Map<string, Wor
     bar.setAttribute("x", String(x));
     bar.setAttribute("width", String(width));
 
+    // 进度恒 0（R5 状态退出甘特视觉）：暗条不复存在，宽度钳为 0 以免 frappe 内部残留。
     const progress = wrapper.querySelector<SVGRectElement>(".bar-progress");
     if (progress) {
       progress.querySelectorAll("animate").forEach((animation) => animation.remove());
-      const ratio = plan.status === "completed" ? 1 : plan.status === "in_progress" ? 0.5 : 0;
       progress.setAttribute("x", String(x));
-      progress.setAttribute("width", String(width * ratio));
+      progress.setAttribute("width", "0");
     }
 
     const label = wrapper.querySelector<SVGTextElement>(".bar-label");
@@ -1035,9 +1048,6 @@ function configureScheduleInteraction(mount: HTMLElement, options: {
       const initialX = Number(bar.getAttribute("x"));
       const initialWidth = Number(bar.getAttribute("width"));
       const label = wrapper.querySelector<SVGTextElement>(".bar-label");
-      const progress = wrapper.querySelector<SVGRectElement>(".bar-progress");
-      const initialProgressWidth = Number(progress?.getAttribute("width") ?? 0);
-      const progressRatio = initialWidth > 0 ? initialProgressWidth / initialWidth : 0;
       const highlight = mount.querySelector<HTMLElement>(`.date-range-highlight.highlight-${plan.id}`);
       let snappedDelta = 0;
 
@@ -1046,10 +1056,6 @@ function configureScheduleInteraction(mount: HTMLElement, options: {
         bar.setAttribute("width", String(nextWidth));
         positionHandles();
         if (label) label.setAttribute("x", String(nextX + nextWidth / 2));
-        if (progress) {
-          progress.setAttribute("x", String(nextX));
-          progress.setAttribute("width", String(nextWidth * progressRatio));
-        }
         if (highlight) {
           highlight.style.left = `${nextX}px`;
           highlight.style.width = `${nextWidth}px`;

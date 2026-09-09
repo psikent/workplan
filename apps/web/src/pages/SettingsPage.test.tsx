@@ -32,8 +32,8 @@ const ownerField: CustomFieldDefinition = {
   archivedAt: null,
   version: 1,
   options: [
-    { id: "52c30b18-5b30-4ba0-bd61-bd9371d1139e", value: "fengmingqian", label: "冯铭倩", sortOrder: 0, archivedAt: null, version: 1 },
-    { id: "bb690d69-8585-45c2-b922-f069ba84cb13", value: "linyaqian", label: "林雅茜", sortOrder: 1, archivedAt: null, version: 1 },
+    { id: "52c30b18-5b30-4ba0-bd61-bd9371d1139e", value: "fengmingqian", label: "冯铭倩", color: null, sortOrder: 0, archivedAt: null, version: 1 },
+    { id: "bb690d69-8585-45c2-b922-f069ba84cb13", value: "linyaqian", label: "林雅茜", color: null, sortOrder: 1, archivedAt: null, version: 1 },
   ],
   createdAt: "2026-08-01T00:00:00.000Z",
   updatedAt: "2026-08-01T00:00:00.000Z",

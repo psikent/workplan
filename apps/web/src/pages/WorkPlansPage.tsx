@@ -264,6 +264,18 @@ export default function WorkPlansPage() {
     () => (fieldsQuery.data ?? []).find((field) => field.key === "owner" && !field.archivedAt),
     [fieldsQuery.data],
   );
+  // 甘特备注着色（spec gantt-color-by-remarks R4/R6）：固定绑定 key=remarks 的单选字段，
+  // 仅活动选项按选项顺序进入映射；字段不存在/已归档 → 空数组（条色全回退默认灰）。
+  const remarksGanttOptions = useMemo(() => {
+    const field = (fieldsQuery.data ?? []).find((item) => item.key === "remarks" && item.type === "single_select" && !item.archivedAt);
+    if (!field) return [];
+    return field.options
+      .filter((option) => !option.archivedAt)
+      .sort((left, right) => left.sortOrder - right.sortOrder)
+      .map((option) => ({ value: option.value, label: option.label, color: option.color }));
+  }, [fieldsQuery.data]);
+  // 图例隐藏条件（R6）：字段缺失或没有任何选项配置颜色。
+  const remarksLegendVisible = remarksGanttOptions.length > 0 && remarksGanttOptions.some((option) => option.color);
   const selectedCustomFilterField = useMemo(
     () => (fieldsQuery.data ?? []).find((field) => field.key === customFilterKey && !field.archivedAt),
     [customFilterKey, fieldsQuery.data],
@@ -1044,6 +1056,20 @@ export default function WorkPlansPage() {
           </div>
           <span className="table-toolbar-center">
             <strong>{rangeTitle}</strong>
+            {remarksLegendVisible ? (
+              <span className="gantt-legend" role="list" aria-label="备注颜色图例">
+                {remarksGanttOptions.map((option) => (
+                  <span key={option.value} className="gantt-legend-item" role="listitem">
+                    <i className="gantt-legend-dot" style={option.color ? { backgroundColor: option.color } : undefined} />
+                    {option.label}
+                  </span>
+                ))}
+                <span className="gantt-legend-item" role="listitem">
+                  <i className="gantt-legend-dot" />
+                  未设置
+                </span>
+              </span>
+            ) : null}
             <button className="icon-button gantt-fullscreen-toggle" type="button" aria-label={ganttFullscreen ? "退出全屏" : "进入全屏"} title={ganttFullscreen ? "退出全屏" : "进入全屏"} onClick={toggleGanttFullscreen}>{ganttFullscreen ? <Minimize /> : <Maximize />}</button>
           </span>
           <div className="table-toolbar-actions">
@@ -1097,7 +1123,7 @@ export default function WorkPlansPage() {
           onDoubleClick={() => setListPercent(defaultListPercent)}
         />
         <div className="planner-timeline">
-          <GanttTimeline plans={plans} reminders={remindersQuery.data?.days ?? EMPTY_REMINDER_DAYS} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} ownerField={ownerField} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} rebuildKey={ganttRebuildKey} />
+          <GanttTimeline plans={plans} reminders={remindersQuery.data?.days ?? EMPTY_REMINDER_DAYS} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} ownerField={ownerField} remarksOptions={remarksGanttOptions} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} rebuildKey={ganttRebuildKey} />
         </div>
       </div>
 

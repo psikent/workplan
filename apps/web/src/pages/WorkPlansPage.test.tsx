@@ -1693,3 +1693,82 @@ describe("查询失败保留结果（票据 18 发现的回归）", () => {
     view.unmount();
   });
 });
+
+describe("甘特备注颜色图例（spec gantt-color-by-remarks R4/R6）", () => {
+  const remarksField: CustomFieldDefinition = {
+    ...ownerField,
+    id: "4b8a1f20-9c14-4a5e-8f3d-2a7c6b1e0d55",
+    key: "remarks",
+    label: "备注",
+    type: "single_select",
+    sortOrder: 2,
+    options: [
+      { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e01", value: "option_1", label: "1.值班", color: "#3b82f6", sortOrder: 0, archivedAt: null, version: 1 },
+      { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e02", value: "option_2", label: "4.自动化", color: "#10b981", sortOrder: 1, archivedAt: null, version: 1 },
+      { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e03", value: "option_3", label: "9.已归档", color: "#f43f5e", sortOrder: 2, archivedAt: "2026-08-01T00:00:00.000Z", version: 2 },
+      { id: "0b6fd15b-9e6d-4c2a-9a4e-6f0a1c3d5e04", value: "option_4", label: "5.其他", color: null, sortOrder: 3, archivedAt: null, version: 1 },
+    ],
+  };
+
+  function mockFields(fields: CustomFieldDefinition[]) {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/export-templates") return [exportTemplate];
+      if (path === "/owner-account-mappings") return [{ ownerName: "冯铭倩", account: "fengmingqian@zh.gd.csg.cn" }];
+      if (path === "/work-plans/import.xls") return { imported: 1 };
+      if (path.startsWith("/work-plan-series")) return [];
+      if (path === "/monthly-goals") return [monthlyGoal];
+      if (path === "/work-plans/query" && init?.method === "POST") return emulateQuery([plan], init);
+      if (path.startsWith("/work-plans")) return [plan];
+      if (path.startsWith("/custom-fields")) return fields;
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+  }
+
+  it("renders active options in option order plus an unset entry, and feeds remarksOptions to the gantt", async () => {
+    mockFields([ownerField, effortField, remarksField]);
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    const legend = view.container.querySelector(".gantt-legend");
+    expect(legend).not.toBeNull();
+    const items = [...legend!.querySelectorAll(".gantt-legend-item")];
+    // 归档选项不进图例；未配色活动选项与「未设置」都在列。
+    expect(items.map((item) => item.textContent)).toEqual(["1.值班", "4.自动化", "5.其他", "未设置"]);
+    expect(items[0]!.querySelector<HTMLElement>(".gantt-legend-dot")!.style.backgroundColor).toBe("rgb(59, 130, 246)");
+    expect(items[1]!.querySelector<HTMLElement>(".gantt-legend-dot")!.style.backgroundColor).toBe("rgb(16, 185, 129)");
+    // 未配色项与「未设置」的色点不带内联色，由 CSS 回退 --gantt-bar。
+    expect(items[2]!.querySelector<HTMLElement>(".gantt-legend-dot")!.style.backgroundColor).toBe("");
+    expect(items[3]!.querySelector<HTMLElement>(".gantt-legend-dot")!.style.backgroundColor).toBe("");
+
+    const ganttProps = ganttPropsMock.mock.calls.at(-1)?.[0] as { remarksOptions?: Array<{ value: string; color: string | null }> };
+    // 归档选项不进着色映射（其历史值回落默认灰）。
+    expect(ganttProps.remarksOptions).toEqual([
+      { value: "option_1", label: "1.值班", color: "#3b82f6" },
+      { value: "option_2", label: "4.自动化", color: "#10b981" },
+      { value: "option_4", label: "5.其他", color: null },
+    ]);
+    view.unmount();
+  });
+
+  it("hides the legend entirely when no remarks option has a color", async () => {
+    mockFields([ownerField, effortField, {
+      ...remarksField,
+      options: remarksField.options.map((option) => ({ ...option, color: null })),
+    }]);
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    expect(view.container.querySelector(".gantt-legend")).toBeNull();
+    view.unmount();
+  });
+
+  it("hides the legend when the remarks field is absent", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    expect(view.container.querySelector(".gantt-legend")).toBeNull();
+    const ganttProps = ganttPropsMock.mock.calls.at(-1)?.[0] as { remarksOptions?: unknown[] };
+    expect(ganttProps.remarksOptions).toEqual([]);
+    view.unmount();
+  });
+});

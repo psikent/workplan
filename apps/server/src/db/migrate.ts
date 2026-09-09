@@ -343,6 +343,15 @@ const migrations: Migration[] = [
       ALTER TABLE custom_field_definitions ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    // 单选选项颜色（甘特按备注着色）：只加列，存量 color 全 NULL（不回填业务数据），
+    // 上线后由管理员在设置页为备注选项配色。
+    version: 16,
+    name: "custom_field_options_color",
+    sql: `
+      ALTER TABLE custom_field_options ADD COLUMN color TEXT;
+    `,
+  },
 ];
 
 export function migrate(database: Database.Database): void {
