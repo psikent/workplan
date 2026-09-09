@@ -1,6 +1,6 @@
 # 01 — 服务端+契约:单选选项 color 配置
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: none
 Spec: ../spec.md
 Scope: packages/contracts/src/index.ts、apps/server/src/db/schema.ts、apps/server/src/db/migrate.ts、apps/server/src/modules/custom-fields.ts、apps/server/src/modules/env-config.ts、apps/server/test/*
@@ -29,3 +29,13 @@ Scope: packages/contracts/src/index.ts、apps/server/src/db/schema.ts、apps/ser
 
 - 对应规格 R1/R2 与验收标准 1 的 server 部分。
 - `corepack pnpm --filter @workplan/server typecheck && corepack pnpm --filter @workplan/server test` 全绿。
+
+## Comments
+
+### 2026-09-09 实施完成
+
+- 契约：导出 `customFieldOptionColorPalette`（8 hex）与 `customFieldOptionColorSchema`（色板 refine 校验）；`customFieldOptionSchema` 输出 `color: string | null`；定义创建 options[]、选项创建、选项更新三写路径增可选 color（null=清除，未传=保持现状）；`envConfigOptionPlanItemSchema` 增可选 color（result 经 extend 继承）。
+- DB：`custom_field_options.color TEXT NULL`（schema.ts）+ 内联迁移 v16 `custom_field_options_color`（migrate.ts），只加列不回填。
+- 服务端：`assertOptionColor` 服务层复检（兜住环境包导入等绕过 HTTP 的路径）；创建/选项创建/选项更新写入 color，`updateOption` 未传保持现状、传 null 清除，乐观锁沿用；序列化输出 color。
+- env-config：导出携带 color；Sync `planOptionDiff` 纳入 color（color-only 差异 → `update_option` grade=safe），执行路径写入 color；Additive 沿用 key_exists 跳过，本地 color 不被覆盖。
+- 测试：新增 `apps/server/test/custom-field-option-color.test.ts`（创建带色、设置/清除/不传三态、version 冲突 409、非法色 422 三写路径、Sync 收敛为 safe update_option、Additive 跳过不覆盖、8 色板全接受）；migrate 断言 15→16 并新增加列不回填用例；env-config 导出/计划/结果断言随 color 形状同步。server 230 用例全绿，typecheck 绿。

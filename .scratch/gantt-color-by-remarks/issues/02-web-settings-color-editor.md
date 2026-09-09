@@ -1,6 +1,6 @@
 # 02 — Web 设置页:备注选项配色编辑器
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Spec: ../spec.md
 Scope: apps/web/src/pages/settings/CustomFieldsSettings.tsx、apps/web/src/pages/settings/CustomFieldsSettings.test.tsx
@@ -24,3 +24,11 @@ Scope: apps/web/src/pages/settings/CustomFieldsSettings.tsx、apps/web/src/pages
 
 - 对应规格 R3 与验收标准 1 的设置页部分。
 - `corepack pnpm --filter @workplan/web typecheck && corepack pnpm --filter @workplan/web test` 全绿。
+
+## Comments
+
+### 2026-09-09 实施完成
+
+- `CustomFieldsSettings.tsx`：`OptionDraft` 增 color；仅 key=remarks 且 type=single_select 渲染色板行（`.option-color-picker`，8 色点选 + 「无色」清除，选中态 aria-pressed）；`syncOptions` 仅 remarks 随 payload 携带 color（更新路径 color-only 变化也触发 PATCH；其余字段不传不丢本地色）；创建路径 `activeOptions` 恒带 color（非备注草稿恒 null）。styles.css 增色板行样式（落在选项行第二行，不挤压既有网格）。
+- 测试：新增 4 用例（选色/清除 payload 携带 color、未涉 color 的重命名不丢色、其他单选字段无配色控件）；remarks 夹具选项补 color。web 325 用例全绿，typecheck 绿。
+- 隔离实例手工验收（临时 DATA_DIR，未动 ./data）：新建 remarks 单选 + 3 选项并经色板选色保存 → GET /custom-fields 三选项 color 分别 #3b82f6/#10b981/#f43f5e。
