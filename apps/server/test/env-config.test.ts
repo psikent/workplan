@@ -322,8 +322,8 @@ describe("EnvConfigService", () => {
         type: "single_select",
         required: false,
         options: [
-          { value: "fengmingqian", label: "冯铭倩" },
-          { value: "linyaqian", label: "林雅茜" },
+          { value: "fengmingqian", label: "冯铭倩", color: null },
+          { value: "linyaqian", label: "林雅茜", color: null },
         ],
         sortOrder: 0,
       }),
@@ -537,7 +537,7 @@ describe("EnvConfigService", () => {
     expect(exported.customFields).toEqual([
       expect.objectContaining({
         key: "owner",
-        options: [{ value: "fengmingqian", label: "冯铭倩" }],
+        options: [{ value: "fengmingqian", label: "冯铭倩", color: null }],
       }),
     ]);
     expect(exported.customFields.some((item) => item.key === "archived_soon")).toBe(false);
@@ -601,9 +601,9 @@ describe("EnvConfigService sync import", () => {
           collapsed: false,
           defaultValue: null,
           options: [
-            { value: "fengmingqian", label: "冯铭倩" },
-            { value: "linyaqian", label: "林雅茜" },
-            { value: "wangmeng", label: "王萌" },
+            { value: "fengmingqian", label: "冯铭倩", color: null },
+            { value: "linyaqian", label: "林雅茜", color: null },
+            { value: "wangmeng", label: "王萌", color: null },
           ],
           sortOrder: 0,
         },
@@ -665,8 +665,8 @@ describe("EnvConfigService sync import", () => {
       ["priority", "retire"],
     ]);
     expect(plan.sections.customFields[0]!.options).toEqual([
-      { action: "update_option", grade: "safe", reason: null, value: "linyaqian", label: "林雅茜" },
-      { action: "add_option", grade: "safe", reason: null, value: "wangmeng", label: "王萌" },
+      { action: "update_option", grade: "safe", reason: null, value: "linyaqian", label: "林雅茜", color: null },
+      { action: "add_option", grade: "safe", reason: null, value: "wangmeng", label: "王萌", color: null },
       { action: "retire_option", grade: "destructive", reason: null, value: "zhouyi", label: "周怡" },
     ]);
     expect(plan.sections.ownerAccountMappings.map((item) => [item.ownerName, item.action])).toEqual([
@@ -685,8 +685,8 @@ describe("EnvConfigService sync import", () => {
       ["priority", "retired"],
     ]);
     expect(result.sections.customFields[0]!.options).toEqual([
-      { action: "update_option", grade: "safe", reason: null, value: "linyaqian", label: "林雅茜", outcome: "updated" },
-      { action: "add_option", grade: "safe", reason: null, value: "wangmeng", label: "王萌", outcome: "created" },
+      { action: "update_option", grade: "safe", reason: null, value: "linyaqian", label: "林雅茜", color: null, outcome: "updated" },
+      { action: "add_option", grade: "safe", reason: null, value: "wangmeng", label: "王萌", color: null, outcome: "created" },
       { action: "retire_option", grade: "destructive", reason: null, value: "zhouyi", label: "周怡", outcome: "retired" },
     ]);
     expect(result.sections.ownerAccountMappings.map((item) => [item.ownerName, item.outcome])).toEqual([

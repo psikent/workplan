@@ -77,7 +77,7 @@ describe("工作计划 sortOrder 存储移除", () => {
 
   it("生产 schema 不再含 work_plans.sort_order 列与索引，其余索引与唯一约束保留", async () => {
     const context = await createContext();
-    expect(context.database.sqlite.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 15 });
+    expect(context.database.sqlite.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 16 });
 
     const columns = (context.database.sqlite.prepare("PRAGMA table_info(work_plans)").all() as Array<{ name: string }>).map((column) => column.name);
     expect(columns).not.toContain("sort_order");

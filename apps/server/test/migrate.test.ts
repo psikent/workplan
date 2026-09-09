@@ -23,7 +23,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 15 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 16 });
     expect(database.prepare("SELECT id, username, role, login_mode AS loginMode, disabled_at AS disabledAt, version FROM users").get()).toEqual({
       id: "user-1",
       username: "lxj",
@@ -60,7 +60,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 15 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 16 });
     expect(database.prepare("SELECT id, title FROM work_plans").get()).toEqual({ id: "plan-1", title: "保留计划" });
     expect(database.prepare("SELECT id, name FROM export_templates").get()).toEqual({ id: "template-1", name: "保留模板" });
     expect(database.prepare("SELECT id, username, role FROM users").get()).toEqual({ id: "user-1", username: "lxj", role: "admin" });
@@ -95,7 +95,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 15 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 16 });
     expect(database.prepare("SELECT id, username, password_hash AS passwordHash, role, login_mode AS loginMode, disabled_at AS disabledAt, version, created_at AS createdAt FROM users ORDER BY created_at").all()).toEqual([
       { id: "user-admin", username: "lxj", passwordHash: "argon-admin-hash", role: "admin", loginMode: "password", disabledAt: null, version: 3, createdAt: "2026-08-08T05:53:04.073Z" },
       { id: "user-editor", username: "editor-1", passwordHash: "argon-editor-hash", role: "editor", loginMode: "password", disabledAt: null, version: 2, createdAt: "2026-08-10T08:00:00.000Z" },
@@ -164,7 +164,7 @@ describe("database migrations", () => {
     // 迁移 9 只校验它重建的 auth 三表；custom_field_values 的历史悬挂引用不阻断升级。
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 15 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 16 });
     expect(database.prepare("SELECT COUNT(*) AS count FROM custom_field_values").get()).toEqual({ count: 2 });
     expect(database.pragma("foreign_key_check(users)")).toEqual([]);
     expect(database.pragma("foreign_key_check(sessions)")).toEqual([]);
@@ -176,7 +176,7 @@ describe("database migrations", () => {
     const database = new Database(":memory:");
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 15 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 16 });
     expect(database.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 14").get()).toEqual({ count: 1 });
 
     // 空库迁移后即可写入单行配置；第二次 migrate 不重跑、不报错。
@@ -211,6 +211,36 @@ describe("database migrations", () => {
     database.close();
   });
 
+  it("adds custom_field_options.color in a fresh database and leaves existing rows null after upgrade", () => {
+    const database = new Database(":memory:");
+    database.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL);
+      INSERT INTO schema_migrations(version, name, applied_at) VALUES (15, 'custom_field_definitions_collapsed', '2026-09-09T00:00:00.000Z');
+      CREATE TABLE custom_field_definitions (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'single_select');
+      CREATE TABLE custom_field_options (id TEXT PRIMARY KEY, field_id TEXT NOT NULL REFERENCES custom_field_definitions(id) ON DELETE CASCADE, value TEXT NOT NULL, label TEXT NOT NULL, sort_order INTEGER NOT NULL, archived_at TEXT, version INTEGER NOT NULL DEFAULT 1);
+      INSERT INTO custom_field_definitions(id) VALUES ('field-1');
+      INSERT INTO custom_field_options(id, field_id, value, label, sort_order, version) VALUES
+        ('option-1', 'field-1', 'duty', '1.值班', 0, 1),
+        ('option-2', 'field-1', 'automation', '4.自动化', 1, 1);
+    `);
+
+    migrate(database);
+
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 16 });
+    const columns = (database.prepare("PRAGMA table_info(custom_field_options)").all() as Array<{ name: string }>).map((column) => column.name);
+    expect(columns).toContain("color");
+    // 存量数据不回填：升级后 color 全 NULL，由管理员在设置页配色。
+    expect(database.prepare("SELECT id, color FROM custom_field_options ORDER BY sort_order").all()).toEqual([
+      { id: "option-1", color: null },
+      { id: "option-2", color: null },
+    ]);
+    database
+      .prepare("INSERT INTO custom_field_options(id, field_id, value, label, color, sort_order, version) VALUES ('option-3', 'field-1', 'network', '5.网络安全', '#3b82f6', 2, 1)")
+      .run();
+    expect(database.prepare("SELECT color FROM custom_field_options WHERE id = 'option-3'").get()).toEqual({ color: "#3b82f6" });
+    database.close();
+  });
+
   it("drops work_plans.sort_order and its index while preserving rows, children and constraints", () => {
     const database = new Database(":memory:");
     database.exec(`
@@ -235,7 +265,7 @@ describe("database migrations", () => {
 
     migrate(database);
 
-    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 15 });
+    expect(database.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 16 });
     const columns = (database.prepare("PRAGMA table_info(work_plans)").all() as Array<{ name: string }>).map((column) => column.name);
     expect(columns).not.toContain("sort_order");
     expect(columns).toEqual(["id", "title", "description", "status", "status_mode", "priority", "start_at", "end_at", "version", "series_id", "occurrence_key", "is_exception", "created_at", "updated_at", "title_sort_key"]);
