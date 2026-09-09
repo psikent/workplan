@@ -2,7 +2,7 @@
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import type { CustomFieldDefinition, WorkPlan } from "@workplan/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import GanttTimeline, { formatGanttTooltip, type GanttDisplayProperty } from "./GanttTimeline";
+import GanttTimeline, { formatGanttTooltip, layoutBarLabel, type GanttDisplayProperty } from "./GanttTimeline";
 
 const ganttMock = vi.hoisted(() => ({
   options: null as Record<string, unknown> | null,
@@ -540,6 +540,54 @@ describe("read-only timeline", () => {
     fireEvent.mouseUp(document, { clientX: 150 });
     await waitFor(() => expect(onScheduleChange).toHaveBeenCalled());
     view.unmount();
+  });
+});
+
+describe("layoutBarLabel 跨周条内文字布局（spec gantt-cross-range-bar-label R1/R2）", () => {
+  // 与渲染测试同一基准：周视图 7 列 × 100px = 画布 700。
+  const canvasWidth = 700;
+  const measure = (text: string) => Array.from(text).length * 10;
+
+  it("范围内计划锚定条水平中点（可见条段 = 全跨度，行为与像素不变）", () => {
+    expect(layoutBarLabel({ barX: 100, barWidth: 300, canvasWidth, text: "设计评审", measureText: measure }))
+      .toEqual({ x: 250, text: "设计评审" });
+  });
+
+  it("整周段锚定画布中点", () => {
+    expect(layoutBarLabel({ barX: 0, barWidth: 700, canvasWidth, text: "abc", measureText: measure }))
+      .toEqual({ x: 350, text: "abc" });
+  });
+
+  it("跨周计划结束周：可见条段为左端残段，锚定段中点而非全跨度中点", () => {
+    // 条 [−500, 300]，可见段 [0, 300] → 段中点 150（全跨度中点 −100 在画布外）。
+    expect(layoutBarLabel({ barX: -500, barWidth: 800, canvasWidth, text: "abc", measureText: measure }))
+      .toEqual({ x: 150, text: "abc" });
+  });
+
+  it("文字右半出画布时平移钳入（右缘齐画布）", () => {
+    // 段中点 650，文字宽 200 → [550, 750] 超右界 → 钳到 600。
+    expect(layoutBarLabel({ barX: 600, barWidth: 300, canvasWidth, text: "a".repeat(20), measureText: measure }).x)
+      .toBe(600);
+  });
+
+  it("贴左缘窄条文字左半出界时钳回左缘齐画布", () => {
+    // 段中点 25，文字宽 200 → [−75, 125] 超左界 → 钳到 100。
+    expect(layoutBarLabel({ barX: 0, barWidth: 50, canvasWidth, text: "a".repeat(20), measureText: measure }).x)
+      .toBe(100);
+  });
+
+  it("文字宽超画布时逐字收敛为「前缀 + …」后钳入", () => {
+    // 每字 10px：80 字宽 800 > 700 → 保留 69 字 + 「…」= 700px，钳到画布中点。
+    const result = layoutBarLabel({ barX: 0, barWidth: 700, canvasWidth, text: "试".repeat(80), measureText: measure });
+    expect(result.text).toBe(`${"试".repeat(69)}…`);
+    expect(result.x).toBe(350);
+  });
+
+  it("测宽为 0/非有限/缺失时退化为仅锚定，不改文本", () => {
+    const input = { barX: -500, barWidth: 800, canvasWidth, text: "设计评审" };
+    expect(layoutBarLabel({ ...input, measureText: () => 0 })).toEqual({ x: 150, text: "设计评审" });
+    expect(layoutBarLabel({ ...input, measureText: () => Number.NaN })).toEqual({ x: 150, text: "设计评审" });
+    expect(layoutBarLabel({ ...input })).toEqual({ x: 150, text: "设计评审" });
   });
 });
 

@@ -661,6 +661,41 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;");
 }
 
+// 甘特条内文字布局（spec gantt-cross-range-bar-label R1/R2）：
+// 锚点 = 可见条段（计划跨度 ∩ 画布 [0, canvasWidth]）的水平中点——跨周/跨月计划
+// 在每个被跨及视图里锚定该视图残段中点，而非全跨度中点（后者会落在画布外被整体裁掉）。
+// 文字允许溢出条外（现状窄条即如此）；仅当溢出画布时平移钳入（钳不住时左缘 ≥ 0 优先），
+// 画布宽容不下时逐字收敛为「前缀 + …」再钳入。测宽缺失/为 0（jsdom）→ 退化为仅锚定不改文本。
+export function layoutBarLabel(options: {
+  barX: number;
+  barWidth: number;
+  canvasWidth: number;
+  text: string;
+  measureText?: (text: string) => number;
+}) {
+  const { barX, barWidth, canvasWidth, text, measureText } = options;
+  const segmentMidpoint = (Math.max(barX, 0) + Math.min(barX + barWidth, canvasWidth)) / 2;
+  const anchor = Math.min(Math.max(segmentMidpoint, 0), canvasWidth);
+
+  const measured = measureText?.(text);
+  if (measured === undefined || !Number.isFinite(measured) || measured <= 0) {
+    return { x: anchor, text };
+  }
+
+  let fittedText = text;
+  let fittedWidth = measured;
+  if (measured > canvasWidth) {
+    const chars = Array.from(text);
+    let keep = chars.length;
+    while (keep > 0 && measureText!(chars.slice(0, keep).join("") + "…") > canvasWidth) keep -= 1;
+    fittedText = `${chars.slice(0, keep).join("")}…`;
+    fittedWidth = measureText!(fittedText);
+  }
+
+  const halfWidth = fittedWidth / 2;
+  return { x: Math.max(Math.min(anchor, canvasWidth - halfWidth), halfWidth), text: fittedText };
+}
+
 function keepGanttLabelsCentered(mount: HTMLElement) {
   const observers: MutationObserver[] = [];
 
