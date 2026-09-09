@@ -1,3 +1,37 @@
+# Workplan (工作计划)
+
+Personal work-plan management service: Chinese web UI, REST API, SQLite persistence, week/month Gantt, custom fields, recurrence, JSON transfer, Bark push. Production is Linux/systemd-only (`release.mjs`; see README); local dev happens on macOS.
+
+## Commands
+
+pnpm is pinned via `packageManager` — always `corepack pnpm`. Node ≥ 22.
+
+- `corepack pnpm dev` — contracts build + server (127.0.0.1:3002) + web (localhost:5173, proxies `/api` and `/health`).
+- `corepack pnpm typecheck` / `test` / `build` — run from the repo root; they build `@workplan/contracts` first. Do not run per-package without that build step.
+- Focused: `corepack pnpm --filter @workplan/server test` (vitest, `apps/server/test/`), `--filter @workplan/web test` (vitest, co-located `*.test.tsx`), `--filter @workplan/contracts test` (node --test).
+- No ESLint/Prettier: typecheck + tests are the quality gate. Commits in Chinese conventional style (`feat(gantt): …`).
+
+## Layout & boundaries
+
+- `packages/contracts` — single source of truth for Zod schemas/enums/types shared by server and web (`src/index.ts`). Server routes and the web API layer import schemas from here; never redefine them. It resolves from `dist/`, hence the build-first ordering above.
+- `apps/server` — Fastify 5 + zod type provider. `routes/` is a thin HTTP layer (schema validation + delegate); business logic lives in `modules/`; persistence in `db/` (drizzle-orm over better-sqlite3, WAL, hand-rolled `migrate.ts`).
+- `apps/web` — React 19 + Vite + TanStack Query v5 + react-router 7; frappe-gantt for the timeline; PWA shell. UI baseline: `docs/design/DESIGN.md` + `FIDELITY.md`.
+- `scripts/` — `release.mjs` (Linux systemd release), `workplan.mjs` (manual lifecycle, macOS only — never `start`/`stop` on Linux prod), `env-config-export.ts`.
+
+## Docs to read before touching an area
+
+- `CONTEXT.md` — ubiquitous language (Work Plan, Schedule Order, Automatic Status…). Use its vocabulary; it explicitly bans `sortOrder`/manual-rank concepts.
+- `docs/adr/` — read the ADRs for the area you touch (e.g. 0003 route capabilities, 0008 server-derived owner conflict, 0011 retired sort order).
+- `docs/agents/` — `domain.md`, `issue-tracker.md` (issues live in `.scratch/`), `triage-labels.md`.
+
+## Gotchas
+
+- Colors only via the two `:root` token sets in `apps/web/src/styles.css` (`:root` and `:root[data-theme="dark"]`). Hardcoded literal colors in components or rules are a known regression class.
+- better-sqlite3 is one synchronous connection: never hold a manual transaction across an `await` — concurrent writes silently join it or degrade to SAVEPOINTs and exceptions roll back work that isn't yours. Long/streaming tasks must be fully synchronous or use a separate connection.
+- Authorization boundary is server-side route capabilities (ADR-0003): viewers get `403 INSUFFICIENT_PERMISSION` from the API. Hiding UI in the web app is UX only, never the security check.
+- Dev database is `data/workplan.db` at the repo root, fully separate from prod `/var/opt/workplan-release/data/workplan.db`. One process per database (SQLite writes + built-in scheduler).
+- TanStack Query v5: with `keepPreviousData`, `isSuccess` is true during placeholder periods — guard "persist on success" refs with `!isPlaceholderData`; error states drop placeholder data unless pinned via ref.
+
 ## Interaction style
 
 The user likes interactive dialogue and wants it used by default: when a requirement, design, or fix involves real decisions, surface them as questions with options and a recommended answer (e.g. `AskUserQuestion` or grilling rounds) instead of assuming or proceeding silently. Keep rounds small and answerable; decisions are the user's, facts are the agent's to look up.
