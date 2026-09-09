@@ -56,6 +56,18 @@ _Avoid_: 标签排序, label sort, alphabetical order
 An Administrator-maintained flag on a Custom Field definition that presents the field inside the collapsed "更多信息" section at the bottom of the Work Plan drawer, in every drawer mode. The field stays viewable and editable once the section is expanded; the flag never hides the field, changes its data, or affects any view other than the drawer.
 _Avoid_: 隐藏字段, Hidden field, drawer visibility, 浏览器列设置
 
+**Remarks (备注)**:
+The single_select Custom Field (key `remarks`) classifying a Work Plan's work category, with Administrator-maintained options (currently 值班, 自动化, 网络安全). It is the field the Gantt Color Coding reads.
+_Avoid_: notes, comment, 工作类别, work type
+
+**Option Color (选项颜色)**:
+An optional color on a single_select Custom Field option, chosen from a fixed Administrator-facing palette that stays readable in both light and dark themes. An option without a color falls back to the neutral Gantt bar color; an archived option never contributes color.
+_Avoid_: status color, theme color pair, free-form hex
+
+**Gantt Color Coding (甘特颜色编码)**:
+The rule that a Gantt bar takes its fill from the Work Plan's Remarks Option Color — neutral gray when Remarks is unset or holds an archived option — with the Owner Conflict alert color overriding any classification color. Status carries no visual encoding on the Gantt, neither bar color nor progress shading, and may appear only as an opt-in bar/tooltip text property. The Gantt legend lists the unarchived Remarks options in Option Order plus an "unset" entry.
+_Avoid_: status-colored bars, progress-by-status shading, 状态色
+
 **Monthly Goal**:
 A per-month work objective, defined by an Administrator or an Editor, with its own title, description, and month. It links to at most one Work Plan and derives its completion from that Work Plan's effective status.
 _Avoid_: Goal tag, milestone, target
