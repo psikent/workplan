@@ -1,6 +1,7 @@
 # 01 — 纯函数:可见条段条内文字布局计算 + 单测
 Type: task
-Status: ready-for-agent
+Status: resolved
+Blocked by: none
 Spec: ../spec.md
 Scope: apps/web/src/components/(新 helper 文件或并入 GanttTimeline.tsx)、对应测试文件
 
@@ -21,3 +22,10 @@ Scope: apps/web/src/components/(新 helper 文件或并入 GanttTimeline.tsx)、
 
 - `corepack pnpm --filter @workplan/web test` 新用例全绿;函数无 DOM 依赖。
 - 对应 spec R1/R2。
+
+## Comments
+
+### 2026-09-09 实施完成
+
+- `GanttTimeline.tsx` 新增导出纯函数 `layoutBarLabel({ barX, barWidth, canvasWidth, text, measureText }) → { x, text }`：可见条段 `[max(barX,0), min(barX+barWidth, canvasWidth)]` 中点为初始锚点（对出界退化输入额外钳入 `[0, canvasWidth]` 保证全函数）；`measureText` 有效（有限且 >0）时先平移钳入（钳不住时左缘 ≥ 0 优先），`w > canvasWidth` 时逐字收敛为「前缀 + …」再钳入；测宽缺失/0/非有限 → 退化为仅锚定不改文本。无 DOM 依赖，measure 注入。
+- 单测 7 例入 `GanttTimeline.test.tsx`（范围内=条中心、整周段=画布中点、左出界残段锚定、右出界钳入、贴左缘窄条钳回、截断收敛含…、退化三态）。TDD 红灯先行（函数未导出 7 失败 → 实现 → 44/44 绿）。首版测试两处钳制用例把 10 字 × 10px 误算为 200px 宽未触发钳制，属测试数据算术错误，修正为 20 字后全绿。

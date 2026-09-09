@@ -1369,6 +1369,132 @@ describe("GanttTimeline rendered grid", () => {
   });
 });
 
+describe("跨周/跨月条内文字可见（spec gantt-cross-range-bar-label R3/R4/R6）", () => {
+  const titleProperty = [{ id: "title" as const, label: "工作内容" }];
+
+  function readBarLabel(container: HTMLElement) {
+    return waitFor(() => {
+      const bar = container.querySelector<SVGRectElement>(".bar-wrapper .bar");
+      const label = container.querySelector<SVGTextElement>(".bar-wrapper .bar-label");
+      expect(bar).not.toBeNull();
+      expect(label).not.toBeNull();
+      return { bar: bar!, label: label! };
+    });
+  }
+
+  it("跨 2 周计划的结束周视图：文字锚定该周残段中点且落在画布内", async () => {
+    // 计划 08-05 ~ 08-12，结束周视图 08-10 ~ 08-17：条几何 x=−500、宽 800 不裁剪，
+    // 可见残段 [0, 300] → 锚点 150（旧规则全跨度中点 −100 整体在画布外）。
+    const crossPlan = { ...plan, startAt: localIso(2026, 8, 5), endAt: localIso(2026, 8, 12) };
+    const { container } = render(
+      <GanttTimeline plans={[crossPlan]} displayProperties={titleProperty} view="week" rangeStart={new Date(2026, 7, 10)} rangeEnd={new Date(2026, 7, 17)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+
+    const { bar, label } = await readBarLabel(container);
+    expect(Number(bar.getAttribute("x"))).toBeCloseTo(-500);
+    expect(Number(bar.getAttribute("width"))).toBeCloseTo(800);
+    expect(Number(label.getAttribute("x"))).toBeCloseTo(150);
+    expect(label.getAttribute("text-anchor")).toBe("middle");
+    expect(label.classList.contains("big")).toBe(false);
+    expect(label.textContent).toBe("设计评审");
+  });
+
+  it("跨 3 周计划在首/中/尾三个周视图的文字均锚定各周残段中点", async () => {
+    const crossPlan = { ...plan, startAt: localIso(2026, 8, 5), endAt: localIso(2026, 8, 19) };
+    const weeks = [
+      { rangeStart: new Date(2026, 7, 3), rangeEnd: new Date(2026, 7, 10), expectedBarX: 200, expectedX: 450 },
+      { rangeStart: new Date(2026, 7, 10), rangeEnd: new Date(2026, 7, 17), expectedBarX: -500, expectedX: 350 },
+      { rangeStart: new Date(2026, 7, 17), rangeEnd: new Date(2026, 7, 24), expectedBarX: -1200, expectedX: 150 },
+    ];
+    const view = render(
+      <GanttTimeline plans={[crossPlan]} displayProperties={titleProperty} view="week" rangeStart={weeks[0]!.rangeStart} rangeEnd={weeks[0]!.rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+
+    for (const week of weeks) {
+      view.rerender(
+        <GanttTimeline plans={[crossPlan]} displayProperties={titleProperty} view="week" rangeStart={week.rangeStart} rangeEnd={week.rangeEnd} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+      );
+      // rerender 后甘特异步重建，旧 DOM 会短暂残留：先等条几何切到新视图再断言文字。
+      const { label } = await waitFor(() => {
+        const bar = view.container.querySelector<SVGRectElement>(".bar-wrapper .bar");
+        const label = view.container.querySelector<SVGTextElement>(".bar-wrapper .bar-label");
+        expect(bar).not.toBeNull();
+        expect(label).not.toBeNull();
+        expect(Number(bar!.getAttribute("x"))).toBeCloseTo(week.expectedBarX);
+        return { label: label! };
+      });
+      expect(Number(label.getAttribute("x"))).toBeCloseTo(week.expectedX);
+      expect(Number(label.getAttribute("x"))).toBeGreaterThanOrEqual(0);
+      expect(Number(label.getAttribute("x"))).toBeLessThanOrEqual(700);
+    }
+    view.unmount();
+  });
+
+  it("月视图跨月计划同样锚定可见残段中点", async () => {
+    // 8 月视图（31 天 × 32px = 画布 992）：计划 07-28 ~ 08-03 → 条 [−128, 96]，
+    // 残段 [0, 96] → 锚点 48。
+    const crossMonthPlan = { ...plan, startAt: localIso(2026, 7, 28), endAt: localIso(2026, 8, 3) };
+    const { container } = render(
+      <GanttTimeline plans={[crossMonthPlan]} displayProperties={titleProperty} view="month" rangeStart={new Date(2026, 7, 1)} rangeEnd={new Date(2026, 8, 1)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+    );
+
+    const { bar, label } = await readBarLabel(container);
+    expect(Number(bar.getAttribute("x"))).toBeCloseTo(-128);
+    expect(Number(bar.getAttribute("width"))).toBeCloseTo(224);
+    expect(Number(label.getAttribute("x"))).toBeCloseTo(48);
+    expect(Number(label.getAttribute("x"))).toBeGreaterThanOrEqual(0);
+    expect(Number(label.getAttribute("x"))).toBeLessThanOrEqual(992);
+  });
+
+  it("贴画布左缘的窄条在测宽可用时把文字钳回画布内完整可见", async () => {
+    // jsdom 无 getComputedTextLength → 默认退化为仅锚定；本例注入测宽（宽 300px）
+    // 走真实钳制路径：段中点 50 → [−100, 200] 超左界 → 钳到 150（左缘齐画布）。
+    const firstDayPlan = { ...plan, startAt: localIso(2026, 8, 3), endAt: localIso(2026, 8, 3) };
+    const svgPrototype = SVGElement.prototype as SVGElement & { getComputedTextLength?: () => number };
+    const originalMeasure = svgPrototype.getComputedTextLength;
+    Object.defineProperty(svgPrototype, "getComputedTextLength", { configurable: true, value: () => 300 });
+    try {
+      const { container } = render(
+        <GanttTimeline plans={[firstDayPlan]} displayProperties={titleProperty} view="week" rangeStart={new Date(2026, 7, 3)} rangeEnd={new Date(2026, 7, 10)} onScheduleChange={vi.fn()} onSelect={vi.fn()} />,
+      );
+
+      const { label } = await readBarLabel(container);
+      expect(Number(label.getAttribute("x"))).toBeCloseTo(150);
+      expect(label.textContent).toBe("设计评审");
+    } finally {
+      if (originalMeasure) Object.defineProperty(svgPrototype, "getComputedTextLength", { configurable: true, value: originalMeasure });
+      else delete svgPrototype.getComputedTextLength;
+    }
+  });
+
+  it("拖拽拉宽条尾超出画布时，条内文字实时钳回可见段中点", async () => {
+    // 尾日单日计划条 [600, 700]：右缘拉宽 100px 后条 [600, 800] 超画布，
+    // 新规则锚定可见段 [600, 700] 中点 650（旧规则为全跨度中点 700，半边出界）。
+    const onScheduleChange = vi.fn();
+    const edgePlan = { ...plan, startAt: localIso(2026, 8, 9), endAt: localIso(2026, 8, 9) };
+    const { container } = render(
+      <GanttTimeline plans={[edgePlan]} displayProperties={titleProperty} view="week" rangeStart={new Date(2026, 7, 3)} rangeEnd={new Date(2026, 7, 10)} onScheduleChange={onScheduleChange} onSelect={vi.fn()} />,
+    );
+
+    const rightHandle = await waitFor(() => {
+      const element = container.querySelector<SVGRectElement>(".handle.right");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    const svg = container.querySelector<SVGSVGElement>("svg.gantt")!;
+    const startX = Number(rightHandle.getAttribute("x"));
+
+    fireEvent(rightHandle, mouseEventWithOffset("mousedown", startX));
+    fireEvent(svg, mouseEventWithOffset("mousemove", startX + 100));
+
+    const label = container.querySelector<SVGTextElement>(".bar-wrapper .bar-label")!;
+    expect(Number(label.getAttribute("x"))).toBeCloseTo(650);
+
+    fireEvent(svg, mouseEventWithOffset("mouseup", startX + 100));
+    await waitFor(() => expect(onScheduleChange).toHaveBeenCalledOnce());
+  });
+});
+
 describe("timeline reminder bells", () => {
   const rangeStart = new Date(2026, 7, 3);
   const rangeEnd = new Date(2026, 7, 10);

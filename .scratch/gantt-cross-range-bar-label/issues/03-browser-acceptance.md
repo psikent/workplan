@@ -1,6 +1,6 @@
 # 03 — 隔离实例真实浏览器验收
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02
 Spec: ../spec.md
 Scope: .scratch/gantt-cross-range-bar-label/qa/(证据目录)
@@ -19,3 +19,11 @@ Scope: .scratch/gantt-cross-range-bar-label/qa/(证据目录)
 ## 验收
 
 - spec 验收标准 2 清单逐项通过并附截图证据。
+
+## Comments
+
+### 2026-09-09 验收通过
+
+- 隔离实例（临时 DATA_DIR，PORT=3102，server+web 全新构建，真实库未动）；setup token 建临时账号，API 造数 5 计划（跨 2 周/跨 3 周/跨月/窄段+超长标签/范围内对照）+ 备注三色选项字段 + 负责人文本字段；playwright-core + 系统 Chromium 无头截图，localStorage 直写甘特显示属性与主题，直连 URL 切换视图。
+- spec 验收标准 2 逐项通过：跨 2 周计划起始周/结束周文字均可见且居中于该周残段（修复前结束周整体不可见）；跨 3 周三周均可见；月视图跨月两端（9 月左残段 + 8 月滚动至月尾右残段）同验；390px 窄视口超长标签单行截断追加「…」且钳入画布；悬浮 tooltip 全标题 + 状态 + 负责人完整；范围内对照计划外观不变；浅/暗两主题全量复验；备注着色与图例顺带复验不回归。
+- 证据：18 张截图 + 结论表见 [qa/README.md](../qa/README.md)。

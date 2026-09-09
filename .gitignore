@@ -32,3 +32,6 @@ dev.log
 
 # dev log shell output
 dev-console.log
+
+# QA 截图证据体积大且可由票据步骤复现,只入库结论文档
+.scratch/**/qa/*.png

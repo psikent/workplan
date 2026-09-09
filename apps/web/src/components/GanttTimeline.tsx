@@ -142,7 +142,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
     let disposed = false;
     let currentMarkerFrame: number | null = null;
     let cleanupScheduleInteraction = () => {};
-    let cleanupCenteredLabels = () => {};
+    let cleanupPositionedLabels = () => {};
     let cleanupVerticalScrollSync = () => {};
     let cleanupPlanRowHover = () => {};
     let cleanupPopupFollow = () => {};
@@ -152,6 +152,8 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
     const container = containerRef.current;
     if (!container) return;
     if (columnWidth <= 0) return;
+    // 甘特画布宽（spec gantt-cross-range-bar-label R1）：条内文字钳制与可见条段的判定边界。
+    const canvasWidth = dayCount * columnWidth;
 
     void loadGantt().then((Gantt) => {
       if (disposed || !containerRef.current) return;
@@ -241,9 +243,9 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
        }
       ensureCurrentDateMarker(gantt, containerRef.current, exactRangeStart, exactRangeEnd);
       centerDateMarkersWithinDayColumns(containerRef.current, columnWidth);
-      applyWholeDayBarGeometry(containerRef.current, plansById, exactRangeStart, columnWidth, remarksColorByValue);
+      applyWholeDayBarGeometry(containerRef.current, plansById, exactRangeStart, columnWidth, canvasWidth, remarksColorByValue);
       alignCurrentDateMarker(containerRef.current);
-      cleanupCenteredLabels = keepGanttLabelsCentered(containerRef.current);
+      cleanupPositionedLabels = keepGanttLabelsPositioned(containerRef.current, canvasWidth);
       trimGanttToPlanRows(containerRef.current, Math.max(plans.length, 1));
       // 收起态下任务列表不可见：不挂接双向滚动/悬停同步，展开后随图表重建恢复。
       cleanupVerticalScrollSync = taskListCollapsed ? () => {} : synchronizeVerticalScroll(
@@ -256,6 +258,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
       if (!readOnly) {
         cleanupScheduleInteraction = configureScheduleInteraction(containerRef.current, {
           columnWidth,
+          canvasWidth,
           getPlanById: (planId) => plansByIdRef.current.get(planId),
           onScheduleChange: (plan, startAt, endAt) => onScheduleChangeRef.current(plan, startAt, endAt),
         });
@@ -290,7 +293,7 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
     return () => {
       disposed = true;
       if (currentMarkerFrame !== null) window.cancelAnimationFrame(currentMarkerFrame);
-      cleanupCenteredLabels();
+      cleanupPositionedLabels();
       cleanupVerticalScrollSync();
       cleanupPlanRowHover();
       cleanupPopupFollow();
@@ -666,6 +669,8 @@ function escapeHtml(value: string) {
 // 在每个被跨及视图里锚定该视图残段中点，而非全跨度中点（后者会落在画布外被整体裁掉）。
 // 文字允许溢出条外（现状窄条即如此）；仅当溢出画布时平移钳入（钳不住时左缘 ≥ 0 优先），
 // 画布宽容不下时逐字收敛为「前缀 + …」再钳入。测宽缺失/为 0（jsdom）→ 退化为仅锚定不改文本。
+// 契约：barX/barWidth/canvasWidth 与 measureText 返回值须为有限数；非有限输入的
+// 行为未定义（当前所有调用点上游均有有限值守卫）。
 export function layoutBarLabel(options: {
   barX: number;
   barWidth: number;
@@ -696,7 +701,37 @@ export function layoutBarLabel(options: {
   return { x: Math.max(Math.min(anchor, canvasWidth - halfWidth), halfWidth), text: fittedText };
 }
 
-function keepGanttLabelsCentered(mount: HTMLElement) {
+// 逐字符串测宽（spec gantt-cross-range-bar-label R2）：向同一 SVG 挂临时探针
+// <text class="bar-label">（.gantt-mount 后代，继承同一套字体样式）测长即删。
+// 探针不在任何 bar-group/bar-wrapper 内，frappe 与本组件对 .bar-label 的查询
+// 都按容器作用域查找，不会命中它。结果按文本记忆化——截断收敛与拖拽期间
+// 反复测量同一批候选串，避免每帧几十次探针插入 + 强制布局。
+// jsdom 无 getComputedTextLength → 恒 0，layoutBarLabel 走仅锚定退化路径。
+function createBarLabelMeasurer(label: SVGTextElement) {
+  const svg = label.ownerSVGElement;
+  const available = typeof label.getComputedTextLength === "function";
+  const cache = new Map<string, number>();
+  return (text: string) => {
+    if (!available || !svg || !svg.isConnected) return 0;
+    const cached = cache.get(text);
+    if (cached !== undefined) return cached;
+    const probe = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    probe.setAttribute("class", "bar-label");
+    svg.append(probe);
+    let width = 0;
+    try {
+      probe.textContent = text;
+      const measured = probe.getComputedTextLength();
+      width = Number.isFinite(measured) ? measured : 0;
+    } finally {
+      probe.remove();
+    }
+    cache.set(text, width);
+    return width;
+  };
+}
+
+function keepGanttLabelsPositioned(mount: HTMLElement, canvasWidth: number) {
   const observers: MutationObserver[] = [];
 
   for (const wrapper of mount.querySelectorAll<SVGGElement>(".bar-wrapper")) {
@@ -704,19 +739,23 @@ function keepGanttLabelsCentered(mount: HTMLElement) {
     const label = wrapper.querySelector<SVGTextElement>(".bar-label");
     if (!bar || !label) continue;
 
-    const centerLabel = () => {
+    // 测宽器按标签只建一次（内含记忆化缓存），观察器多次触发共享。
+    const measureText = createBarLabelMeasurer(label);
+    const positionLabel = () => {
       const x = Number(bar.getAttribute("x"));
       const width = Number(bar.getAttribute("width"));
       if (!Number.isFinite(x) || !Number.isFinite(width)) return;
-      const centeredX = String(x + width / 2);
-      if (label.getAttribute("x") !== centeredX) label.setAttribute("x", centeredX);
+      const layout = layoutBarLabel({ barX: x, barWidth: width, canvasWidth, text: label.textContent ?? "", measureText });
+      const positionedX = String(layout.x);
+      if (label.getAttribute("x") !== positionedX) label.setAttribute("x", positionedX);
+      if (label.textContent !== layout.text) label.textContent = layout.text;
       if (label.getAttribute("text-anchor") !== "middle") label.setAttribute("text-anchor", "middle");
       if (label.classList.contains("big")) label.classList.remove("big");
     };
 
-    centerLabel();
+    positionLabel();
     if (typeof MutationObserver === "undefined") continue;
-    const observer = new MutationObserver(centerLabel);
+    const observer = new MutationObserver(positionLabel);
     observer.observe(bar, { attributes: true, attributeFilter: ["x", "width"] });
     observer.observe(label, { attributes: true, attributeFilter: ["x", "class", "text-anchor"] });
     observers.push(observer);
@@ -806,7 +845,7 @@ function isStartOfLocalDay(date: Date) {
     && date.getMilliseconds() === 0;
 }
 
-function applyWholeDayBarGeometry(mount: HTMLElement, plansById: Map<string, WorkPlan>, rangeStart: Date, columnWidth: number, remarksColorByValue: ReadonlyMap<string, string>) {
+function applyWholeDayBarGeometry(mount: HTMLElement, plansById: Map<string, WorkPlan>, rangeStart: Date, columnWidth: number, canvasWidth: number, remarksColorByValue: ReadonlyMap<string, string>) {
   for (const wrapper of mount.querySelectorAll<SVGGElement>(".bar-wrapper")) {
     const plan = plansById.get(wrapper.dataset.id ?? "");
     const bar = wrapper.querySelector<SVGRectElement>(".bar");
@@ -840,7 +879,12 @@ function applyWholeDayBarGeometry(mount: HTMLElement, plansById: Map<string, Wor
     }
 
     const label = wrapper.querySelector<SVGTextElement>(".bar-label");
-    if (label) label.setAttribute("x", String(x + width / 2));
+    if (label) {
+      // 条内文字走可见条段布局（spec R1/R2）：几何残段中点 + 画布钳制/截断。
+      const layout = layoutBarLabel({ barX: x, barWidth: width, canvasWidth, text: label.textContent ?? "", measureText: createBarLabelMeasurer(label) });
+      if (label.textContent !== layout.text) label.textContent = layout.text;
+      label.setAttribute("x", String(layout.x));
+    }
     const highlight = mount.querySelector<HTMLElement>(`.date-range-highlight.highlight-${plan.id}`);
     if (highlight) {
       highlight.style.left = `${x}px`;
@@ -1006,6 +1050,7 @@ export function alignDateHeaderContentVertically(mount: HTMLElement) {
 
 function configureScheduleInteraction(mount: HTMLElement, options: {
   columnWidth: number;
+  canvasWidth: number;
   getPlanById: (planId: string) => WorkPlan | undefined;
   onScheduleChange: Props["onScheduleChange"];
 }) {
@@ -1084,13 +1129,19 @@ function configureScheduleInteraction(mount: HTMLElement, options: {
       const initialWidth = Number(bar.getAttribute("width"));
       const label = wrapper.querySelector<SVGTextElement>(".bar-label");
       const highlight = mount.querySelector<HTMLElement>(`.date-range-highlight.highlight-${plan.id}`);
+      const measureLabelText = label ? createBarLabelMeasurer(label) : null;
       let snappedDelta = 0;
 
       const renderScheduleGeometry = (nextX: number, nextWidth: number) => {
         bar.setAttribute("x", String(nextX));
         bar.setAttribute("width", String(nextWidth));
         positionHandles();
-        if (label) label.setAttribute("x", String(nextX + nextWidth / 2));
+        if (label && measureLabelText) {
+          // 拖拽期间条内文字随 nextX/nextWidth 走同一可见条段布局（spec R3）。
+          const layout = layoutBarLabel({ barX: nextX, barWidth: nextWidth, canvasWidth: options.canvasWidth, text: label.textContent ?? "", measureText: measureLabelText });
+          if (label.textContent !== layout.text) label.textContent = layout.text;
+          label.setAttribute("x", String(layout.x));
+        }
         if (highlight) {
           highlight.style.left = `${nextX}px`;
           highlight.style.width = `${nextWidth}px`;
