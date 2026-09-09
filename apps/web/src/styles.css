@@ -197,8 +197,8 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .table-toolbar-left { display: flex; align-items: center; gap: 12px; }
 .table-toolbar-center { position: relative; grid-column: 2; display: inline-flex; align-items: center; }
 .table-toolbar-center > strong { font-size: 14px; font-weight: 650; white-space: nowrap; }
-/* 甘特备注颜色图例（spec gantt-color-by-remarks R6）：面板头部中央，按选项顺序 + 末尾「未设置」。 */
-.gantt-legend { display: inline-flex; align-items: center; gap: 12px; margin-left: 14px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+/* 甘特备注颜色图例（spec gantt-color-by-remarks R6）：时间轴底部栏右端，按选项顺序 + 末尾「未设置」。 */
+.gantt-legend { grid-column: 1; grid-row: 2; justify-self: end; align-self: center; justify-content: flex-end; z-index: 1; display: inline-flex; align-items: center; gap: 12px; padding: 0 17px 0 14px; max-width: 100%; overflow: hidden; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .gantt-legend-item { display: inline-flex; align-items: center; gap: 5px; }
 .gantt-legend-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gantt-bar); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .18); }
 /* 全屏入口：绝对锚定在中央日期标题右侧，不占布局空间，标题视觉中心不变 */
@@ -267,8 +267,8 @@ svg:not(.gantt):not(.brand-mark) { width: 18px; height: 18px; stroke-width: 1.8;
 .timeline-empty { position: absolute; z-index: 2; inset: 46px 0 0; display: grid; place-items: center; min-height: 0; color: var(--muted); font-size: 13px; pointer-events: none; }
 .table-footer { display: flex; align-items: center; justify-content: space-between; padding: 0 17px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 
-.planner-timeline { position: relative; grid-column: 3; grid-row: 2; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) 46px; overflow: hidden; }
-.planner-timeline::after { content: ""; grid-row: 2; border-top: 1px solid var(--line); background: var(--surface); }
+.planner-timeline { position: relative; grid-column: 3; grid-row: 2; min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 46px; overflow: hidden; }
+.planner-timeline::after { content: ""; grid-column: 1; grid-row: 2; border-top: 1px solid var(--line); background: var(--surface); }
 .gantt-shell { position: relative; grid-row: 1; width: 100%; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); }
 .gantt-mount { min-width: 100%; height: 100%; min-height: 0; }
 .gantt-mount .gantt-container { height: 100%; overflow: auto; border-radius: 0; scrollbar-width: none; -ms-overflow-style: none; }

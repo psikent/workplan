@@ -1056,20 +1056,6 @@ export default function WorkPlansPage() {
           </div>
           <span className="table-toolbar-center">
             <strong>{rangeTitle}</strong>
-            {remarksLegendVisible ? (
-              <span className="gantt-legend" role="list" aria-label="备注颜色图例">
-                {remarksGanttOptions.map((option) => (
-                  <span key={option.value} className="gantt-legend-item" role="listitem">
-                    <i className="gantt-legend-dot" style={option.color ? { backgroundColor: option.color } : undefined} />
-                    {option.label}
-                  </span>
-                ))}
-                <span className="gantt-legend-item" role="listitem">
-                  <i className="gantt-legend-dot" />
-                  未设置
-                </span>
-              </span>
-            ) : null}
             <button className="icon-button gantt-fullscreen-toggle" type="button" aria-label={ganttFullscreen ? "退出全屏" : "进入全屏"} title={ganttFullscreen ? "退出全屏" : "进入全屏"} onClick={toggleGanttFullscreen}>{ganttFullscreen ? <Minimize /> : <Maximize />}</button>
           </span>
           <div className="table-toolbar-actions">
@@ -1123,6 +1109,20 @@ export default function WorkPlansPage() {
           onDoubleClick={() => setListPercent(defaultListPercent)}
         />
         <div className="planner-timeline">
+          {remarksLegendVisible ? (
+            <span className="gantt-legend" role="list" aria-label="备注颜色图例">
+              {remarksGanttOptions.map((option) => (
+                <span key={option.value} className="gantt-legend-item" role="listitem">
+                  <i className="gantt-legend-dot" style={option.color ? { backgroundColor: option.color } : undefined} />
+                  {option.label}
+                </span>
+              ))}
+              <span className="gantt-legend-item" role="listitem">
+                <i className="gantt-legend-dot" />
+                未设置
+              </span>
+            </span>
+          ) : null}
           <GanttTimeline plans={plans} reminders={remindersQuery.data?.days ?? EMPTY_REMINDER_DAYS} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} ownerField={ownerField} remarksOptions={remarksGanttOptions} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} rebuildKey={ganttRebuildKey} />
         </div>
       </div>
