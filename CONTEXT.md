@@ -194,3 +194,19 @@ _Avoid_: Next week, seven-day window
 **Production Work (生产类工作)**:
 A Work Plan whose Plan Nature is 生产类; an unset or 非生产类 Plan Nature is not Production Work. The workbench plan groups and the workbench status summary cover Production Work only; Reminders are independent of Plan Nature.
 _Avoid_: 生产计划, production plan, 生产任务
+
+**Week View (周视图)**:
+The Gantt presentation showing exactly one calendar week at a time — Monday 00:00 to the next Monday 00:00, sharing the Work Plan Time Range's half-open boundary. Navigating moves week by week, and a Work Plan appears in every week its Time Range intersects.
+_Avoid_: frappe Week view mode, seven-day window
+
+**Month View (月视图)**:
+The Gantt presentation showing exactly one calendar month at a time; navigating moves month by month, and a Work Plan appears in every month its Time Range intersects.
+_Avoid_: frappe Month view mode
+
+**Visible Segment (可见条段)**:
+The intersection of a Work Plan's Time Range with the range a Week View or Month View presents — the part of its Gantt bar that can appear in that view. A plan shown in a view always has a non-empty Visible Segment in it.
+_Avoid_: clipped bar, week slice, 残段
+
+**Gantt Bar Label (甘特条内文字)**:
+The single line of text shown with a Gantt bar, composed of the plan's selected Gantt bar display properties in order. It is centered on the bar's Visible Segment, always kept inside the presented range, and truncated with an ellipsis only when that range cannot hold it; the Gantt tooltip always carries the full content.
+_Avoid_: bar title, task name label, 条外文字
