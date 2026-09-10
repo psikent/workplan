@@ -107,7 +107,21 @@ function sample(p, maskable) {
   return { cover: tileCover, color };
 }
 
-function render(size, maskable = false) {
+function sampleFlatTouchIcon(p) {
+  const gp = { x: p.x - GLYPH_TRANSLATE.x, y: p.y - GLYPH_TRANSLATE.y };
+  const glyphBodySd = sdRoundRect(gp, GLYPH_RECT);
+  let glyphCover = clamp(STROKE / 2 + 0.5 - Math.abs(glyphBodySd), 0, 1);
+  for (const [a, b] of GLYPH_SEGMENTS) {
+    glyphCover = Math.max(glyphCover, clamp(STROKE / 2 + 0.5 - sdSegment(gp, a, b), 0, 1));
+  }
+
+  return {
+    cover: 1,
+    color: blend(TILE_MIDDLE, GLYPH_COLOR, glyphCover),
+  };
+}
+
+function renderWithSampler(size, sampler) {
   const rgba = Buffer.alloc(size * size * 4);
   const SS = 4;
   for (let y = 0; y < size; y++) {
@@ -119,7 +133,7 @@ function render(size, maskable = false) {
             x: ((x + (sx + 0.5) / SS) / size) * 40,
             y: ((y + (sy + 0.5) / SS) / size) * 40,
           };
-          const s = sample(p, maskable);
+          const s = sampler(p);
           r += s.color[0];
           g += s.color[1];
           b += s.color[2];
@@ -135,6 +149,14 @@ function render(size, maskable = false) {
     }
   }
   return rgba;
+}
+
+function render(size, maskable = false) {
+  return renderWithSampler(size, (p) => sample(p, maskable));
+}
+
+function renderFlatTouchIcon(size) {
+  return renderWithSampler(size, sampleFlatTouchIcon);
 }
 
 function crc32(buf) {
@@ -228,7 +250,7 @@ const GLYPH_SVG = [
 mkdirSync(outDir, { recursive: true });
 writeFileSync(join(outDir, "favicon.svg"), GLYPH_SVG);
 writeFileSync(join(outDir, "favicon.ico"), encodeIco([16, 32, 48, 256]));
-writeFileSync(join(outDir, "apple-touch-icon.png"), encodePng(render(180, true), 180));
+writeFileSync(join(outDir, "apple-touch-icon.png"), encodePng(renderFlatTouchIcon(180), 180));
 writeFileSync(join(outDir, "brand-preview.png"), encodePng(render(256), 256));
 writeFileSync(join(outDir, "pwa-192x192.png"), encodePng(render(192), 192));
 writeFileSync(join(outDir, "pwa-512x512.png"), encodePng(render(512), 512));
