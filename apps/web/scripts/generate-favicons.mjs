@@ -8,6 +8,8 @@ const outDir = process.argv[2] ? join(process.cwd(), process.argv[2]) : join(dir
 const TILE = { cx: 20, cy: 20, hx: 19.5, hy: 19.5, r: 10.5 };
 const GLYPH_TRANSLATE = { x: 8, y: 7.6 };
 const STROKE = 2.1;
+const TOUCH_ICON_STROKE = 2.7;
+const TOUCH_ICON_EDGE_FEATHER = 0.14;
 const TILE_TOP = [0x54, 0xdf, 0xeb];
 const TILE_MIDDLE = [0x08, 0x91, 0xb2];
 const TILE_BOTTOM = [0x02, 0x59, 0x78];
@@ -110,9 +112,14 @@ function sample(p, maskable) {
 function sampleFlatTouchIcon(p) {
   const gp = { x: p.x - GLYPH_TRANSLATE.x, y: p.y - GLYPH_TRANSLATE.y };
   const glyphBodySd = sdRoundRect(gp, GLYPH_RECT);
-  let glyphCover = clamp(STROKE / 2 + 0.5 - Math.abs(glyphBodySd), 0, 1);
+  const crispStroke = (distance) => 1 - smoothstep(
+    TOUCH_ICON_STROKE / 2 - TOUCH_ICON_EDGE_FEATHER,
+    TOUCH_ICON_STROKE / 2 + TOUCH_ICON_EDGE_FEATHER,
+    distance,
+  );
+  let glyphCover = crispStroke(Math.abs(glyphBodySd));
   for (const [a, b] of GLYPH_SEGMENTS) {
-    glyphCover = Math.max(glyphCover, clamp(STROKE / 2 + 0.5 - sdSegment(gp, a, b), 0, 1));
+    glyphCover = Math.max(glyphCover, crispStroke(sdSegment(gp, a, b)));
   }
 
   return {
