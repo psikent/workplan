@@ -1,15 +1,14 @@
 import { deflateSync } from "node:zlib";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const outDir = process.argv[2] ? join(process.cwd(), process.argv[2]) : join(dirname(fileURLToPath(import.meta.url)), "../public");
+const touchIconSource = join(dirname(fileURLToPath(import.meta.url)), "calendar-icon.png");
 
 const TILE = { cx: 20, cy: 20, hx: 19.5, hy: 19.5, r: 10.5 };
 const GLYPH_TRANSLATE = { x: 8, y: 7.6 };
 const STROKE = 2.1;
-const TOUCH_ICON_STROKE = 2.7;
-const TOUCH_ICON_EDGE_FEATHER = 0.14;
 const TILE_TOP = [0x54, 0xdf, 0xeb];
 const TILE_MIDDLE = [0x08, 0x91, 0xb2];
 const TILE_BOTTOM = [0x02, 0x59, 0x78];
@@ -109,25 +108,6 @@ function sample(p, maskable) {
   return { cover: tileCover, color };
 }
 
-function sampleFlatTouchIcon(p) {
-  const gp = { x: p.x - GLYPH_TRANSLATE.x, y: p.y - GLYPH_TRANSLATE.y };
-  const glyphBodySd = sdRoundRect(gp, GLYPH_RECT);
-  const crispStroke = (distance) => 1 - smoothstep(
-    TOUCH_ICON_STROKE / 2 - TOUCH_ICON_EDGE_FEATHER,
-    TOUCH_ICON_STROKE / 2 + TOUCH_ICON_EDGE_FEATHER,
-    distance,
-  );
-  let glyphCover = crispStroke(Math.abs(glyphBodySd));
-  for (const [a, b] of GLYPH_SEGMENTS) {
-    glyphCover = Math.max(glyphCover, crispStroke(sdSegment(gp, a, b)));
-  }
-
-  return {
-    cover: 1,
-    color: blend(TILE_MIDDLE, GLYPH_COLOR, glyphCover),
-  };
-}
-
 function renderWithSampler(size, sampler) {
   const rgba = Buffer.alloc(size * size * 4);
   const SS = 4;
@@ -160,10 +140,6 @@ function renderWithSampler(size, sampler) {
 
 function render(size, maskable = false) {
   return renderWithSampler(size, (p) => sample(p, maskable));
-}
-
-function renderFlatTouchIcon(size) {
-  return renderWithSampler(size, sampleFlatTouchIcon);
 }
 
 function crc32(buf) {
@@ -257,7 +233,7 @@ const GLYPH_SVG = [
 mkdirSync(outDir, { recursive: true });
 writeFileSync(join(outDir, "favicon.svg"), GLYPH_SVG);
 writeFileSync(join(outDir, "favicon.ico"), encodeIco([16, 32, 48, 256]));
-writeFileSync(join(outDir, "apple-touch-icon.png"), encodePng(renderFlatTouchIcon(180), 180));
+copyFileSync(touchIconSource, join(outDir, "apple-touch-icon.png"));
 writeFileSync(join(outDir, "brand-preview.png"), encodePng(render(256), 256));
 writeFileSync(join(outDir, "pwa-192x192.png"), encodePng(render(192), 192));
 writeFileSync(join(outDir, "pwa-512x512.png"), encodePng(render(512), 512));

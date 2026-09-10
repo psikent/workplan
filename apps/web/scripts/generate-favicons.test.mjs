@@ -34,10 +34,33 @@ function decodePng(path) {
   const raw = inflateSync(Buffer.concat(idat));
   const pixels = Buffer.alloc(width * height * 4);
   const stride = width * 4;
+  const paeth = (a, b, c) => {
+    const p = a + b - c;
+    const pa = Math.abs(p - a);
+    const pb = Math.abs(p - b);
+    const pc = Math.abs(p - c);
+    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+  };
   for (let y = 0; y < height; y++) {
     const row = y * (stride + 1);
-    expect(raw[row]).toBe(0);
-    raw.copy(pixels, y * stride, row + 1, row + 1 + stride);
+    const filter = raw[row];
+    const current = y * stride;
+    const previous = (y - 1) * stride;
+    for (let x = 0; x < stride; x++) {
+      const left = x >= 4 ? pixels[current + x - 4] : 0;
+      const up = y > 0 ? pixels[previous + x] : 0;
+      const upperLeft = y > 0 && x >= 4 ? pixels[previous + x - 4] : 0;
+      const value = raw[row + 1 + x];
+      pixels[current + x] = filter === 0
+        ? value
+        : filter === 1
+          ? (value + left) & 0xff
+          : filter === 2
+            ? (value + up) & 0xff
+            : filter === 3
+              ? (value + Math.floor((left + up) / 2)) & 0xff
+              : (value + paeth(left, up, upperLeft)) & 0xff;
+    }
   }
   return { width, height, pixels };
 }
@@ -59,38 +82,24 @@ afterAll(() => {
 });
 
 describe("generated Apple Touch icon", () => {
-  it("uses an opaque flat cyan field with a white calendar glyph", () => {
-    const icon = decodePng(join(outputDir, "apple-touch-icon.png"));
-    const flatCyan = [0x08, 0x91, 0xb2, 0xff];
+  it("copies the approved transparent calendar artwork exactly", () => {
+    const sourcePath = join(scriptDir, "calendar-icon.png");
+    const source = readFileSync(sourcePath);
+    const generated = readFileSync(join(outputDir, "apple-touch-icon.png"));
+    const published = readFileSync(join(scriptDir, "../public/apple-touch-icon.png"));
+    const sourceImage = decodePng(sourcePath);
 
-    expect([icon.width, icon.height]).toEqual([180, 180]);
-    expect(pixelAt(icon, 0, 0)).toEqual(flatCyan);
-    expect(pixelAt(icon, 179, 179)).toEqual(flatCyan);
-
-    let whitePixels = 0;
-    let offAxisPixels = 0;
-    for (let offset = 0; offset < icon.pixels.length; offset += 4) {
-      expect(icon.pixels[offset + 3]).toBe(0xff);
-      const red = icon.pixels[offset];
-      const green = icon.pixels[offset + 1];
-      const blue = icon.pixels[offset + 2];
-      const whiteMix = (red - flatCyan[0]) / (0xff - flatCyan[0]);
-      const expectedGreen = Math.round(flatCyan[1] + (0xff - flatCyan[1]) * whiteMix);
-      const expectedBlue = Math.round(flatCyan[2] + (0xff - flatCyan[2]) * whiteMix);
-      if (
-        red < flatCyan[0]
-        || red > 0xff
-        || Math.abs(green - expectedGreen) > 1
-        || Math.abs(blue - expectedBlue) > 1
-      ) {
-        offAxisPixels++;
-      }
-      if (red === 0xff && green === 0xff && blue === 0xff) {
-        whitePixels++;
-      }
+    expect(generated).toEqual(source);
+    expect(published).toEqual(source);
+    expect([sourceImage.width, sourceImage.height]).toEqual([512, 512]);
+    let alphaMin = 0xff;
+    let alphaMax = 0;
+    for (let offset = 3; offset < sourceImage.pixels.length; offset += 4) {
+      alphaMin = Math.min(alphaMin, sourceImage.pixels[offset]);
+      alphaMax = Math.max(alphaMax, sourceImage.pixels[offset]);
     }
-    expect(offAxisPixels).toBe(0);
-    expect(whitePixels).toBeGreaterThan(500);
+    expect(alphaMin).toBe(0);
+    expect(alphaMax).toBe(0xff);
   });
 
   it("keeps the detailed cyan treatment for PWA icons", () => {
