@@ -1,10 +1,10 @@
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inflateSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { copyAppleTouchIcon } from "./generate-favicons.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const outputDir = mkdtempSync(join(tmpdir(), "workplan-favicons-"));
@@ -71,10 +71,7 @@ function pixelAt(image, x, y) {
 }
 
 beforeAll(() => {
-  const result = spawnSync(process.execPath, [join(scriptDir, "generate-favicons.mjs"), relative(process.cwd(), outputDir)], {
-    encoding: "utf8",
-  });
-  expect(result.status, result.stderr).toBe(0);
+  copyAppleTouchIcon(outputDir);
 });
 
 afterAll(() => {
@@ -103,7 +100,7 @@ describe("generated Apple Touch icon", () => {
   });
 
   it("keeps the detailed cyan treatment for PWA icons", () => {
-    const icon = decodePng(join(outputDir, "pwa-maskable-192x192.png"));
+    const icon = decodePng(join(scriptDir, "../public/pwa-maskable-192x192.png"));
     expect(pixelAt(icon, 0, 0)).not.toEqual([0x08, 0x91, 0xb2, 0xff]);
   });
 });

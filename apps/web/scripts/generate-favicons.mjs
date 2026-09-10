@@ -1,10 +1,12 @@
 import { deflateSync } from "node:zlib";
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const outDir = process.argv[2] ? join(process.cwd(), process.argv[2]) : join(dirname(fileURLToPath(import.meta.url)), "../public");
-const touchIconSource = join(dirname(fileURLToPath(import.meta.url)), "calendar-icon.png");
+const scriptPath = fileURLToPath(import.meta.url);
+const scriptDir = dirname(scriptPath);
+const defaultOutDir = join(scriptDir, "../public");
+const touchIconSource = join(scriptDir, "calendar-icon.png");
 
 const TILE = { cx: 20, cy: 20, hx: 19.5, hy: 19.5, r: 10.5 };
 const GLYPH_TRANSLATE = { x: 8, y: 7.6 };
@@ -230,13 +232,25 @@ const GLYPH_SVG = [
   "</svg>",
 ].join("\n");
 
-mkdirSync(outDir, { recursive: true });
-writeFileSync(join(outDir, "favicon.svg"), GLYPH_SVG);
-writeFileSync(join(outDir, "favicon.ico"), encodeIco([16, 32, 48, 256]));
-copyFileSync(touchIconSource, join(outDir, "apple-touch-icon.png"));
-writeFileSync(join(outDir, "brand-preview.png"), encodePng(render(256), 256));
-writeFileSync(join(outDir, "pwa-192x192.png"), encodePng(render(192), 192));
-writeFileSync(join(outDir, "pwa-512x512.png"), encodePng(render(512), 512));
-writeFileSync(join(outDir, "pwa-maskable-192x192.png"), encodePng(render(192, true), 192));
-writeFileSync(join(outDir, "pwa-maskable-512x512.png"), encodePng(render(512, true), 512));
-console.log("favicons written to", outDir);
+export function copyAppleTouchIcon(outDir) {
+  mkdirSync(outDir, { recursive: true });
+  copyFileSync(touchIconSource, join(outDir, "apple-touch-icon.png"));
+}
+
+export function generateFavicons(outDir = defaultOutDir) {
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, "favicon.svg"), GLYPH_SVG);
+  writeFileSync(join(outDir, "favicon.ico"), encodeIco([16, 32, 48, 256]));
+  copyAppleTouchIcon(outDir);
+  writeFileSync(join(outDir, "brand-preview.png"), encodePng(render(256), 256));
+  writeFileSync(join(outDir, "pwa-192x192.png"), encodePng(render(192), 192));
+  writeFileSync(join(outDir, "pwa-512x512.png"), encodePng(render(512), 512));
+  writeFileSync(join(outDir, "pwa-maskable-192x192.png"), encodePng(render(192, true), 192));
+  writeFileSync(join(outDir, "pwa-maskable-512x512.png"), encodePng(render(512, true), 512));
+  console.log("favicons written to", outDir);
+}
+
+if (resolve(process.argv[1] ?? "") === scriptPath) {
+  const requestedOutDir = process.argv[2] ? resolve(process.cwd(), process.argv[2]) : defaultOutDir;
+  generateFavicons(requestedOutDir);
+}
