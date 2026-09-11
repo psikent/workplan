@@ -90,7 +90,7 @@ Its global name-to-account mappings are maintained by an Administrator in Settin
 _Avoid_: Account Custom Field, editable account snapshot
 
 **Owner Conflict (负责人时段冲突)**:
-A pairwise relation between two distinct active Work Plans whose `owner` Custom Field value is identical and non-empty and whose Work Plan Time Ranges intersect at exact instants (touching endpoints do not conflict). Conflicts never block saving; they are computed globally by the server on every plan query and surfaced as read-only alerts on Gantt bars, plan list rows, Gantt tooltips, and the editor drawer.
+A pairwise relation between two distinct active Work Plans whose `owner` Custom Field value is identical and non-empty and whose Work Plan Time Ranges intersect at exact instants (touching endpoints do not conflict). A draft or edited Work Plan participates only when its effective status under the draft values is active; editing excludes the persisted Work Plan itself, and editing an Occurrence evaluates only that Occurrence rather than future Occurrences in its Recurring Series. Conflicts never block selection or saving; they are computed globally by the server and surfaced as read-only alerts before and after an owner is selected, as well as on Gantt bars, plan list rows, and Gantt tooltips.
 _Avoid_: 资源冲突, transitive conflict group, client-side conflict check
 
 **Counterpart (冲突对象)**:

@@ -6,6 +6,7 @@ import {
   updateScheduleSchema,
   updateWorkPlanSchema,
   workPlanConflictCheckRequestSchema,
+  workPlanConflictPreviewRequestSchema,
   workPlanQueryRequestSchema,
 } from "@workplan/contracts";
 import { z } from "zod";
@@ -32,6 +33,13 @@ export async function registerWorkPlanRoutes(app: FastifyInstance, workPlans: Wo
     "/api/v1/work-plans/conflict-check",
     { schema: { body: workPlanConflictCheckRequestSchema } },
     async (request) => workPlans.conflictCheck(workPlanConflictCheckRequestSchema.parse(request.body)),
+  );
+
+  // 草稿全候选预览：无副作用，权限同查询端点（只读账户可用）。
+  app.post(
+    "/api/v1/work-plans/conflict-preview",
+    { schema: { body: workPlanConflictPreviewRequestSchema } },
+    async (request) => workPlans.conflictPreview(workPlanConflictPreviewRequestSchema.parse(request.body)),
   );
 
   app.post(

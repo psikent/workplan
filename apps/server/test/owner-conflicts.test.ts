@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeOwnerConflicts, conflictCounterpartsFor, type OwnerConflictItem } from "../src/modules/owner-conflicts.js";
+import { computeOwnerConflicts, conflictCounterpartsFor, conflictPreviewFor, type OwnerConflictItem } from "../src/modules/owner-conflicts.js";
 
 const item = (overrides: Partial<OwnerConflictItem> & { id: string }): OwnerConflictItem => ({
   label: `任务 ${overrides.id}`,
@@ -133,5 +133,30 @@ describe("conflictCounterpartsFor（实时校核核心，规格 R3）", () => {
 
   it("owner 为空直接返回空清单", () => {
     expect(conflictCounterpartsFor({ owner: "", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" }, [item({ id: "a" })])).toEqual([]);
+  });
+});
+
+describe("conflictPreviewFor（全候选草稿预览，规格 R2 扩展）", () => {
+  it("按 owner 返回稳定排序的全部 Counterparts，并排除自身、空值和非活跃项", () => {
+    const result = conflictPreviewFor(
+      { startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z", status: "pending" },
+      [
+        item({ id: "self", owner: " 张三 ", startAt: "2026-05-01T02:00:00.000Z" }),
+        item({ id: "z2", owner: "张三", startAt: "2026-05-01T04:00:00.000Z", endAt: "2026-05-01T05:00:00.000Z" }),
+        item({ id: "z1", owner: "张三", startAt: "2026-05-01T03:00:00.000Z", endAt: "2026-05-01T04:00:00.000Z" }),
+        item({ id: "l1", owner: "李四", startAt: "2026-05-01T03:00:00.000Z", endAt: "2026-05-01T04:00:00.000Z" }),
+        item({ id: "done", owner: "张三", status: "completed" }),
+        item({ id: "empty", owner: "" }),
+      ],
+      "self",
+    );
+    expect(Array.from(result.keys())).toEqual(["张三", "李四"]);
+    expect(counterpartIds(result.get("张三"))).toEqual(["z1", "z2"]);
+    expect(counterpartIds(result.get("李四"))).toEqual(["l1"]);
+  });
+
+  it("非活跃草稿不产生任何候选标记", () => {
+    expect(conflictPreviewFor({ startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z", status: "completed" }, [item({ id: "a" })])).toEqual(new Map());
+    expect(conflictPreviewFor({ startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z", status: "cancelled" }, [item({ id: "a" })])).toEqual(new Map());
   });
 });

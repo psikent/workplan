@@ -372,9 +372,11 @@ describe("WorkPlanDrawer", () => {
     const counterpart = { id: "8b6c2c1e-9b0d-4f8e-a1c2-3d4e5f6a7b8c", label: "现场勘查", startAt: plan.startAt, endAt: plan.endAt };
     const conflictedPlan: WorkPlan = {
       ...plan,
+      statusMode: "manual",
       customFields: { owner: "fengmingqian" },
       ownerConflict: { owner: "fengmingqian", counterparts: [counterpart] },
     };
+    const activePlan: WorkPlan = { ...plan, statusMode: "manual", customFields: {} };
     const hintPattern = /该负责人在此时段已有其他任务/;
 
     afterEach(() => {
@@ -383,11 +385,15 @@ describe("WorkPlanDrawer", () => {
       apiMock.mockReset();
     });
 
-    it("打开已冲突的计划立即提醒，无需等待防抖", () => {
+    it("打开已冲突的计划立即提醒，无需等待防抖", async () => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+      apiMock.mockResolvedValue({ evaluatedAt: "2026-08-10T00:00:00.000Z", conflicts: [{ owner: "fengmingqian", counterparts: [counterpart] }] });
       const view = render(
         <WorkPlanDrawer plan={conflictedPlan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} />,
       );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
 
       expect(view.container.querySelector(".owner-conflict-zone.owner-conflict-active")).toBeTruthy();
       expect(screen.getByText(hintPattern).textContent).toContain("与【现场勘查】");
@@ -395,11 +401,12 @@ describe("WorkPlanDrawer", () => {
       view.unmount();
     });
 
-    it("编辑负责人后防抖校核出现冲突，请求携带编辑中的 id 与区间；解除后提醒消失", async () => {
+    it("全候选预览携带草稿 id、状态与区间；切换负责人即时复用预览结果", async () => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
-      apiMock.mockResolvedValue({ owner: "fengmingqian", counterparts: [counterpart] });
+      vi.setSystemTime(new Date("2026-08-10T00:00:00.000Z"));
+      apiMock.mockResolvedValue({ evaluatedAt: "2026-08-10T00:00:00.000Z", conflicts: [{ owner: "fengmingqian", counterparts: [counterpart] }] });
       const view = render(
-        <WorkPlanDrawer plan={plan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} />,
+        <WorkPlanDrawer plan={activePlan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} />,
       );
       expect(screen.queryByText(hintPattern)).toBeNull();
 
@@ -412,43 +419,91 @@ describe("WorkPlanDrawer", () => {
       const [, init] = apiMock.mock.calls[0] as [string, RequestInit];
       expect(JSON.parse(String(init.body))).toEqual({
         id: plan.id,
-        owner: "fengmingqian",
+        status: "pending",
+        statusMode: "manual",
         startAt: plan.startAt,
         endAt: plan.endAt,
       });
       expect(screen.getByText(hintPattern).textContent).toContain("与【现场勘查】");
 
-      apiMock.mockResolvedValue({ owner: "linyaqian", counterparts: [] });
       fireEvent.change(screen.getByLabelText("工作负责人"), { target: { value: "linyaqian" } });
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(400);
-      });
-      expect(apiMock).toHaveBeenCalledTimes(2);
+      expect(apiMock).toHaveBeenCalledTimes(1);
       expect(screen.queryByText(hintPattern)).toBeNull();
       view.unmount();
     });
 
     it("owner 清空后不查询并清除提醒", async () => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
-      apiMock.mockResolvedValue({ owner: "fengmingqian", counterparts: [] });
+      apiMock.mockResolvedValue({ evaluatedAt: "2026-08-10T00:00:00.000Z", conflicts: [] });
       const view = render(
         <WorkPlanDrawer plan={plan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} />,
       );
 
       fireEvent.change(screen.getByLabelText("工作负责人"), { target: { value: "fengmingqian" } });
       fireEvent.change(screen.getByLabelText("工作负责人"), { target: { value: "" } });
-      await vi.advanceTimersByTimeAsync(400);
-      expect(apiMock).not.toHaveBeenCalled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(apiMock).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String((apiMock.mock.calls[0] as [string, RequestInit])[1].body))).not.toHaveProperty("owner");
       expect(screen.queryByText(hintPattern)).toBeNull();
+      view.unmount();
+    });
+
+    it("预览全部负责人并在冲突选项后追加数量标记", async () => {
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+      vi.setSystemTime(new Date("2026-08-10T00:00:00.000Z"));
+      apiMock.mockResolvedValue({
+        evaluatedAt: "2026-08-10T00:00:00.000Z",
+        conflicts: [
+          { owner: "fengmingqian", counterparts: [counterpart, { ...counterpart, id: "9b6c2c1e-9b0d-4f8e-a1c2-3d4e5f6a7b8c" }] },
+          { owner: "linyaqian", counterparts: [counterpart] },
+        ],
+      });
+      const view = render(<WorkPlanDrawer plan={activePlan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={vi.fn()} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      const options = within(screen.getByLabelText("工作负责人")).getAllByRole("option");
+      expect(options.map((option) => option.textContent)).toEqual(["请选择", "冯铭倩（⚠ 冲突 2 项）", "林雅茜（⚠ 冲突 1 项）"]);
+      expect(apiMock).toHaveBeenCalledTimes(1);
+      view.unmount();
+    });
+
+    it("候选预览结果同时驱动选中负责人详情，失败时显示不可用且不阻止保存", async () => {
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+      vi.setSystemTime(new Date("2026-08-10T00:00:00.000Z"));
+      apiMock.mockResolvedValue({ evaluatedAt: "2026-08-10T00:00:00.000Z", conflicts: [{ owner: "fengmingqian", counterparts: [counterpart] }] });
+      const onSave = vi.fn().mockResolvedValue(undefined);
+      const view = render(<WorkPlanDrawer plan={activePlan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={onSave} />);
+      fireEvent.change(screen.getByLabelText("工作负责人"), { target: { value: "fengmingqian" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(screen.getByText(hintPattern).textContent).toContain("与【现场勘查】");
+      expect(apiMock).toHaveBeenCalledTimes(1);
+
+      apiMock.mockRejectedValueOnce(new Error("network"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(screen.getByText("负责人冲突信息暂不可用")).toBeTruthy();
+      expect(screen.queryByText(hintPattern)).toBeNull();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "保存" }));
+        await Promise.resolve();
+      });
+      expect(onSave).toHaveBeenCalledTimes(1);
       view.unmount();
     });
 
     it("冲突提醒不阻止保存", async () => {
       const onSave = vi.fn().mockResolvedValue(undefined);
+      apiMock.mockResolvedValue({ evaluatedAt: "2026-08-10T00:00:00.000Z", conflicts: [{ owner: "fengmingqian", counterparts: [counterpart] }] });
       const view = render(
         <WorkPlanDrawer plan={conflictedPlan} fields={[ownerSelect]} open saving={false} onClose={vi.fn()} onSave={onSave} />,
       );
-      expect(screen.getByText(hintPattern)).toBeTruthy();
+      await waitFor(() => expect(screen.getByText(hintPattern)).toBeTruthy());
 
       fireEvent.click(screen.getByRole("button", { name: "保存" }));
       await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));

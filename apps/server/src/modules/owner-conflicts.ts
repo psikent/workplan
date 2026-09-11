@@ -85,6 +85,36 @@ export function conflictCounterpartsFor(
   return computeOwnerConflicts(withTarget).get(CONFLICT_CHECK_TARGET_ID)?.counterparts ?? [];
 }
 
+// 草稿预览：一次返回与假设目标时段相交的全部 owner 分组。目标状态由调用方按
+// automatic/manual 规则先求值；非活跃草稿不占用任何 owner，也不产生预览结果。
+export function conflictPreviewFor(
+  target: { startAt: string; endAt: string; status: WorkPlanStatus },
+  items: OwnerConflictItem[],
+  excludeId?: string,
+): Map<string, OwnerConflict> {
+  if (!ACTIVE_CONFLICT_STATUSES.has(target.status)) return new Map();
+
+  const groups = new Map<string, OwnerConflictItem[]>();
+  for (const item of items) {
+    if (item.id === excludeId || !ACTIVE_CONFLICT_STATUSES.has(item.status)) continue;
+    const owner = item.owner.trim();
+    if (!owner) continue;
+    const group = groups.get(owner);
+    if (group) group.push(item.owner === owner ? item : { ...item, owner });
+    else groups.set(owner, [item.owner === owner ? item : { ...item, owner }]);
+  }
+
+  const result = new Map<string, OwnerConflict>();
+  for (const [owner, group] of groups) {
+    const counterparts = group
+      .filter((item) => overlaps(target, item))
+      .sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt) || compareCodePointStrings(left.id, right.id))
+      .map((item) => ({ id: item.id, label: item.label, startAt: item.startAt, endAt: item.endAt }));
+    if (counterparts.length > 0) result.set(owner, { owner, counterparts });
+  }
+  return result;
+}
+
 type OwnerConflictRow = {
   id: string;
   title: string;

@@ -630,4 +630,60 @@ describe("Owner Conflict：全局冲突标记与实时校核（规格 R2/R3）",
     expect(byTitle.get("乙")?.ownerConflict).toBeNull();
     expect(counterpartIds(byTitle.get("丙"))).toEqual([a.id]);
   });
+
+  it("POST /conflict-preview 一次返回全部 owner 分组并排除自身", async () => {
+    const context = await createContext();
+    await createField(context, "owner", "single_select", [{ value: "zhangsan", label: "张三" }, { value: "lisi", label: "李四" }]);
+    const [self, zhang, li, completed] = await createPlans(context, [
+      { title: "自身", status: "pending", statusMode: "manual", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z", customFields: { owner: "zhangsan" } },
+      { title: "张三工作", status: "pending", statusMode: "manual", startAt: "2026-05-01T04:00:00.000Z", endAt: "2026-05-01T05:00:00.000Z", customFields: { owner: "zhangsan" } },
+      { title: "李四工作", status: "in_progress", statusMode: "manual", startAt: "2026-05-01T03:00:00.000Z", endAt: "2026-05-01T04:00:00.000Z", customFields: { owner: "lisi" } },
+      { title: "已完成", status: "completed", statusMode: "manual", startAt: "2026-05-01T03:00:00.000Z", endAt: "2026-05-01T05:00:00.000Z", customFields: { owner: "zhangsan" } },
+    ]);
+    const response = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plans/conflict-preview",
+      payload: { id: self.id, status: "pending", statusMode: "manual", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ conflicts: Array<{ owner: string; counterparts: Array<{ id: string }> }> }>();
+    expect(body.conflicts.map((entry) => entry.owner)).toEqual(["lisi", "zhangsan"]);
+    expect(body.conflicts.find((entry) => entry.owner === "zhangsan")?.counterparts.map((item) => item.id)).toEqual([zhang.id]);
+    expect(body.conflicts.find((entry) => entry.owner === "lisi")?.counterparts.map((item) => item.id)).toEqual([li.id]);
+    expect(body.conflicts.flatMap((entry) => entry.counterparts.map((item) => item.id))).not.toContain(self.id);
+    expect(body.conflicts.flatMap((entry) => entry.counterparts.map((item) => item.id))).not.toContain(completed.id);
+  });
+
+  it("conflict-preview respects automatic/manual draft status and exact endpoints", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-05-01T00:00:00.000Z"));
+    const context = await createContext();
+    await createField(context, "owner", "single_select", [{ value: "zhangsan", label: "张三" }]);
+    const [other] = await createPlans(context, [
+      { title: "相交工作", status: "pending", statusMode: "manual", startAt: "2026-05-01T04:00:00.000Z", endAt: "2026-05-01T05:00:00.000Z", customFields: { owner: "zhangsan" } },
+    ]);
+    const preview = (payload: Record<string, unknown>) => context.request({ method: "POST", url: "/api/v1/work-plans/conflict-preview", payload });
+    const active = await preview({ status: "pending", statusMode: "manual", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" });
+    expect(active.json<{ conflicts: Array<{ owner: string; counterparts: Array<{ id: string }> }> }>().conflicts[0]?.counterparts[0]?.id).toBe(other.id);
+    const automaticPending = await preview({ status: "completed", statusMode: "automatic", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" });
+    expect(automaticPending.json<{ conflicts: Array<{ owner: string }> }>().conflicts).toHaveLength(1);
+    const automaticInProgress = await preview({ status: "completed", statusMode: "automatic", startAt: "2026-05-01T00:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" });
+    expect(automaticInProgress.json<{ conflicts: Array<{ owner: string }> }>().conflicts).toHaveLength(1);
+    const inactive = await preview({ status: "completed", statusMode: "manual", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" });
+    expect(inactive.json<{ conflicts: unknown[] }>().conflicts).toEqual([]);
+    const automaticCompleted = await preview({ status: "pending", statusMode: "automatic", startAt: "2026-04-30T02:00:00.000Z", endAt: "2026-04-30T06:00:00.000Z" });
+    expect(automaticCompleted.json<{ conflicts: unknown[] }>().conflicts).toEqual([]);
+    const adjacent = await preview({ status: "pending", statusMode: "manual", startAt: "2026-05-01T05:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" });
+    expect(adjacent.json<{ conflicts: unknown[] }>().conflicts).toEqual([]);
+  });
+
+  it("conflict-preview rejects malformed payloads", async () => {
+    const context = await createContext();
+    const response = await context.request({
+      method: "POST",
+      url: "/api/v1/work-plans/conflict-preview",
+      payload: { status: "pending", statusMode: "manual", startAt: "2026-05-01T06:00:00.000Z", endAt: "2026-05-01T02:00:00.000Z", extra: true },
+    });
+    expect(response.statusCode).toBe(422);
+  });
 });

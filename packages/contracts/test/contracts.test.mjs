@@ -14,6 +14,8 @@ import {
   userRoles,
   workPlanConflictCheckRequestSchema,
   workPlanConflictCheckResponseSchema,
+  workPlanConflictPreviewRequestSchema,
+  workPlanConflictPreviewResponseSchema,
 } from "../src/index.ts";
 
 const planUuid = "123e4567-e89b-42d3-a456-426614174000";
@@ -109,6 +111,16 @@ describe("owner conflict contracts", () => {
     assert.equal(workPlanConflictCheckResponseSchema.safeParse({ owner: "zhangsan", counterparts: [] }).success, true);
     assert.equal(workPlanConflictCheckResponseSchema.safeParse({ owner: "zhangsan", counterparts: [counterpart] }).success, true);
     assert.equal(workPlanConflictCheckResponseSchema.safeParse({ owner: "zhangsan" }).success, false);
+  });
+
+  it("conflict-preview requires draft status and rejects unknown fields or invalid ranges", () => {
+    const valid = { status: "pending", statusMode: "manual", startAt: "2026-05-01T02:00:00.000Z", endAt: "2026-05-01T06:00:00.000Z" };
+    assert.equal(workPlanConflictPreviewRequestSchema.safeParse({ ...valid, id: planUuid }).success, true);
+    assert.equal(workPlanConflictPreviewRequestSchema.safeParse({ ...valid, extra: 1 }).success, false);
+    assert.equal(workPlanConflictPreviewRequestSchema.safeParse({ ...valid, status: "done" }).success, false);
+    assert.equal(workPlanConflictPreviewRequestSchema.safeParse({ ...valid, endAt: valid.startAt }).success, false);
+    assert.equal(workPlanConflictPreviewResponseSchema.safeParse({ evaluatedAt: "2026-05-01T00:00:00.000Z", conflicts: [] }).success, true);
+    assert.equal(workPlanConflictPreviewResponseSchema.safeParse({ evaluatedAt: "2026-05-01T00:00:00.000Z", conflicts: [{ owner: "zhangsan", counterparts: [counterpart] }] }).success, true);
   });
 
   it("create input (strict) rejects the derived ownerConflict field", () => {

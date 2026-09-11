@@ -4,16 +4,18 @@ import type {
   WorkPlan,
   WorkPlanConflictCheckRequest,
   WorkPlanConflictCheckResponse,
+  WorkPlanConflictPreviewRequest,
+  WorkPlanConflictPreviewResponse,
   WorkPlanQueryRequest,
   WorkPlanSearch,
   WorkPlanStatus,
   WorkPlanStatusMode,
 } from "@workplan/contracts";
-import { deriveWorkPlanStatus, naturalSortKey, normalizeDateTimeForSort } from "@workplan/contracts";
+import { compareCodePointStrings, deriveWorkPlanStatus, naturalSortKey, normalizeDateTimeForSort } from "@workplan/contracts";
 import type { DatabaseBundle } from "../db/index.js";
 import { invalidInput, notFound, versionConflict } from "../errors.js";
 import { newId, nowIso } from "../utils.js";
-import { conflictCounterpartsFor, loadOwnerConflictItems } from "./owner-conflicts.js";
+import { conflictCounterpartsFor, conflictPreviewFor, loadOwnerConflictItems } from "./owner-conflicts.js";
 import type { CustomFieldService } from "./custom-fields.js";
 import type { MonthlyGoalService } from "./monthly-goals.js";
 import type { OwnerAccountService } from "./owner-accounts.js";
@@ -88,6 +90,24 @@ export class WorkPlanService {
       input.id,
     );
     return { owner: input.owner, counterparts };
+  }
+
+  // 草稿全候选预览：只读、一次计算所有 owner 分组，当前计划 id 排除自身。
+  conflictPreview(input: WorkPlanConflictPreviewRequest): WorkPlanConflictPreviewResponse {
+    const evaluatedAt = nowIso();
+    const evaluatedAtMs = Date.parse(evaluatedAt);
+    const status = input.statusMode === "automatic"
+      ? deriveWorkPlanStatus(input.startAt, input.endAt, evaluatedAtMs)
+      : input.status;
+    const conflicts = conflictPreviewFor(
+      { startAt: input.startAt, endAt: input.endAt, status },
+      loadOwnerConflictItems(this.database, evaluatedAt),
+      input.id,
+    );
+    return {
+      evaluatedAt,
+      conflicts: Array.from(conflicts.values()).sort((left, right) => compareCodePointStrings(left.owner, right.owner)),
+    };
   }
 
   create(input: CreateWorkPlan): WorkPlan {

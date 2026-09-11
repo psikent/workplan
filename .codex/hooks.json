@@ -1,5 +1,5 @@
 {
-  "description": "WorkPlan automatic release check after each Codex turn; requires the local ignored .zcode/hooks/auto-release.sh and one-time review/trust in Codex /hooks.",
+  "description": "WorkPlan automatic release after each Codex turn; requires codex_hooks enabled, code-reviewer approval for dirty changes, and the local .zcode release hook.",
   "hooks": {
     "Stop": [
       {
@@ -7,8 +7,8 @@
           {
             "type": "command",
             "command": "bash \"$(git rev-parse --show-toplevel)/.codex/hooks/auto-release-codex.sh\"",
-            "timeout": 600,
-            "statusMessage": "回合结束 → 自动发布检查"
+            "timeout": 1200,
+            "statusMessage": "回合结束 → 验收、审查后自动提交、推送并发布 hk3"
           }
         ]
       }

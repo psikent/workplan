@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { deriveWorkPlanStatus } from "@workplan/contracts";
-import type { CreateWorkPlan, CustomFieldDefinition, MonthlyGoal, OwnerAccountMapping, OwnerConflictCounterpart, WorkPlan, WorkPlanConflictCheckResponse, WorkPlanSeries, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
+import type { CreateWorkPlan, CustomFieldDefinition, MonthlyGoal, OwnerAccountMapping, OwnerConflictCounterpart, WorkPlan, WorkPlanConflictPreviewResponse, WorkPlanSeries, WorkPlanStatus, WorkPlanStatusMode } from "@workplan/contracts";
 import { Archive, CalendarClock, ChevronDown, Copy, Repeat2, Target, X } from "lucide-react";
 import { api, jsonBody } from "../lib/api";
 import { formatDate, fromDateTimeLocal, statusLabels, toDateTimeLocal } from "../lib/format";
@@ -49,6 +49,8 @@ function isValidPlanRange(startAt: string, endAt: string): boolean {
   return Number.isFinite(startTimestamp) && Number.isFinite(endTimestamp) && endTimestamp > startTimestamp;
 }
 
+type ConflictPreviewState = "idle" | "disabled" | "loading" | "success" | "error";
+
 export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = [], monthlyGoalsLoading = false, initialDate = null, ownerAccountMappings = [], ownerAccountMappingsLoading = false, ownerAccountMappingsError = false, open, saving, readOnly = false, onClose, onSave, onDuplicate, onDelete }: Props) {
   const sortedMonthlyGoals = useMemo(
     () => [...monthlyGoals].sort((left, right) => right.year - left.year || right.month - left.month || left.createdAt.localeCompare(right.createdAt)),
@@ -77,13 +79,18 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
     [endAt, selectedMonthlyGoalIds, sortedMonthlyGoals, startAt],
   );
   const validPlanRange = isValidPlanRange(startAt, endAt);
+  const ownerFieldForPreview = fields.find((field) => !field.archivedAt && field.key === "owner");
+  const planId = plan?.id;
 
-  // 负责人冲突实时提醒（规格 R7）：初始态用 plan 快照携带的 ownerConflict，
-  // owner/起止任一变化后防抖调用 conflict-check 覆盖；仅提醒，不阻止保存。
-  const [conflictCounterparts, setConflictCounterparts] = useState<OwnerConflictCounterpart[] | null>(null);
-  const conflictCheckSequence = useRef(0);
+  // 负责人冲突预览（票据 02）：一次请求返回所有候选 owner 的冲突分组，
+  // 候选标记和已选负责人详情共用结果；仅提醒，不阻止保存。
+  const [conflictPreview, setConflictPreview] = useState<WorkPlanConflictPreviewResponse | null>(null);
+  const [conflictPreviewState, setConflictPreviewState] = useState<ConflictPreviewState>("idle");
+  const conflictPreviewSequence = useRef(0);
   const ownerValue = typeof customValues.owner === "string" ? customValues.owner : "";
-  const conflictCheckKey = `${ownerValue}|${startAt}|${endAt}`;
+  const normalizedOwnerValue = ownerValue.trim();
+  const draftStatus = statusMode === "manual" ? status : deriveWorkPlanStatus(startAt, endAt);
+  const draftIsActive = draftStatus === "pending" || draftStatus === "in_progress";
 
   // 表单重置只依赖 plan/open/initialDate：series 是异步加载的，若纳入此 effect，
   // 载入完成会把用户正在输入的表单整体打回 plan 快照（丢输入）。
@@ -116,35 +123,49 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
     setCustomValues((current) => ({ ...defaults, ...current }));
   }, [fields, open, plan]);
 
-  // 防抖实时校核：声明在表单重置 effect 之后、初始快照 effect 之前——挂载首轮
-  // customValues 尚未重置，其同步清除必须先于快照写入执行，否则会覆盖初始提醒。
+  // 全候选预览：声明在表单重置 effect 之后——打开或草稿时间/状态变化后防抖，
+  // 抽屉保持打开时每 30 秒刷新。服务端统一求值 automatic 状态和全局冲突。
   useEffect(() => {
-    if (!open) return;
-    // owner 为空或起止未填齐/区间非法：不发请求，清除提醒。
-    if (!ownerValue || !isValidPlanRange(startAt, endAt)) {
-      setConflictCounterparts(null);
+    // 依赖变化先使上一轮请求失效；每次定时刷新再单独取得新的序号。
+    ++conflictPreviewSequence.current;
+    if (!open || readOnly || ownerFieldForPreview?.type !== "single_select" || !validPlanRange) {
+      setConflictPreview(null);
+      setConflictPreviewState("disabled");
       return;
     }
     const startIso = fromDateTimeLocal(startAt);
     const endIso = fromDateTimeLocal(endAt);
-    const sequence = ++conflictCheckSequence.current;
-    const timer = window.setTimeout(() => {
-      api<WorkPlanConflictCheckResponse>("/work-plans/conflict-check", {
+    const execute = () => {
+      const requestSequence = ++conflictPreviewSequence.current;
+      setConflictPreview(null);
+      setConflictPreviewState("loading");
+      void Promise.resolve().then(() => api<WorkPlanConflictPreviewResponse>("/work-plans/conflict-preview", {
         method: "POST",
-        ...jsonBody({ ...(plan ? { id: plan.id } : {}), owner: ownerValue, startAt: startIso, endAt: endIso }),
-      }).then((result) => {
+        ...jsonBody({
+          ...(planId ? { id: planId } : {}),
+          status,
+          statusMode,
+          startAt: startIso,
+          endAt: endIso,
+        }),
+      })).then((result) => {
         // 竞态以最后一次请求为准。
-        if (conflictCheckSequence.current !== sequence) return;
-        setConflictCounterparts(result.counterparts.length > 0 ? result.counterparts : null);
-      }).catch(() => undefined);
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [conflictCheckKey, open, plan]);
-
-  useEffect(() => {
-    if (!open) return;
-    setConflictCounterparts(plan?.ownerConflict?.counterparts ?? null);
-  }, [open, plan]);
+        if (conflictPreviewSequence.current !== requestSequence) return;
+        setConflictPreview(result);
+        setConflictPreviewState("success");
+      }).catch(() => {
+        if (conflictPreviewSequence.current !== requestSequence) return;
+        setConflictPreview(null);
+        setConflictPreviewState("error");
+      });
+    };
+    const debounceTimer = window.setTimeout(execute, 400);
+    const refreshTimer = window.setInterval(execute, 30_000);
+    return () => {
+      window.clearTimeout(debounceTimer);
+      window.clearInterval(refreshTimer);
+    };
+  }, [endAt, open, ownerFieldForPreview?.id, ownerFieldForPreview?.type, planId, readOnly, startAt, status, statusMode, validPlanRange]);
 
   useEffect(() => {
     if (!open || statusMode !== "automatic" || !startAt || !endAt) return;
@@ -251,6 +272,17 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   const collapsedFields = activeFields.filter((field) => field.collapsed);
   const ownerField = activeFields.find((field) => field.key === "owner");
   const ownerOption = ownerField?.options.find((option) => option.value === customValues.owner);
+  const conflictCountByOwner = new Map((draftIsActive ? conflictPreview?.conflicts ?? [] : []).map((entry) => [entry.owner, entry.counterparts.length] as const));
+  const previewCounterparts = draftIsActive
+    ? conflictPreview?.conflicts.find((entry) => entry.owner === normalizedOwnerValue)?.counterparts ?? null
+    : null;
+  const conflictCounterparts = readOnly
+    ? plan?.ownerConflict?.counterparts ?? null
+    : conflictPreviewState === "success"
+      ? previewCounterparts
+      : conflictPreviewState === "idle"
+        ? plan?.ownerConflict?.counterparts ?? null
+        : null;
   const accountByOwnerName = new Map(ownerAccountMappings.map((mapping) => [mapping.ownerName, mapping.account]));
   const ownerAccount = ownerOption ? accountByOwnerName.get(ownerOption.label) ?? null : null;
   const ownerAccountDisplay = ownerAccountMappingsLoading
@@ -263,13 +295,14 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   const renderCustomField = (field: CustomFieldDefinition) => (
     field.key === "owner" ? (
       <div className={`owner-conflict-zone${conflictCounterparts ? " owner-conflict-active" : ""}`}>
-        <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} dataCustomField={field.key} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
+        <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} dataCustomField={field.key} ownerConflictCounts={conflictCountByOwner} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
         <label className="field derived-field"><span>工作负责人账号</span><input value={ownerAccountDisplay} readOnly aria-readonly="true" /></label>
         {conflictCounterparts ? (
           <p className="owner-conflict-hint" role="status">
             该负责人在此时段已有其他任务：{conflictCounterparts.map((counterpart) => `与【${counterpart.label}】${formatDate(counterpart.startAt, true)} - ${formatDate(counterpart.endAt, true)} 时间冲突`).join("；")}
           </p>
         ) : null}
+        {!readOnly && conflictPreviewState === "error" ? <p className="owner-conflict-unavailable" role="status">负责人冲突信息暂不可用</p> : null}
       </div>
     ) : (
       <CustomFieldControl field={field} value={customValues[field.key]} disabled={readOnly} dataCustomField={field.key} onChange={(value) => setCustomValues((current) => ({ ...current, [field.key]: value }))} />
@@ -391,12 +424,12 @@ export default function WorkPlanDrawer({ plan, series, fields, monthlyGoals = []
   );
 }
 
-function CustomFieldControl({ field, value, onChange, disabled = false, dataCustomField }: { field: CustomFieldDefinition; value: unknown; onChange: (value: unknown) => void; disabled?: boolean; dataCustomField?: string }) {
+function CustomFieldControl({ field, value, onChange, disabled = false, dataCustomField, ownerConflictCounts }: { field: CustomFieldDefinition; value: unknown; onChange: (value: unknown) => void; disabled?: boolean; dataCustomField?: string; ownerConflictCounts?: ReadonlyMap<string, number> }) {
   // data-custom-field 供保存失败时滚动定位控件（规格 R5）。
   const slotProps = dataCustomField ? { "data-custom-field": dataCustomField } : undefined;
   const label = <span>{field.label}{field.required ? <b> *</b> : null}</span>;
   if (field.type === "boolean") return <label className="field toggle-field" {...slotProps}>{label}<button className={`switch ${value ? "on" : ""}`} type="button" disabled={disabled} onClick={() => onChange(!value)}><i /></button></label>;
-  if (field.type === "single_select") return <label className="field" {...slotProps}>{label}<select value={String(value ?? "")} disabled={disabled} onChange={(event) => onChange(event.target.value || null)} required={field.required}><option value="">请选择</option>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select></label>;
+  if (field.type === "single_select") return <label className="field" {...slotProps}>{label}<select value={String(value ?? "")} disabled={disabled} onChange={(event) => onChange(event.target.value || null)} required={field.required}><option value="">请选择</option>{field.options.filter((option) => !option.archivedAt).map((option) => { const count = field.key === "owner" ? ownerConflictCounts?.get(option.value) : undefined; const optionLabel = count ? `${option.label}（⚠ 冲突 ${count} 项）` : option.label; return <option key={option.id} value={option.value}>{optionLabel}</option>; })}</select></label>;
   if (field.type === "multi_select") return <label className="field" {...slotProps}>{label}<select multiple disabled={disabled} value={Array.isArray(value) ? value as string[] : []} onChange={(event) => onChange(Array.from(event.target.selectedOptions, (option) => option.value))}>{field.options.filter((option) => !option.archivedAt).map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}</select></label>;
   if (field.type === "long_text") return <label className="field" {...slotProps}>{label}<textarea rows={2} value={String(value ?? "")} disabled={disabled} onChange={(event) => onChange(event.target.value)} required={field.required} /></label>;
   const inputType = field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "datetime" ? "datetime-local" : field.type === "url" ? "url" : "text";

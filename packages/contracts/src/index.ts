@@ -244,6 +244,30 @@ export const workPlanConflictCheckResponseSchema = z.object({
 });
 export type WorkPlanConflictCheckResponse = z.infer<typeof workPlanConflictCheckResponseSchema>;
 
+// POST /api/v1/work-plans/conflict-preview：为当前草稿一次返回所有 owner 候选的冲突分组。
+// status/statusMode 描述草稿的有效状态；服务端以同一 evaluatedAt 派生 automatic 状态。
+export const workPlanConflictPreviewRequestSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    status: workPlanStatusSchema,
+    statusMode: workPlanStatusModeSchema,
+    startAt: isoDateTimeSchema,
+    endAt: isoDateTimeSchema,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (Date.parse(value.startAt) >= Date.parse(value.endAt)) {
+      context.addIssue({ code: "custom", path: ["endAt"], message: "结束时间必须晚于开始时间" });
+    }
+  });
+export type WorkPlanConflictPreviewRequest = z.infer<typeof workPlanConflictPreviewRequestSchema>;
+
+export const workPlanConflictPreviewResponseSchema = z.object({
+  evaluatedAt: isoDateTimeSchema,
+  conflicts: z.array(ownerConflictSchema),
+});
+export type WorkPlanConflictPreviewResponse = z.infer<typeof workPlanConflictPreviewResponseSchema>;
+
 // 工作计划页 URL 排序参数：sort=<field>:<direction>,<field>:<direction>；默认排期顺序不写参数。
 export function formatWorkPlanSortParam(items: readonly WorkPlanSortItem[]): string {
   return items.map((item) => `${item.field}:${item.direction}`).join(",");
