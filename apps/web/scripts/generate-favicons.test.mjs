@@ -1,16 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { inflateSync } from "node:zlib";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { copyAppleTouchIcon } from "./generate-favicons.mjs";
+import { describe, expect, it } from "vitest";
+import { faviconSvg, renderIconPng } from "./generate-favicons.mjs";
 
-const scriptDir = dirname(fileURLToPath(import.meta.url));
-const outputDir = mkdtempSync(join(tmpdir(), "workplan-favicons-"));
-
-function decodePng(path) {
-  const png = readFileSync(path);
+function decodePng(png) {
   expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
 
   let offset = 8;
@@ -70,37 +62,27 @@ function pixelAt(image, x, y) {
   return [...image.pixels.subarray(offset, offset + 4)];
 }
 
-beforeAll(() => {
-  copyAppleTouchIcon(outputDir);
-});
+describe("generated brand icons", () => {
+  it("renders the supplied calendar-clock silhouette on the brand tile", () => {
+    const icon = decodePng(renderIconPng(64));
 
-afterAll(() => {
-  rmSync(outputDir, { recursive: true, force: true });
-});
-
-describe("generated Apple Touch icon", () => {
-  it("copies the approved transparent calendar artwork exactly", () => {
-    const sourcePath = join(scriptDir, "calendar-icon.png");
-    const source = readFileSync(sourcePath);
-    const generated = readFileSync(join(outputDir, "apple-touch-icon.png"));
-    const published = readFileSync(join(scriptDir, "../public/apple-touch-icon.png"));
-    const sourceImage = decodePng(sourcePath);
-
-    expect(generated).toEqual(source);
-    expect(published).toEqual(source);
-    expect([sourceImage.width, sourceImage.height]).toEqual([512, 512]);
-    let alphaMin = 0xff;
-    let alphaMax = 0;
-    for (let offset = 3; offset < sourceImage.pixels.length; offset += 4) {
-      alphaMin = Math.min(alphaMin, sourceImage.pixels[offset]);
-      alphaMax = Math.max(alphaMax, sourceImage.pixels[offset]);
-    }
-    expect(alphaMin).toBe(0);
-    expect(alphaMax).toBe(0xff);
+    expect([icon.width, icon.height]).toEqual([64, 64]);
+    expect(pixelAt(icon, 0, 0)[3]).toBe(0);
+    expect(pixelAt(icon, 21, 21)).toEqual([0xff, 0xff, 0xff, 0xff]);
+    expect(pixelAt(icon, 32, 32)).toEqual([0x08, 0x91, 0xb2, 0xff]);
   });
 
-  it("keeps the detailed cyan treatment for PWA icons", () => {
-    const icon = decodePng(join(scriptDir, "../public/pwa-maskable-192x192.png"));
-    expect(pixelAt(icon, 0, 0)).not.toEqual([0x08, 0x91, 0xb2, 0xff]);
+  it("keeps maskable corners opaque in the stable light-theme colors", () => {
+    const icon = decodePng(renderIconPng(64, true));
+
+    expect(pixelAt(icon, 0, 0)).toEqual([0x08, 0x91, 0xb2, 0xff]);
+  });
+
+  it("makes the SVG favicon follow the light and dark theme palettes", () => {
+    expect(faviconSvg).toContain("prefers-color-scheme:dark");
+    expect(faviconSvg).toContain("#0891b2");
+    expect(faviconSvg).toContain("#22d3ee");
+    expect(faviconSvg).toContain("#020617");
+    expect(faviconSvg).toContain("brand-glyph");
   });
 });

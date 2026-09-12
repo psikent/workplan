@@ -1,0 +1,18 @@
+{
+  "canvasSize": 512,
+  "shell": { "x": 0, "y": 64, "width": 448, "height": 352, "radius": 48 },
+  "pageCutout": { "x": 64, "y": 192, "width": 384, "height": 224, "bottomRadius": 48 },
+  "notches": [
+    { "x": 48, "y": 32, "width": 64, "height": 80, "radius": 32 },
+    { "x": 304, "y": 32, "width": 64, "height": 80, "radius": 32 }
+  ],
+  "binders": [
+    { "x": 64, "y": 0, "width": 32, "height": 96, "radius": 16 },
+    { "x": 320, "y": 0, "width": 32, "height": 96, "radius": 16 }
+  ],
+  "clock": { "cx": 384, "cy": 384, "outerRadius": 128, "innerRadius": 96 },
+  "hands": [
+    { "x": 352, "y": 320, "width": 32, "height": 96, "radius": 16 },
+    { "x": 352, "y": 384, "width": 96, "height": 32, "radius": 16 }
+  ]
+}

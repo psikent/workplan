@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { CalendarRange, KeyRound, LockKeyhole, UserRound } from "lucide-react";
+import { KeyRound, LockKeyhole, UserRound } from "lucide-react";
 import type { User } from "../App";
 import { api, ApiError, jsonBody } from "../lib/api";
 import BrandMark from "../components/BrandMark";
@@ -44,7 +44,7 @@ export default function AuthPage({ setupRequired, setupTokenExpiresAt, onAuthent
       <section className="auth-intro">
         <div className="auth-brand"><BrandMark className="brand-mark" /><strong>工作计划</strong></div>
         <div>
-          <CalendarRange aria-hidden="true" />
+          <BrandMark className="auth-hero-mark" />
           <h1>把计划放到时间轴上</h1>
           <p>在一个清晰的工作台中安排、调整并跟进每一项工作计划。</p>
         </div>

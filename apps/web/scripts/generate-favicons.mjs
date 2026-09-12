@@ -1,39 +1,18 @@
 import { deflateSync } from "node:zlib";
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const scriptDir = dirname(scriptPath);
 const defaultOutDir = join(scriptDir, "../public");
-const touchIconSource = join(scriptDir, "calendar-icon.png");
+const geometry = JSON.parse(readFileSync(join(scriptDir, "../src/assets/brand-icon.json"), "utf8"));
 
 const TILE = { cx: 20, cy: 20, hx: 19.5, hy: 19.5, r: 10.5 };
-const GLYPH_TRANSLATE = { x: 8, y: 7.6 };
-const STROKE = 2.1;
-const TILE_TOP = [0x54, 0xdf, 0xeb];
-const TILE_MIDDLE = [0x08, 0x91, 0xb2];
-const TILE_BOTTOM = [0x02, 0x59, 0x78];
+const GLYPH_INSET = 6;
+const GLYPH_SIZE = 28;
+const TILE_COLOR = [0x08, 0x91, 0xb2];
 const GLYPH_COLOR = [0xff, 0xff, 0xff];
-const GLASS_EFFECT = {
-  topGlowOpacity: 0.26,
-  reflectedBandOpacity: 0.11,
-  rimOpacity: 0.55,
-  innerDepthOpacity: 0.2,
-  glyphFillOpacity: 0.13,
-  glyphStrokeOpacity: 0.94,
-};
-
-const GLYPH_RECT = { cx: 12, cy: 13, hx: 9, hy: 9, r: 2 };
-const GLYPH_SEGMENTS = [
-  [[16, 2], [16, 6]],
-  [[3, 10], [21, 10]],
-  [[8, 2], [8, 6]],
-  [[17, 14], [11, 14]],
-  [[13, 18], [7, 18]],
-  [[7, 14], [7.01, 14]],
-  [[17, 18], [17.01, 18]],
-];
 
 function sdRoundRect(p, c) {
   const qx = Math.abs(p.x - c.cx) - (c.hx - c.r);
@@ -43,71 +22,59 @@ function sdRoundRect(p, c) {
   return outside + inside - c.r;
 }
 
-function sdSegment(p, a, b) {
-  const pa = { x: p.x - a[0], y: p.y - a[1] };
-  const ba = { x: b[0] - a[0], y: b[1] - a[1] };
-  const h = Math.max(0, Math.min(1, (pa.x * ba.x + pa.y * ba.y) / (ba.x * ba.x + ba.y * ba.y)));
-  return Math.hypot(pa.x - ba.x * h, pa.y - ba.y * h);
-}
-
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function smoothstep(edge0, edge1, value) {
-  const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
-  return t * t * (3 - 2 * t);
+function insideRoundedRect(p, shape) {
+  return sdRoundRect(p, {
+    cx: shape.x + shape.width / 2,
+    cy: shape.y + shape.height / 2,
+    hx: shape.width / 2,
+    hy: shape.height / 2,
+    r: shape.radius,
+  }) <= 0;
 }
 
-function mixColor(a, b, amount) {
-  return a.map((channel, index) => channel * (1 - amount) + b[index] * amount);
+function insideBottomRoundedRect(p, shape) {
+  if (p.x < shape.x || p.x > shape.x + shape.width || p.y < shape.y || p.y > shape.y + shape.height) return false;
+  const curveStart = shape.y + shape.height - shape.bottomRadius;
+  if (p.y <= curveStart) return true;
+  const leftCenter = shape.x + shape.bottomRadius;
+  const rightCenter = shape.x + shape.width - shape.bottomRadius;
+  if (p.x >= leftCenter && p.x <= rightCenter) return true;
+  const cx = p.x < leftCenter ? leftCenter : rightCenter;
+  return Math.hypot(p.x - cx, p.y - curveStart) <= shape.bottomRadius;
 }
 
-function blend(base, overlay, opacity) {
-  return base.map((channel, index) => channel * (1 - opacity) + overlay[index] * opacity);
+function insideCircle(p, cx, cy, radius) {
+  return Math.hypot(p.x - cx, p.y - cy) <= radius;
+}
+
+function insideGlyph(p) {
+  let inside = insideRoundedRect(p, geometry.shell);
+  if (insideBottomRoundedRect(p, geometry.pageCutout)) inside = false;
+  if (geometry.notches.some((shape) => insideRoundedRect(p, shape))) inside = false;
+  if (geometry.binders.some((shape) => insideRoundedRect(p, shape))) inside = true;
+
+  const { cx, cy, outerRadius, innerRadius } = geometry.clock;
+  if (insideCircle(p, cx, cy, outerRadius) && !insideCircle(p, cx, cy, innerRadius)) inside = true;
+  if (geometry.hands.some((shape) => insideRoundedRect(p, shape))) inside = true;
+  return inside;
 }
 
 function sample(p, maskable) {
-  const gp = { x: p.x - GLYPH_TRANSLATE.x, y: p.y - GLYPH_TRANSLATE.y };
   const tileSd = sdRoundRect(p, TILE);
   const tileCover = maskable ? 1 : clamp(0.5 - tileSd, 0, 1);
-  const u = p.x / 40;
-  const v = p.y / 40;
-
-  // A restrained iOS-like glass tile: brand cyan remains the center color,
-  // while directional light, a specular rim and depth shading create volume.
-  const gradientPosition = smoothstep(0.08, 0.95, u * 0.34 + v * 0.78);
-  let color = gradientPosition < 0.48
-    ? mixColor(TILE_TOP, TILE_MIDDLE, gradientPosition / 0.48)
-    : mixColor(TILE_MIDDLE, TILE_BOTTOM, (gradientPosition - 0.48) / 0.52);
-
-  const topGlow = Math.exp(-(((u - 0.19) ** 2) / 0.052 + ((v - 0.08) ** 2) / 0.028)) * GLASS_EFFECT.topGlowOpacity;
-  color = blend(color, GLYPH_COLOR, topGlow);
-
-  const reflectedBand = Math.exp(-((v - (0.03 + u * 0.28)) ** 2) / 0.007) * smoothstep(0.92, 0.2, u) * GLASS_EFFECT.reflectedBandOpacity;
-  color = blend(color, GLYPH_COLOR, reflectedBand);
-
-  const rim = clamp(1 - Math.abs(tileSd + 0.22) / 0.72, 0, 1);
-  const rimLight = rim * clamp(1.1 - u * 0.45 - v * 0.72, 0.18, 1) * GLASS_EFFECT.rimOpacity;
-  color = blend(color, GLYPH_COLOR, rimLight);
-
-  const innerDepth = clamp(1 - Math.abs(tileSd + 1.25) / 1.2, 0, 1) * smoothstep(0.15, 0.95, v) * GLASS_EFFECT.innerDepthOpacity;
-  color = blend(color, TILE_BOTTOM, innerDepth);
-
-  const glyphBodySd = sdRoundRect(gp, GLYPH_RECT);
-  const glyphGlass = clamp(0.5 - glyphBodySd, 0, 1) * GLASS_EFFECT.glyphFillOpacity;
-  color = blend(color, GLYPH_COLOR, glyphGlass);
-
-  let glyphCover = 0;
-  if (maskable || tileSd < STROKE) {
-    glyphCover = Math.max(glyphCover, clamp(STROKE / 2 + 0.5 - Math.abs(glyphBodySd), 0, 1));
-    for (const [a, b] of GLYPH_SEGMENTS) {
-      glyphCover = Math.max(glyphCover, clamp(STROKE / 2 + 0.5 - sdSegment(gp, a, b), 0, 1));
-    }
-  }
-  color = blend(color, GLYPH_COLOR, glyphCover * GLASS_EFFECT.glyphStrokeOpacity);
-
-  return { cover: tileCover, color };
+  const sourcePoint = {
+    x: ((p.x - GLYPH_INSET) / GLYPH_SIZE) * geometry.canvasSize,
+    y: ((p.y - GLYPH_INSET) / GLYPH_SIZE) * geometry.canvasSize,
+  };
+  const glyphCover = insideGlyph(sourcePoint) ? 1 : 0;
+  return {
+    cover: tileCover,
+    color: TILE_COLOR.map((channel, index) => channel * (1 - glyphCover) + GLYPH_COLOR[index] * glyphCover),
+  };
 }
 
 function renderWithSampler(size, sampler) {
@@ -205,50 +172,55 @@ function encodeIco(sizes) {
   return Buffer.concat([header, ...entries, ...pngs.map((p) => p.data)]);
 }
 
-function colorHex(color) {
-  return `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+function bottomRoundedRectPath(shape) {
+  const right = shape.x + shape.width;
+  const bottom = shape.y + shape.height;
+  const curveY = bottom - shape.bottomRadius;
+  return `M${shape.x} ${shape.y}H${right}V${curveY}A${shape.bottomRadius} ${shape.bottomRadius} 0 0 1 ${right - shape.bottomRadius} ${bottom}H${shape.x + shape.bottomRadius}A${shape.bottomRadius} ${shape.bottomRadius} 0 0 1 ${shape.x} ${curveY}Z`;
 }
 
+function roundedRectSvg(shape, fill) {
+  return `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" rx="${shape.radius}" fill="${fill}"/>`;
+}
+
+const glyphScale = GLYPH_SIZE / geometry.canvasSize;
 const GLYPH_SVG = [
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">',
-  '<defs>',
-  `<linearGradient id="tile" x1="7" y1="2" x2="34" y2="39" gradientUnits="userSpaceOnUse"><stop stop-color="${colorHex(TILE_TOP)}"/><stop offset=".48" stop-color="${colorHex(TILE_MIDDLE)}"/><stop offset="1" stop-color="${colorHex(TILE_BOTTOM)}"/></linearGradient>`,
-  `<radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(8 3) rotate(48) scale(25 17)" gradientUnits="userSpaceOnUse"><stop stop-color="#fff" stop-opacity="${GLASS_EFFECT.topGlowOpacity}"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>`,
-  '</defs>',
-  '<rect x="0.5" y="0.5" width="39" height="39" rx="10.5" fill="url(#tile)"/>',
-  '<rect x="0.5" y="0.5" width="39" height="39" rx="10.5" fill="url(#glow)"/>',
-  `<path d="M2.2 12.8C7.8 4.4 18.3 1 30.1 2.3c3.9.4 6.8 3 7.9 6.1C25.8 5.9 14.5 8 4.2 16.5Z" fill="#fff" fill-opacity="${GLASS_EFFECT.reflectedBandOpacity}"/>`,
-  `<rect x="1" y="1" width="38" height="38" rx="10" fill="none" stroke="#fff" stroke-opacity="${GLASS_EFFECT.rimOpacity}" stroke-width=".7"/>`,
-  `<g transform="translate(8 7.6)" fill="none" stroke="#fff" stroke-opacity="${GLASS_EFFECT.glyphStrokeOpacity}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">`,
-  `<rect x="3" y="4" width="18" height="18" rx="2" fill="#fff" fill-opacity="${GLASS_EFFECT.glyphFillOpacity}"/>`,
-  '<path d="M16 2v4"/>',
-  '<path d="M3 10h18"/>',
-  '<path d="M8 2v4"/>',
-  '<path d="M17 14h-6"/>',
-  '<path d="M13 18H7"/>',
-  '<path d="M7 14h.01"/>',
-  '<path d="M17 18h.01"/>',
+  '<style>.tile{fill:#0891b2}.glyph{fill:#fff}@media (prefers-color-scheme:dark){.tile{fill:#22d3ee}.glyph{fill:#020617}}</style>',
+  `<defs><mask id="brand-glyph" maskUnits="userSpaceOnUse" x="0" y="0" width="${geometry.canvasSize}" height="${geometry.canvasSize}">`,
+  roundedRectSvg(geometry.shell, "white"),
+  `<path d="${bottomRoundedRectPath(geometry.pageCutout)}" fill="black"/>`,
+  ...geometry.notches.map((shape) => roundedRectSvg(shape, "black")),
+  ...geometry.binders.map((shape) => roundedRectSvg(shape, "white")),
+  `<circle cx="${geometry.clock.cx}" cy="${geometry.clock.cy}" r="${geometry.clock.outerRadius}" fill="white"/>`,
+  `<circle cx="${geometry.clock.cx}" cy="${geometry.clock.cy}" r="${geometry.clock.innerRadius}" fill="black"/>`,
+  ...geometry.hands.map((shape) => roundedRectSvg(shape, "white")),
+  '</mask></defs>',
+  '<rect class="tile" x="0.5" y="0.5" width="39" height="39" rx="10.5"/>',
+  `<g transform="translate(${GLYPH_INSET} ${GLYPH_INSET}) scale(${glyphScale})">`,
+  `<rect class="glyph" width="${geometry.canvasSize}" height="${geometry.canvasSize}" mask="url(#brand-glyph)"/>`,
   "</g>",
   "</svg>",
 ].join("\n");
 
-export function copyAppleTouchIcon(outDir) {
-  mkdirSync(outDir, { recursive: true });
-  copyFileSync(touchIconSource, join(outDir, "apple-touch-icon.png"));
+export function renderIconPng(size, maskable = false) {
+  return encodePng(render(size, maskable), size);
 }
 
 export function generateFavicons(outDir = defaultOutDir) {
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, "favicon.svg"), GLYPH_SVG);
   writeFileSync(join(outDir, "favicon.ico"), encodeIco([16, 32, 48, 256]));
-  copyAppleTouchIcon(outDir);
-  writeFileSync(join(outDir, "brand-preview.png"), encodePng(render(256), 256));
-  writeFileSync(join(outDir, "pwa-192x192.png"), encodePng(render(192), 192));
-  writeFileSync(join(outDir, "pwa-512x512.png"), encodePng(render(512), 512));
-  writeFileSync(join(outDir, "pwa-maskable-192x192.png"), encodePng(render(192, true), 192));
-  writeFileSync(join(outDir, "pwa-maskable-512x512.png"), encodePng(render(512, true), 512));
+  writeFileSync(join(outDir, "apple-touch-icon.png"), renderIconPng(512, true));
+  writeFileSync(join(outDir, "brand-preview.png"), renderIconPng(256));
+  writeFileSync(join(outDir, "pwa-192x192.png"), renderIconPng(192));
+  writeFileSync(join(outDir, "pwa-512x512.png"), renderIconPng(512));
+  writeFileSync(join(outDir, "pwa-maskable-192x192.png"), renderIconPng(192, true));
+  writeFileSync(join(outDir, "pwa-maskable-512x512.png"), renderIconPng(512, true));
   console.log("favicons written to", outDir);
 }
+
+export { GLYPH_SVG as faviconSvg };
 
 if (resolve(process.argv[1] ?? "") === scriptPath) {
   const requestedOutDir = process.argv[2] ? resolve(process.cwd(), process.argv[2]) : defaultOutDir;
