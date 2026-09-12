@@ -401,24 +401,22 @@ function useRangeSwipeGesture(options: {
     // 本次手势是否已锁定为横向范围切换候选：候选一旦成立，松手即抑制兼容点击（spec R4），
     // 即使随后反向撤销未提交导航也要抑制，否则该动作的兼容 click/dblclick 仍会触发副作用。
     let lockedCandidate = false;
-    let capturedPointerId: number | null = null;
+    // 正在跟踪的触点标识；null 表示当前未跟踪。touch 事件按起手元素隐式捕获，
+    // 手指移出时间轴后仍会派发到该元素，因此无需显式 pointer capture。
+    let trackedId: number | null = null;
 
     const ganttContainer = () => mount.querySelector<HTMLElement>(".gantt-container");
     const clearFeedback = () => setFeedback(current => (current === null ? current : null));
-    const releaseCapture = (pointerId: number | null) => {
-      if (pointerId === null) return;
-      if (typeof mount.hasPointerCapture === "function" && typeof mount.releasePointerCapture === "function"
-        && mount.hasPointerCapture(pointerId)) {
-        try {
-          mount.releasePointerCapture(pointerId);
-        } catch {
-          // 指针已释放等竞态：忽略。
-        }
+    const findTouch = (list: TouchList, id: number): Touch | null => {
+      for (let index = 0; index < list.length; index += 1) {
+        const touch = list.item(index);
+        if (touch && touch.identifier === id) return touch;
       }
+      return null;
     };
 
     // 成立手势后抑制 Frappe 的兼容点击/双击副作用（spec R4）。触摸产生的兼容 click 总在
-    // pointerup 派发完成之后才到达，且导航会重建 .gantt-container，因此监听器挂在 document
+    // touchend 派发完成之后才到达，且导航会重建 .gantt-container，因此监听器挂在 document
     // 捕获阶段、在窗口结束时才摘除，才能覆盖替换前后两个容器上的 click。抑制范围限定在
     // 时间轴内部：规格只要求拦截"该动作产生的"点击，不能吞掉工具栏等处的真实点击。
     const suppressCompatClickEvent = (event: MouseEvent) => {
@@ -435,22 +433,25 @@ function useRangeSwipeGesture(options: {
       document.removeEventListener("click", suppressCompatClickEvent, true);
     };
 
-    const begin = (event: PointerEvent) => {
-      // 第二触点：无论落在哪里都立即取消整次手势（spec D16），再继续判定新起点。
-      if (event.pointerType === "touch" && recognizer.isTracking()) {
+    // 仅响应触摸：鼠标、触控板与触控笔不产生 touch 事件，天然不触发范围切换（spec R2）。
+    const begin = (event: TouchEvent) => {
+      // 第二触点：无论落在哪里都立即取消整次手势（spec D16）。
+      if (event.touches.length > 1) {
         cancel();
         return;
       }
-      // 浮层/抽屉打开时暂停识别（spec R2/D9）；非触摸输入由状态机统一拒绝。
+      // 浮层/抽屉打开时暂停识别（spec R2/D9）。
       if (suspendedRef.current) return;
+      const touch = event.changedTouches.item(0) ?? event.touches.item(0);
+      if (!touch) return;
       if (!isSwipeStartTarget(event.target)) return;
       const container = ganttContainer();
       if (!container) return;
       const started = recognizer.begin({
-        pointerId: event.pointerId,
-        pointerType: event.pointerType,
-        clientX: event.clientX,
-        clientY: event.clientY,
+        pointerId: touch.identifier,
+        pointerType: "touch",
+        clientX: touch.clientX,
+        clientY: touch.clientY,
         viewportWidth: window.innerWidth,
         timelineWidth: container.clientWidth,
         scrollLeft: container.scrollLeft,
@@ -458,36 +459,29 @@ function useRangeSwipeGesture(options: {
         now: performance.now(),
       });
       if (started) {
+        trackedId = touch.identifier;
         startScrollLeft = container.scrollLeft;
         lockedCandidate = false;
       }
     };
 
-    const move = (event: PointerEvent) => {
+    const move = (event: TouchEvent) => {
       if (suspendedRef.current) {
         cancel();
         return;
       }
+      if (trackedId === null) return;
+      const touch = findTouch(event.touches, trackedId);
+      if (!touch) return;
       const progress: RangeSwipeProgress = recognizer.move({
-        pointerId: event.pointerId,
-        clientX: event.clientX,
-        clientY: event.clientY,
+        pointerId: touch.identifier,
+        clientX: touch.clientX,
+        clientY: touch.clientY,
       });
       // 手势一旦锁定为横向时间轴动作（翻页候选或月内平移），就阻止默认行为，
-      // 避免 iOS 原生滚动与应用自己的平移叠加、或在滚动开始时发出 pointercancel。
+      // 避免 iOS/WebKit 的原生横向滚动与应用自己的平移叠加（表现为卡顿与边缘判定失效）。
       if (progress.direction || progress.panBy !== 0) event.preventDefault();
-      // 锁定为横向范围切换候选后即捕获指针（spec D16）：指针移出时间轴也不丢后续事件。
-      if (progress.direction) {
-        lockedCandidate = true;
-        if (capturedPointerId === null && typeof mount.setPointerCapture === "function") {
-          try {
-            mount.setPointerCapture(event.pointerId);
-            capturedPointerId = event.pointerId;
-          } catch {
-            // 指针已释放等竞态：保持无捕获，按普通事件继续。
-          }
-        }
-      }
+      if (progress.direction) lockedCandidate = true;
       // 范围内横向浏览（spec R3/D4）：画布不跟手位移由容器自身滚动实现，方向与手指一致。
       if (progress.panBy !== 0) {
         const container = ganttContainer();
@@ -500,12 +494,18 @@ function useRangeSwipeGesture(options: {
       setFeedback(progress.direction ? { direction: progress.direction, progress: progress.progress } : null);
     };
 
-    const end = (event: PointerEvent) => {
+    const end = (event: TouchEvent) => {
+      if (trackedId === null) return;
+      const touch = findTouch(event.changedTouches, trackedId);
+      // 触点已不在屏幕上（changedTouches 未命中）：视为松手收尾，避免 trackedId 残留阻塞后续手势。
+      if (!touch) {
+        if (event.touches.length === 0) cancel();
+        return;
+      }
       // 浮层打开期间松手不得提交（spec D9）。
-      const direction = suspendedRef.current ? null : recognizer.end({ pointerId: event.pointerId, now: performance.now() });
+      const direction = suspendedRef.current ? null : recognizer.end({ pointerId: touch.identifier, now: performance.now() });
       if (suspendedRef.current) recognizer.cancel();
-      releaseCapture(capturedPointerId);
-      capturedPointerId = null;
+      trackedId = null;
       clearFeedback();
       // 候选成立后的松手（含反向撤销、以及浮层打开取消）都要抑制兼容点击（spec R4）。
       if (!direction && !lockedCandidate) return;
@@ -519,36 +519,28 @@ function useRangeSwipeGesture(options: {
     };
 
     const cancel = () => {
-      releaseCapture(capturedPointerId);
-      capturedPointerId = null;
+      trackedId = null;
       lockedCandidate = false;
       recognizer.cancel();
       clearFeedback();
     };
     cancelGestureRef.current = cancel;
 
-    // 只有本组件自己（mount）的指针捕获丢失才取消手势。子元素的隐式触摸捕获会在我们
-    // 接手捕获时丢失，其 lostpointercapture 会冒泡到 mount，若不区分会把刚锁定的手势误取消。
-    const onLostPointerCapture = (event: PointerEvent) => {
-      if (event.target !== mount) return;
-      cancel();
-    };
-
-    mount.addEventListener("pointerdown", begin, true);
-    mount.addEventListener("pointermove", move, { capture: true, passive: false });
-    mount.addEventListener("pointerup", end, true);
-    mount.addEventListener("pointercancel", cancel, true);
-    mount.addEventListener("lostpointercapture", onLostPointerCapture, true);
+    // passive:false 是关键：只有非 passive 的 touchmove 才能用 preventDefault 压住
+    // WebKit 的原生横向滚动，否则浏览器滚动与 JS 平移互相打架。
+    mount.addEventListener("touchstart", begin, { capture: true, passive: false });
+    mount.addEventListener("touchmove", move, { capture: true, passive: false });
+    mount.addEventListener("touchend", end, true);
+    mount.addEventListener("touchcancel", cancel, true);
     window.addEventListener("blur", cancel);
     document.addEventListener("visibilitychange", cancel);
     return () => {
       cancelGestureRef.current = () => {};
       stopSuppressing();
-      mount.removeEventListener("pointerdown", begin, true);
-      mount.removeEventListener("pointermove", move, true);
-      mount.removeEventListener("pointerup", end, true);
-      mount.removeEventListener("pointercancel", cancel, true);
-      mount.removeEventListener("lostpointercapture", onLostPointerCapture, true);
+      mount.removeEventListener("touchstart", begin, true);
+      mount.removeEventListener("touchmove", move, true);
+      mount.removeEventListener("touchend", end, true);
+      mount.removeEventListener("touchcancel", cancel, true);
       window.removeEventListener("blur", cancel);
       document.removeEventListener("visibilitychange", cancel);
     };

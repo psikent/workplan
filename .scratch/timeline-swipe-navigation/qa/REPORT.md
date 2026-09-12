@@ -70,6 +70,22 @@
   边缘提示强度改为随进度单调增强（`0.3 + 0.7×progress`），不再在低进度封顶。`isSwipeStartTarget` 补
   `.timeline-reminder-tooltip` 排除。
 
+## 真机第二轮修复（2026-09-12，iOS 反馈"到边缘仍不翻页 + 卡"）
+
+首轮按 Pointer Events + `touch-action: pan-y` 实现，在 Chromium 触摸仿真下全部通过，但真机（iOS WebKit）仍"到边缘
+无法翻页、滚动卡"。根因是 **WebKit 对 Pointer Events + `touch-action` 的实现不可靠**：横向拖动时 `pointercancel`
+乱发、`touch-action: pan-y` 也不能彻底阻止原生横向滚动，于是浏览器原生滚动与应用的 JS 平移互相打架，表现为卡顿
+与边缘判定失效；`pointercancel` 还会把已锁定的手势整个取消。
+
+修复：接线**整体改用 Touch Events**（`touchstart/touchmove/touchend/touchcancel`，`touchmove` 用
+`{ passive: false }` 并在锁定横向后 `preventDefault()`）。这是 iOS 上唯一可靠的方案，且：
+- 鼠标/触控板/触控笔不产生 touch 事件，天然满足"非触摸不触发"（spec R2）；
+- touch 事件对起手元素隐式捕获，手指移出时间轴仍持续收到 `touchmove`，替代了原先的 `setPointerCapture`；
+- `preventDefault` 能真正压住 WebKit 原生横向滚动，消除卡顿与冲突。
+
+`pointer*` 相关监听（含 `lostpointercapture` 与指针捕获）已全部移除。DOM 测试相应改为构造 Touch 事件；
+Chromium 仿真（CDP `Input.dispatchTouchEvent` 会同时产生 touch 与 pointer 事件）复测全部通过。
+
 ## 行为决定（需知悉，可回退）
 
 - **月视图边界交接修订（2026-09-12，真机反馈后）**：原规格 D4/R3 要求"先滚到边界、松手、再滑一次"才翻月，
