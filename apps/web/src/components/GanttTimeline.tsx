@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "reac
 import type { CustomFieldDefinition, Reminder, ReminderDay, WorkPlan } from "@workplan/contracts";
 import { loadGantt } from "../lib/gantt";
 import { formatCustomFieldValue, statusLabels } from "../lib/format";
+import { createRangeSwipeRecognizer, type RangeSwipeProgress } from "../lib/timeline-swipe";
 
 export type GanttDisplayProperty =
   | { id: "status"; label: string; field?: undefined }
@@ -35,6 +36,13 @@ type Props = {
   onSelect: (plan: WorkPlan) => void;
   onReminderSelect?: (planId: string) => void;
   onCreateAt?: (date: Date) => void;
+  // 单指边界滑动导航入口（spec R1/R4）：仅在成立手势松手时回调，一次一步。
+  onRangeNavigate?: (direction: "previous" | "next") => void;
+  // 抽屉、对话框或浮层打开时暂停识别（spec R2/D9）。
+  swipeSuspended?: boolean;
+  rangeLoading?: boolean;
+  // 目标范围加载失败：此时不得以空态文案宣称该范围没有计划（spec R6）。
+  rangeFailed?: boolean;
   readOnly?: boolean;
   // 变化即强制整图重建（不入签名）：拖动保存失败后父组件用它还原乐观几何。
   rebuildKey?: number;
@@ -63,10 +71,21 @@ const EMPTY_REMINDER_DAYS: ReminderDay[] = [];
 const EMPTY_REMARKS_OPTIONS: GanttRemarkOption[] = [];
 const EMPTY_TIMELINE_TASK_ID = "__empty-timeline__";
 const BAR_DOUBLE_CLICK_WINDOW_MS = 500;
+// 浏览器视口左右边缘保留区（spec D15）：从此范围内起手的触摸留给浏览器原生后退/前进。
+export const BROWSER_EDGE_RESERVE = 24;
+// 视觉层消费的手势进度：方向与 0–1 强度，驱动边缘箭头与文案。
+type SwipeFeedback = { direction: "previous" | "next"; progress: number };
+const IDLE_SWIPE_FEEDBACK: SwipeFeedback | null = null;
 
-function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, ownerField, remarksOptions = EMPTY_REMARKS_OPTIONS, view, rangeStart, rangeEnd, verticalScrollPeerRef, taskListCollapsed = false, onScheduleChange, onSelect, onReminderSelect, onCreateAt, readOnly = false, rebuildKey = 0 }: Props) {
+function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperties = EMPTY_DISPLAY_PROPERTIES, tooltipProperties = EMPTY_DISPLAY_PROPERTIES, ownerField, remarksOptions = EMPTY_REMARKS_OPTIONS, view, rangeStart, rangeEnd, verticalScrollPeerRef, taskListCollapsed = false, onScheduleChange, onSelect, onReminderSelect, onCreateAt, onRangeNavigate, swipeSuspended = false, rangeLoading = false, rangeFailed = false, readOnly = false, rebuildKey = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
+  // 单指边界滑动接线（spec R2–R4/D7）：状态机在 hook 内，反馈状态驱动边缘提示。
+  const { feedback: swipeFeedback } = useRangeSwipeGesture({
+    mountRef: containerRef,
+    onNavigate: onRangeNavigate,
+    suspended: swipeSuspended,
+  });
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.id, plan])), [plans]);
   const plansByIdRef = useRef(plansById);
   const tooltipPropertiesRef = useRef(tooltipProperties);
@@ -306,10 +325,242 @@ function GanttTimeline({ plans, reminders = EMPTY_REMINDER_DAYS, displayProperti
 
   return (
     <div className="gantt-shell">
-      {plans.length === 0 ? <div className="timeline-empty">当前时间范围没有工作计划</div> : null}
+      {plans.length === 0 && !rangeLoading && !rangeFailed ? <div className="timeline-empty">当前时间范围没有工作计划</div> : null}
       <div ref={containerRef} className="gantt-mount" aria-label="工作计划甘特图" />
+      {rangeLoading ? <div className="timeline-range-loading" role="status">正在加载…</div> : null}
+      {swipeFeedback ? <RangeSwipeHint direction={swipeFeedback.direction} progress={swipeFeedback.progress} view={view} /> : null}
     </div>
   );
+}
+
+// 边缘方向反馈（spec R4/D7）：不拦截事件的箭头 + 目标范围文案，强度随进度增加。
+// 文案按视图与方向区分上一/下一周或月；减少动态效果时仅去除过渡动画，静态提示保留。
+function RangeSwipeHint({ direction, progress, view }: { direction: "previous" | "next"; progress: number; view: "week" | "month" }) {
+  const scope = view === "week" ? "周" : "月";
+  const label = `${direction === "previous" ? "上一" : "下一"}${scope}`;
+  // 强度随有效距离单调增强（D7）：以可辨识的基线起，到阈值处达最大，而非在低进度处封顶。
+  const intensity = 0.3 + 0.7 * Math.min(1, Math.max(0, progress));
+  return (
+    <div className={`timeline-swipe-hint edge-${direction === "previous" ? "left" : "right"}`} style={{ opacity: intensity }} aria-hidden="true">
+      <span className="timeline-swipe-hint-arrow">{direction === "previous" ? "‹" : "›"}</span>
+      <span className="timeline-swipe-hint-label">{label}</span>
+    </div>
+  );
+}
+
+// 手势允许的起始区域（spec R2/D3）：日期表头空白、日期网格背景。甘特条、拖拽手柄、
+// 提醒铃铛、提醒浮层、按钮与任何交互目标都不是有效起点。
+export function isSwipeStartTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target.closest([
+    ".bar-wrapper",
+    ".bar",
+    ".handle",
+    ".handle-group",
+    ".timeline-reminder-bell",
+    ".timeline-reminder-tooltip",
+    ".popup-wrapper",
+    ".side-header",
+    "button",
+    "a",
+    "input",
+    "select",
+    "textarea",
+    "[role='button']",
+    "[role='dialog']",
+    ".timeline-swipe-hint",
+  ].join(","))) {
+    return false;
+  }
+  return Boolean(target.closest(".grid-header, .grid-row, .holiday-highlight, .timeline-empty, .timeline-range-loading, .gantt-container"));
+}
+
+// 单指边界滑动状态机接入（spec R2–R4/D7/D15）。
+function useRangeSwipeGesture(options: {
+  mountRef: RefObject<HTMLDivElement | null>;
+  onNavigate: ((direction: "previous" | "next") => void) | undefined;
+  suspended: boolean;
+}) {
+  const [feedback, setFeedback] = useState<SwipeFeedback | null>(IDLE_SWIPE_FEEDBACK);
+  const onNavigateRef = useRef(options.onNavigate);
+  const suspendedRef = useRef(options.suspended);
+  // 浮层打开时要中断进行中的手势：取消函数由手势 effect 注册到这里，供 suspend effect 调用。
+  const cancelGestureRef = useRef<() => void>(() => {});
+  onNavigateRef.current = options.onNavigate;
+  suspendedRef.current = options.suspended;
+  const { mountRef } = options;
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    const recognizer = createRangeSwipeRecognizer({ edgeReserve: BROWSER_EDGE_RESERVE });
+    let suppressCompatClick = false;
+    let suppressTimer: number | null = null;
+    // 起手时的横向滚动位置：范围内浏览（panBy）据此按 1:1 平移画布。
+    let startScrollLeft = 0;
+    // 本次手势是否已锁定为横向范围切换候选：候选一旦成立，松手即抑制兼容点击（spec R4），
+    // 即使随后反向撤销未提交导航也要抑制，否则该动作的兼容 click/dblclick 仍会触发副作用。
+    let lockedCandidate = false;
+    let capturedPointerId: number | null = null;
+
+    const ganttContainer = () => mount.querySelector<HTMLElement>(".gantt-container");
+    const clearFeedback = () => setFeedback(current => (current === null ? current : null));
+    const releaseCapture = (pointerId: number | null) => {
+      if (pointerId === null) return;
+      if (typeof mount.hasPointerCapture === "function" && typeof mount.releasePointerCapture === "function"
+        && mount.hasPointerCapture(pointerId)) {
+        try {
+          mount.releasePointerCapture(pointerId);
+        } catch {
+          // 指针已释放等竞态：忽略。
+        }
+      }
+    };
+
+    // 成立手势后抑制 Frappe 的兼容点击/双击副作用（spec R4）。触摸产生的兼容 click 总在
+    // pointerup 派发完成之后才到达，且导航会重建 .gantt-container，因此监听器挂在 document
+    // 捕获阶段、在窗口结束时才摘除，才能覆盖替换前后两个容器上的 click。抑制范围限定在
+    // 时间轴内部：规格只要求拦截"该动作产生的"点击，不能吞掉工具栏等处的真实点击。
+    const suppressCompatClickEvent = (event: MouseEvent) => {
+      if (!suppressCompatClick) return;
+      const target = event.target;
+      if (target instanceof Node && !mount.contains(target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const stopSuppressing = () => {
+      suppressCompatClick = false;
+      if (suppressTimer !== null) window.clearTimeout(suppressTimer);
+      suppressTimer = null;
+      document.removeEventListener("click", suppressCompatClickEvent, true);
+    };
+
+    const begin = (event: PointerEvent) => {
+      // 第二触点：无论落在哪里都立即取消整次手势（spec D16），再继续判定新起点。
+      if (event.pointerType === "touch" && recognizer.isTracking()) {
+        cancel();
+        return;
+      }
+      // 浮层/抽屉打开时暂停识别（spec R2/D9）；非触摸输入由状态机统一拒绝。
+      if (suspendedRef.current) return;
+      if (!isSwipeStartTarget(event.target)) return;
+      const container = ganttContainer();
+      if (!container) return;
+      const started = recognizer.begin({
+        pointerId: event.pointerId,
+        pointerType: event.pointerType,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        viewportWidth: window.innerWidth,
+        timelineWidth: container.clientWidth,
+        scrollLeft: container.scrollLeft,
+        scrollWidth: container.scrollWidth,
+        now: performance.now(),
+      });
+      if (started) {
+        startScrollLeft = container.scrollLeft;
+        lockedCandidate = false;
+      }
+    };
+
+    const move = (event: PointerEvent) => {
+      if (suspendedRef.current) {
+        cancel();
+        return;
+      }
+      const progress: RangeSwipeProgress = recognizer.move({
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      // 只有锁定为横向候选后才阻止默认行为，避免干扰纵向原生滚动（spec R4）。
+      if (progress.direction) event.preventDefault();
+      // 锁定为横向范围切换候选后即捕获指针（spec D16）：指针移出时间轴也不丢后续事件。
+      if (progress.direction) {
+        lockedCandidate = true;
+        if (capturedPointerId === null && typeof mount.setPointerCapture === "function") {
+          try {
+            mount.setPointerCapture(event.pointerId);
+            capturedPointerId = event.pointerId;
+          } catch {
+            // 指针已释放等竞态：保持无捕获，按普通事件继续。
+          }
+        }
+      }
+      // 范围内横向浏览（spec R3/D4）：画布不跟手位移由容器自身滚动实现，方向与手指一致。
+      if (progress.panBy !== 0) {
+        const container = ganttContainer();
+        if (container) {
+          const maxScrollLeft = Math.max(0, container.scrollWidth - container.clientWidth);
+          const nextLeft = Math.min(Math.max(startScrollLeft - progress.panBy, 0), maxScrollLeft);
+          if (container.scrollLeft !== nextLeft) container.scrollLeft = nextLeft;
+        }
+      }
+      setFeedback(progress.direction ? { direction: progress.direction, progress: progress.progress } : null);
+    };
+
+    const end = (event: PointerEvent) => {
+      // 浮层打开期间松手不得提交（spec D9）。
+      const direction = suspendedRef.current ? null : recognizer.end({ pointerId: event.pointerId, now: performance.now() });
+      if (suspendedRef.current) recognizer.cancel();
+      releaseCapture(capturedPointerId);
+      capturedPointerId = null;
+      clearFeedback();
+      // 候选成立后的松手（含反向撤销、以及浮层打开取消）都要抑制兼容点击（spec R4）。
+      if (!direction && !lockedCandidate) return;
+      lockedCandidate = false;
+      // 上一抑制窗口未到期就再次成立时先收尾，避免旧定时器提前结束新窗口。
+      stopSuppressing();
+      suppressCompatClick = true;
+      document.addEventListener("click", suppressCompatClickEvent, true);
+      suppressTimer = window.setTimeout(stopSuppressing, 350);
+      if (direction) onNavigateRef.current?.(direction);
+    };
+
+    const cancel = () => {
+      releaseCapture(capturedPointerId);
+      capturedPointerId = null;
+      lockedCandidate = false;
+      recognizer.cancel();
+      clearFeedback();
+    };
+    cancelGestureRef.current = cancel;
+
+    // 只有本组件自己（mount）的指针捕获丢失才取消手势。子元素的隐式触摸捕获会在我们
+    // 接手捕获时丢失，其 lostpointercapture 会冒泡到 mount，若不区分会把刚锁定的手势误取消。
+    const onLostPointerCapture = (event: PointerEvent) => {
+      if (event.target !== mount) return;
+      cancel();
+    };
+
+    mount.addEventListener("pointerdown", begin, true);
+    mount.addEventListener("pointermove", move, { capture: true, passive: false });
+    mount.addEventListener("pointerup", end, true);
+    mount.addEventListener("pointercancel", cancel, true);
+    mount.addEventListener("lostpointercapture", onLostPointerCapture, true);
+    window.addEventListener("blur", cancel);
+    document.addEventListener("visibilitychange", cancel);
+    return () => {
+      cancelGestureRef.current = () => {};
+      stopSuppressing();
+      mount.removeEventListener("pointerdown", begin, true);
+      mount.removeEventListener("pointermove", move, true);
+      mount.removeEventListener("pointerup", end, true);
+      mount.removeEventListener("pointercancel", cancel, true);
+      mount.removeEventListener("lostpointercapture", onLostPointerCapture, true);
+      window.removeEventListener("blur", cancel);
+      document.removeEventListener("visibilitychange", cancel);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!options.suspended) return;
+    // 浮层在按住期间打开：立刻中断进行中的手势，避免松手时提交（spec D9）。
+    cancelGestureRef.current();
+    setFeedback((current) => (current === null ? current : null));
+  }, [options.suspended]);
+
+  return { feedback };
 }
 
 export function ensureCurrentDateMarker(

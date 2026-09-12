@@ -15,6 +15,7 @@ import { useSession } from "../App";
 import { api, downloadWorkPlansXlsCustom, fetchReminders, fileToBase64, jsonBody } from "../lib/api";
 import { canWriteBusinessData } from "../lib/permissions";
 import { endOfMonth, endOfWeek, formatCustomFieldValue, formatDate, startOfMonth, startOfWeek, statusLabels } from "../lib/format";
+import { shiftTimelineAnchor } from "../lib/timeline-range";
 import {
   clampListPercent,
   cleanSortItems,
@@ -151,6 +152,9 @@ export default function WorkPlansPage() {
   const openedRequestedPlanIdRef = useRef<string | null>(null);
   // 全屏切换前的时间轴横向滚动快照：GanttTimeline 因宽度变化整图重建时恢复位置。
   const pendingFullscreenScrollRef = useRef<{ ganttLeft: number; ganttContainer: HTMLElement | null; startedAt: number } | null>(null);
+  // 范围导航后的横向落点（spec R5/D11）：甘特整图重建会把横向滚动重置到范围起点，
+  // 等重建后的新容器出现再落到目标端。
+  const pendingRangeScrollRef = useRef<{ target: "start" | "end"; ganttContainer: HTMLElement | null; startedAt: number } | null>(null);
 
   const fieldsQuery = useQuery({ queryKey: ["custom-fields"], queryFn: () => api<CustomFieldDefinition[]>("/custom-fields") });
   // ---------- 排序状态：合法 URL → 当前账户浏览器偏好 → 默认排期顺序 ----------
@@ -353,6 +357,18 @@ export default function WorkPlansPage() {
   // 错误态整体回退到最近一次成功响应：行、总数与游标同源，保留结果/排序/页上下文。
   const retainedQuery = plansQuery.data ?? lastSuccessQueryRef.current;
   const plans = retainedQuery?.items ?? EMPTY_PLANS;
+  // 屏幕上的数据是否已经属于目标范围：以最近一次成功应用的范围判定。没有成功过任何查询时
+  // （appliedQuery 为 null）同样视为不属于目标范围，因此首屏加载与首次加载失败也走同一契约，
+  // 不会退化成"该范围没有计划"的误报（spec R6/D12）。
+  const appliedRangeIsTarget = appliedQuery !== null
+    && appliedQuery.range.from === requestRange.from && appliedQuery.range.to === requestRange.to;
+  const showingStaleRange = !appliedRangeIsTarget;
+  // 目标范围尚未落定且查询已失败 → 停留目标范围的失败态；否则显示加载覆盖层。
+  const rangeFailed = showingStaleRange && plansQuery.isError;
+  const rangeLoading = showingStaleRange && !rangeFailed;
+  const visiblePlans = showingStaleRange ? EMPTY_PLANS : plans;
+  // 目标范围尚未就绪时，上一范围的总数与游标同样不能进入页脚。
+  const visibleQuery = showingStaleRange ? null : retainedQuery;
   const canExportPlans = plansQuery.isSuccess && !plansQuery.isFetching;
   const templates = templatesQuery.data ?? [];
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null;
@@ -492,6 +508,46 @@ export default function WorkPlansPage() {
     frame = requestAnimationFrame(restore);
     return () => cancelAnimationFrame(frame);
   }, [ganttFullscreen]);
+
+  // 范围切换后横向落点（spec R5/D11）：等甘特整图重建出的新容器出现再落到目标端，
+  // 前进落左端、后退落右端。未重建（宽度未变且容器复用）时也按同一规则落点。
+  useEffect(() => {
+    const pending = pendingRangeScrollRef.current;
+    if (!pending) return;
+    pendingRangeScrollRef.current = null;
+    let frame = 0;
+    const land = (container: HTMLElement | null) => {
+      if (container) {
+        container.scrollLeft = pending.target === "end"
+          ? Math.max(0, container.scrollWidth - container.clientWidth)
+          : 0;
+      }
+    };
+    const tick = () => {
+      const container = plannerPanelRef.current?.querySelector<HTMLElement>(".gantt-container") ?? null;
+      if (container && container !== pending.ganttContainer) {
+        land(container);
+        return;
+      }
+      if (performance.now() - pending.startedAt >= 2000) {
+        land(container);
+        return;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [requestRange.from]);
+
+  // 范围提交后纵向归顶（spec R5）：新的列表与甘特行位置从头开始，不复用旧范围的纵向位置。
+  const committedRangeStartRef = useRef(requestRange.from);
+  useEffect(() => {
+    if (committedRangeStartRef.current === requestRange.from) return;
+    committedRangeStartRef.current = requestRange.from;
+    if (planRowsRef.current) planRowsRef.current.scrollTop = 0;
+    const ganttContainer = plannerPanelRef.current?.querySelector<HTMLElement>(".gantt-container") ?? null;
+    if (ganttContainer) ganttContainer.scrollTop = 0;
+  }, [requestRange.from]);
 
   useEffect(() => {
     try {
@@ -705,13 +761,21 @@ export default function WorkPlansPage() {
   }
 
   function shiftRange(direction: -1 | 1) {
-    setAnchor((current) => {
-      const next = new Date(current);
-      if (view === "week") next.setDate(next.getDate() + 7 * direction);
-      else next.setMonth(next.getMonth() + direction);
-      return next;
-    });
+    // 落点（spec R5/D11）：甘特整图重建会把横向滚动重置到范围起点，等重建后的新容器
+    // 出现再落到目标端——前进落左端，后退落右端。按钮与手势共用同一落点规则。
+    pendingRangeScrollRef.current = {
+      target: direction > 0 ? "start" : "end",
+      ganttContainer: plannerPanelRef.current?.querySelector<HTMLElement>(".gantt-container") ?? null,
+      startedAt: performance.now(),
+    };
+    // 游标分页回到第一页由条件变化守卫完成（range 属于 conditionsKey），此处不重复设置。
+    setAnchor((current) => shiftTimelineAnchor(current, view, direction));
   }
+
+  // 时间轴手势导航入口（spec R1）：与上一/下一时间范围按钮共用同一套日历运算与落点规则。
+  const handleRangeNavigate = useCallback((direction: "previous" | "next") => {
+    shiftRange(direction === "next" ? 1 : -1);
+  }, [view]);
 
   function openExportPopover() {
     if (!selectedTemplate) return;
@@ -1020,7 +1084,7 @@ export default function WorkPlansPage() {
       {pageNotice ? <div className="spreadsheet-transfer-message" role="status">{pageNotice}</div> : null}
       {plansQuery.isError ? (
         <div className="spreadsheet-transfer-message query-error-message" role="alert">
-          加载工作计划失败，当前显示的是最近一次成功结果。
+          {rangeFailed ? "目标时间范围加载失败，请重试或继续切换范围。" : "加载工作计划失败，当前显示的是最近一次成功结果。"}
           <button className="text-button" type="button" onClick={() => void plansQuery.refetch()}>重试</button>
         </div>
       ) : null}
@@ -1077,15 +1141,15 @@ export default function WorkPlansPage() {
           <div className="plan-grid-scroll" style={planGridStyle}>
             <div className="planner-columns"><span>工作内容</span>{visibleColumns.map((column) => <span key={column.id}>{column.label}</span>)}</div>
             <div ref={planRowsRef} className="plan-rows">
-              {plans.map((plan) => <PlanRow key={plan.id} plan={plan} columns={visibleColumns} goalsById={goalsById} onSelect={handleSelect} />)}
-              {!plansQuery.isLoading && plans.length === 0 ? <div className="plan-list-empty">这个时间范围还没有工作计划</div> : null}
+              {visiblePlans.map((plan) => <PlanRow key={plan.id} plan={plan} columns={visibleColumns} goalsById={goalsById} onSelect={handleSelect} />)}
+              {!showingStaleRange && !plansQuery.isLoading && visiblePlans.length === 0 ? <div className="plan-list-empty">这个时间范围还没有工作计划</div> : null}
             </div>
           </div>
           <footer className="table-footer">
-            <span>共 {retainedQuery ? retainedQuery.total : "…"} 条</span>
+            <span>共 {visibleQuery ? visibleQuery.total : "…"} 条</span>
             <span className="table-pagination">
               <button className="text-button" type="button" disabled={pageCursors.length === 0 || plansQuery.isFetching} onClick={() => setPageCursors((current) => current.slice(0, -1))}>上一页</button>
-              <button className="text-button" type="button" disabled={!retainedQuery?.nextCursor || plansQuery.isFetching} onClick={() => setPageCursors((current) => (retainedQuery?.nextCursor ? [...current, retainedQuery.nextCursor] : current))}>下一页</button>
+              <button className="text-button" type="button" disabled={!visibleQuery?.nextCursor || plansQuery.isFetching} onClick={() => setPageCursors((current) => (visibleQuery?.nextCursor ? [...current, visibleQuery.nextCursor] : current))}>下一页</button>
             </span>
             <span>{plansQuery.isFetching ? "正在加载…" : plansQuery.isError ? "加载失败" : scheduleMutation.isPending ? "正在保存排程…" : scheduleMutation.isError ? "排程保存失败" : "所有更改已保存"}</span>
           </footer>
@@ -1123,7 +1187,7 @@ export default function WorkPlansPage() {
               </span>
             </span>
           ) : null}
-          <GanttTimeline plans={plans} reminders={remindersQuery.data?.days ?? EMPTY_REMINDER_DAYS} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} ownerField={ownerField} remarksOptions={remarksGanttOptions} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} readOnly={!canWrite} rebuildKey={ganttRebuildKey} />
+          <GanttTimeline plans={visiblePlans} reminders={remindersQuery.data?.days ?? EMPTY_REMINDER_DAYS} displayProperties={visibleGanttProperties} tooltipProperties={visibleTooltipProperties} ownerField={ownerField} remarksOptions={remarksGanttOptions} view={view} rangeStart={range[0]!} rangeEnd={range[1]!} verticalScrollPeerRef={planRowsRef} taskListCollapsed={collapsed} onScheduleChange={handleScheduleChange} onSelect={handleSelect} onReminderSelect={handleReminderSelect} onCreateAt={handleCreateAt} onRangeNavigate={handleRangeNavigate} swipeSuspended={drawerOpen || showAdvancedFilters || showColumnSettings || showGanttSettings || showSortSettings || exportPopoverOpen || importMenuOpen} rangeLoading={rangeLoading} rangeFailed={rangeFailed} readOnly={!canWrite} rebuildKey={ganttRebuildKey} />
         </div>
       </div>
 

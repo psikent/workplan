@@ -1772,3 +1772,239 @@ describe("甘特备注颜色图例（spec gantt-color-by-remarks R4/R6）", () =
     view.unmount();
   });
 });
+
+describe("时间轴范围导航（spec timeline-swipe-navigation R1/R5/R6）", () => {
+  // 范围查询按 from 精确控制：可挂起（验证 placeholder 期不绘制旧数据）或失败。
+  function mockRangedQuery(control: {
+    hangFrom?: string;
+    failFrom?: string;
+  }) {
+    const pending: Array<(response: WorkPlanQueryResponse) => void> = [];
+    const rejecting: Array<(error: Error) => void> = [];
+    apiMock.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === "/export-templates") return Promise.resolve([exportTemplate]);
+      if (path === "/owner-account-mappings") return Promise.resolve([{ ownerName: "冯铭倩", account: "fengmingqian@zh.gd.csg.cn" }]);
+      if (path.startsWith("/work-plan-series")) return Promise.resolve([]);
+      if (path.startsWith("/custom-fields")) return Promise.resolve([ownerField, effortField]);
+      if (path === "/monthly-goals") return Promise.resolve([monthlyGoal]);
+      if (path === "/work-plans/query" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as WorkPlanQueryRequest;
+        if (control.hangFrom && body.range.from === control.hangFrom) {
+          return new Promise<WorkPlanQueryResponse>((resolve, reject) => { pending.push(resolve); rejecting.push(reject); });
+        }
+        if (control.failFrom && body.range.from === control.failFrom) return Promise.reject(new Error("服务端查询失败"));
+        return Promise.resolve(emulateQuery([plan], init));
+      }
+      if (path.startsWith("/work-plans")) return Promise.resolve([plan]);
+      return Promise.reject(new Error(`Unexpected API path: ${path}`));
+    });
+    return { pending, rejecting };
+  }
+
+  const nextWeekFrom = new Date(2026, 7, 10).toISOString();
+  // 目标周（8/10–8/17）内的计划：范围查询按 range 过滤，必须落在目标范围才会返回。
+  const nextWeekPlan: WorkPlan = {
+    ...plan,
+    id: "a1f0c2d4-5e6b-4c7d-8e9f-0a1b2c3d4e5f",
+    title: "下周计划",
+    startAt: new Date(2026, 7, 12, 10).toISOString(),
+    endAt: new Date(2026, 7, 12, 12).toISOString(),
+  };
+  const planResponse: WorkPlanQueryResponse = {
+    items: [nextWeekPlan],
+    total: 1,
+    evaluatedAt: new Date(2026, 7, 8, 9).toISOString(),
+    nextCursor: null,
+  };
+
+  it("preserves view, search, filters and sort across a range switch in fullscreen and for a viewer", async () => {
+    sessionMock.user = { id: "user-shenji", username: "审计", role: "viewer", loginMode: "password" };
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    // Viewer 只读账户也可用范围导航（R2/D13）。
+    fireEvent.click(screen.getByRole("button", { name: "进入全屏" }));
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true);
+
+    fireEvent.click(screen.getByRole("tab", { name: "月视图" }));
+    fireEvent.change(screen.getByPlaceholderText("搜索工作计划"), { target: { value: "示例" } });
+    // 显式排序保留。
+    fireEvent.click(screen.getByRole("button", { name: "排序设置" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "添加排序字段" }), { target: { value: "status" } });
+    fireEvent.click(screen.getByRole("button", { name: "排序设置" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "下一时间范围" }));
+
+    // 视图、全屏、搜索与排序在范围切换后保持；只有范围标题变化。
+    expect(document.documentElement.classList.contains("gantt-fullscreen")).toBe(true);
+    expect(screen.getByRole("tab", { name: "月视图" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByPlaceholderText("搜索工作计划")).toHaveValue("示例");
+    const lastQuery = await waitFor(() => {
+      const call = apiMock.mock.calls.filter(([path, init]) => path === "/work-plans/query" && (init as RequestInit | undefined)?.method === "POST").at(-1);
+      expect(call).toBeTruthy();
+      return JSON.parse(String((call![1] as RequestInit).body)) as WorkPlanQueryRequest;
+    });
+    expect(lastQuery.sort?.map((item) => item.field)).toEqual(["status"]);
+    expect(lastQuery.q).toBe("示例");
+    view.unmount();
+  });
+
+  it("resets vertical scroll of the list and timeline to the top on a range switch", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    const planRows = view.container.querySelector<HTMLElement>(".plan-rows")!;
+    planRows.scrollTop = 240;
+    fireEvent.click(screen.getByRole("button", { name: "下一时间范围" }));
+    await waitFor(() => expect(planRows.scrollTop).toBe(0));
+    view.unmount();
+  });
+
+  it("moves the month view to the exact adjacent calendar month from a month-end anchor", async () => {
+    // 2026-03-31 用本地时间字符串传入，避免 UTC 解析在不同时区偏移到 3 月 30 日。
+    renderPage("/work-plans?view=month&date=2026-03-31T00:00:00");
+    expect(await screen.findByText("2026 年 3 月")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "上一时间范围" }));
+    // 3 月 31 日减一月须落在 2 月 28 日所属的自然月，而不是跳过 2 月。
+    expect(screen.getByText("2026 年 2 月")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "下一时间范围" }));
+    expect(screen.getByText("2026 年 3 月")).toBeTruthy();
+  });
+
+  it("keeps button and gesture navigation on the same calendar arithmetic", async () => {
+    renderPage("/work-plans?view=month&date=2026-03-31T00:00:00");
+    expect(await screen.findByText("2026 年 3 月")).toBeTruthy();
+
+    // 手势入口（onRangeNavigate）与按钮必须落到同一目标范围。
+    const onRangeNavigate = (ganttPropsMock.mock.calls.at(-1)?.[0] as { onRangeNavigate: (direction: "previous" | "next") => void }).onRangeNavigate;
+    act(() => onRangeNavigate("next"));
+    expect(screen.getByText("2026 年 4 月")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "上一时间范围" }));
+    expect(screen.getByText("2026 年 3 月")).toBeTruthy();
+  });
+
+  it("shows the target range and loading state without drawing the previous range's plans", async () => {
+    const { pending } = mockRangedQuery({ hangFrom: nextWeekFrom });
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    fireEvent.click(screen.getByRole("button", { name: "下一时间范围" }));
+    // 标题与日期网格立即切换到目标范围。
+    expect(screen.getByText("8月第2周")).toBeTruthy();
+
+    await waitFor(() => {
+      const props = ganttPropsMock.mock.calls.at(-1)?.[0] as { plans: WorkPlan[]; rangeLoading: boolean; rangeStart: Date };
+      expect(props.rangeStart).toEqual(new Date(2026, 7, 10));
+      // 上一范围的 Work Plan 不得绘制到目标范围上（占位数据不得当作成功数据）。
+      expect(props.plans).toEqual([]);
+      expect(props.rangeLoading).toBe(true);
+    });
+    expect(screen.queryByText("示例计划")).toBeNull();
+
+    // 目标范围数据到达后正常呈现（目标是下一周，故展示下周计划）。
+    await act(async () => { pending.forEach((resolve) => resolve(planResponse)); });
+    await waitFor(() => expect(screen.getByText("下周计划")).toBeTruthy());
+    const landed = ganttPropsMock.mock.calls.at(-1)?.[0] as { rangeLoading: boolean };
+    expect(landed.rangeLoading).toBe(false);
+    view.unmount();
+  });
+
+  it("stays on the target range after a failure and allows retry without mixing old data", async () => {
+    let failNextRange = true;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/export-templates") return [exportTemplate];
+      if (path === "/owner-account-mappings") return [{ ownerName: "冯铭倩", account: "fengmingqian@zh.gd.csg.cn" }];
+      if (path.startsWith("/work-plan-series")) return [];
+      if (path.startsWith("/custom-fields")) return [ownerField, effortField];
+      if (path === "/monthly-goals") return [monthlyGoal];
+      if (path === "/work-plans/query" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as WorkPlanQueryRequest;
+        if (body.range.from === nextWeekFrom && failNextRange) {
+          failNextRange = false;
+          throw new Error("服务端查询失败");
+        }
+        return emulateQuery([plan, nextWeekPlan], init);
+      }
+      if (path.startsWith("/work-plans")) return [plan];
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+
+    const view = renderPage();
+    await screen.findByText("示例计划");
+    fireEvent.click(screen.getByRole("button", { name: "下一时间范围" }));
+
+    // 停留目标范围：标题更新、旧数据不出现、给出目标范围失败语义。
+    expect(screen.getByText("8月第2周")).toBeTruthy();
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText(/目标时间范围加载失败/)).toBeTruthy();
+    expect(screen.queryByText("示例计划")).toBeNull();
+    const failedProps = ganttPropsMock.mock.calls.at(-1)?.[0] as { plans: WorkPlan[]; rangeStart: Date; rangeFailed: boolean };
+    expect(failedProps.rangeStart).toEqual(new Date(2026, 7, 10));
+    expect(failedProps.plans).toEqual([]);
+    // 失败不得被宣称为"该范围没有计划"。
+    expect(failedProps.rangeFailed).toBe(true);
+    expect(screen.queryByText("这个时间范围还没有工作计划")).toBeNull();
+    expect(view.container.querySelector(".timeline-empty")).toBeNull();
+
+    // 重试成功后只呈现当前目标范围的数据，不恢复上一范围的计划。
+    fireEvent.click(within(alert).getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    await waitFor(() => expect(screen.getByText("下周计划")).toBeTruthy());
+    expect(screen.queryByText("示例计划")).toBeNull();
+    view.unmount();
+  });
+
+  it("resets cursor pagination when the range changes", async () => {
+    const view = renderPage();
+    await screen.findByText("示例计划");
+
+    const queryBodies: WorkPlanQueryRequest[] = [];
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/export-templates") return [exportTemplate];
+      if (path === "/owner-account-mappings") return [{ ownerName: "冯铭倩", account: "fengmingqian@zh.gd.csg.cn" }];
+      if (path.startsWith("/work-plan-series")) return [];
+      if (path.startsWith("/custom-fields")) return [ownerField, effortField];
+      if (path === "/monthly-goals") return [monthlyGoal];
+      if (path === "/work-plans/query" && init?.method === "POST") {
+        queryBodies.push(JSON.parse(String(init.body)) as WorkPlanQueryRequest);
+        return emulateQuery([plan], init);
+      }
+      if (path.startsWith("/work-plans")) return [plan];
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "下一时间范围" }));
+    await waitFor(() => expect(queryBodies.length).toBeGreaterThan(0));
+    // 范围切换后的请求不带游标（回到第一页）。
+    expect(queryBodies.at(-1)?.cursor).toBeUndefined();
+    view.unmount();
+  });
+
+  it("treats a first-load failure as a target-range failure rather than an empty range", async () => {
+    // 从未成功查询过（appliedQuery 为 null）：首屏加载失败也必须走范围失败契约，
+    // 不能退化成"这个时间范围还没有工作计划"。
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/export-templates") return [exportTemplate];
+      if (path === "/owner-account-mappings") return [{ ownerName: "冯铭倩", account: "fengmingqian@zh.gd.csg.cn" }];
+      if (path.startsWith("/work-plan-series")) return [];
+      if (path.startsWith("/custom-fields")) return [ownerField, effortField];
+      if (path === "/monthly-goals") return [monthlyGoal];
+      if (path === "/work-plans/query" && init?.method === "POST") throw new Error("服务端查询失败");
+      if (path.startsWith("/work-plans")) return [plan];
+      throw new Error(`Unexpected API path: ${path}`);
+    });
+
+    const view = renderPage();
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText(/目标时间范围加载失败/)).toBeTruthy();
+    expect(screen.queryByText("这个时间范围还没有工作计划")).toBeNull();
+    const props = ganttPropsMock.mock.calls.at(-1)?.[0] as { plans: WorkPlan[]; rangeFailed: boolean; rangeLoading: boolean };
+    expect(props.plans).toEqual([]);
+    expect(props.rangeFailed).toBe(true);
+    expect(props.rangeLoading).toBe(false);
+    view.unmount();
+  });
+});
