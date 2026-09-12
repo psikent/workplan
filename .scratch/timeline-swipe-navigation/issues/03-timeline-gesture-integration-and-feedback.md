@@ -1,7 +1,7 @@
 # 03 — 时间轴手势接线、滚动交接与边缘反馈
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01, 02
 Spec: ../spec.md
 Scope: apps/web/src/components/GanttTimeline.tsx、apps/web/src/pages/WorkPlansPage.tsx、apps/web/src/styles.css、对应渲染与页面测试

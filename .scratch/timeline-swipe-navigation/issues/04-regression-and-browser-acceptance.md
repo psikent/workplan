@@ -1,7 +1,7 @@
 # 04 — 手势导航回归与浏览器验收
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01, 02, 03
 Spec: ../spec.md
 Scope: apps/web/src/pages/WorkPlansPage.test.tsx、apps/web/src/components/GanttTimeline*.test.tsx、必要的 `.scratch/timeline-swipe-navigation/qa/` 验收脚本与记录

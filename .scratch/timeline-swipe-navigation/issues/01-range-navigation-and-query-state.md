@@ -1,7 +1,7 @@
 # 01 — 日历安全的范围导航与查询状态
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: none
 Spec: ../spec.md
 Scope: apps/web/src/pages/WorkPlansPage.tsx、apps/web/src/lib/format.ts（或同层日期 helper）、对应单元与页面测试

@@ -1,7 +1,7 @@
 # 02 — 单指边界滑动判定状态机
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: none
 Spec: ../spec.md
 Scope: apps/web/src/components/GanttTimeline.tsx（或新增同层纯 helper）、对应单元测试
