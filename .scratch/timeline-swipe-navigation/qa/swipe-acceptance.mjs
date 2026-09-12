@@ -82,36 +82,37 @@ await page.waitForTimeout(1200);
 const backTitle = await rangeTitle();
 record("390px 周视图右滑返回上一周", { from: afterSwipeTitle, backTitle }, backTitle === startTitle);
 
-// ---- Case 3: 月视图边界交接（窄屏有横向余量：先滚到边界，再向边界外滑才换月） ----
+// ---- Case 3: 月视图边界交接（新语义：越界量达阈值即翻月，可同一次手势接力） ----
 await setMobile(390, 844, false);
 await gotoPlans("?view=month");
 const monthStart = await rangeTitle();
-let ms = await scrollState();
-// 从范围内部起手左滑 → 只滚动，不换月。
-pt = await gridPoint();
-await touchSwipe(pt.x, pt.y, -140, 12);
+const ms = await scrollState();
+// 中部短滑 → 只滚动不换月。
+let pt3 = await gridPoint();
+await touchSwipe(pt3.x, pt3.y, -140, 12);
 await page.waitForTimeout(800);
 const midScroll = await scrollState();
 const midMonth = await rangeTitle();
-record("月视图范围内部左滑只滚动不换月", { ms, midScroll, monthStart, midMonth }, midMonth === monthStart && midScroll.left > ms.left);
+record("月视图范围内部短滑只滚动不换月", { ms, midScroll, monthStart, midMonth }, midMonth === monthStart && midScroll.left > ms.left);
 
-// 滚到右边界，再从左边界... 到右边界后左滑 → 下一月。
-await evalIn(() => { const c = document.querySelector(".gantt-container"); c.scrollLeft = c.scrollWidth - c.clientWidth; });
-await page.waitForTimeout(300);
-pt = await gridPoint();
-await touchSwipe(pt.x, pt.y, -140, 12);
+// 单次长滑越过右边界 → 接力进入下一月，并落左端。
+await gotoPlans("?view=month");
+const handoffBefore = await rangeTitle();
+pt3 = await gridPoint();
+await touchSwipe(pt3.x, pt3.y, -620, 20);
 await page.waitForTimeout(1200);
-const monthNext = await rangeTitle();
-record("月视图到右边界后左滑进入下一月", { monthStart, monthNext }, monthNext !== monthStart);
+const handoffAfter = await rangeTitle();
+const handoffScroll = await scrollState();
+record("月视图长滑越过边界接力进入下一月且落左端", { handoffBefore, handoffAfter, handoffScroll }, handoffAfter !== handoffBefore && handoffScroll.left === 0);
 
-// 回到左边界后右滑 → 上一月。
-await evalIn(() => { const c = document.querySelector(".gantt-container"); c.scrollLeft = 0; });
-await page.waitForTimeout(300);
-pt = await gridPoint();
-await touchSwipe(pt.x, pt.y, 140, 12);
+// 反向长滑越过左边界 → 返回上一月，并落右端。
+const backBefore = await rangeTitle();
+pt3 = await gridPoint();
+await touchSwipe(pt3.x, pt3.y, 620, 20);
 await page.waitForTimeout(1200);
-const monthBack = await rangeTitle();
-record("月视图到左边界后右滑返回上一月", { from: monthNext, monthBack }, monthBack === monthStart);
+const backAfter = await rangeTitle();
+const backScroll = await scrollState();
+record("月视图长滑越过左边界返回上一月且落右端", { backBefore, backAfter, backScroll }, backAfter === monthStart && backScroll.left >= backScroll.scrollWidth - backScroll.width - 1);
 
 // ---- Case 3b: 宽桌面（月视图无横向余量）→ 两向都可直接换月 ----
 // 月视图 28 列按最小列宽约 896px，只有时间轴面板足够宽时才没有横向余量。

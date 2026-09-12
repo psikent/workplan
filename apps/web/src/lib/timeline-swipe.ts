@@ -72,8 +72,8 @@ type ActiveGesture = {
   pointerId: number;
   startX: number;
   startY: number;
-  allowPrevious: boolean;
-  allowNext: boolean;
+  startScrollLeft: number;
+  maxScrollLeft: number;
   threshold: number;
   locked: boolean;
   cancelled: boolean;
@@ -85,8 +85,9 @@ type ActiveGesture = {
  * 单指时间轴范围滑动的纯判定状态机（spec R2–R4/D4–D10/D15/D16）。
  *
  * 只接受 `pointerType === "touch"` 的单指序列：鼠标、触控板与触控笔永远不产生结果。
- * 只有手势起手时已位于对应横向边界才可能成为上一/下一范围候选；从范围内部起手、途中
- * 到达边界的动作保持普通滚动。松手时提交，反向拉回阈值内或先形成纵向意图即取消。
+ * 起手已在对应横向边界（含边界容差）时按手指位移判定；起手在范围内时先在范围内平移画布，
+ * 滑到边界后继续外滑、越界距离达阈值才成为范围候选（即"滑到边缘不松手继续滑"可接力翻页）。
+ * 松手时提交；反向拉回阈值内、先形成明显纵向意图或有第二触点即取消。
  * 本模块不接触 DOM、不写页面状态、不调用 API。
  */
 export function createRangeSwipeRecognizer(options: RangeSwipeOptions = {}) {
@@ -120,13 +121,12 @@ export function createRangeSwipeRecognizer(options: RangeSwipeOptions = {}) {
     }
 
     const maxScrollLeft = Math.max(0, input.scrollWidth - input.timelineWidth);
-    const tolerance = 1;
     active = {
       pointerId: input.pointerId,
       startX: input.clientX,
       startY: input.clientY,
-      allowPrevious: input.scrollLeft <= tolerance,
-      allowNext: input.scrollLeft >= maxScrollLeft - tolerance,
+      startScrollLeft: input.scrollLeft,
+      maxScrollLeft,
       threshold: rangeSwipeThreshold(input.timelineWidth, config),
       locked: false,
       cancelled: false,
@@ -151,8 +151,10 @@ export function createRangeSwipeRecognizer(options: RangeSwipeOptions = {}) {
     if (!active.locked) {
       // 噪声地板只约束方向判定；锁定后必须继续重算进度，否则拉回起点时进度会滞留。
       if (absDx + absDy < config.moveSlop) return IDLE_PROGRESS;
-      // 先形成纵向意图：保持原生纵向滚动，取消整次手势。
-      if (absDy > absDx) {
+      // 只有"明显"转为纵向才取消（对称使用 1.5 倍）：起手瞬间的轻微纵向抖动若按
+      // absDy > absDx 判定，会把明明要横滑的手势误杀，表现为"间歇性失效"。
+      // 纵横比介于 1/1.5 与 1.5 之间的含糊阶段既不锁定也不取消，继续观察。
+      if (absDy >= config.dominanceRatio * absDx) {
         cancel();
         return IDLE_PROGRESS;
       }
@@ -160,16 +162,23 @@ export function createRangeSwipeRecognizer(options: RangeSwipeOptions = {}) {
       active.locked = true;
     }
 
-    // 方向必须与起手时所在边界一致：左边界右滑候选上一范围，右边界左滑候选下一范围。
-    const direction: SwipeDirection | null = dx > 0
-      ? (active.allowPrevious ? "previous" : null)
-      : dx < 0
-        ? (active.allowNext ? "next" : null)
-        : null;
+    // 统一按"越出可滚动范围的距离"判定（spec R3，行为修订见 qa/REPORT.md）：
+    // 画布平移到某端后继续外滑，越界距离达阈值才成为范围候选。这样
+    //  - 起手已在边界时，外滑到阈值即候选；
+    //  - 起手在范围内时，先在范围内平移，滑到边界后继续滑可接力翻页；
+    //  - 向范围内平移不会越界，始终只是浏览。
+    const panTarget = active.startScrollLeft - dx;
+    const overshoot = panTarget > active.maxScrollLeft
+      ? panTarget - active.maxScrollLeft
+      : panTarget < 0
+        ? panTarget
+        : 0;
+    const direction: SwipeDirection | null = overshoot > 0 ? "next" : overshoot < 0 ? "previous" : null;
+    const progress = direction ? Math.min(1, Math.abs(overshoot) / active.threshold) : 0;
     active.direction = direction;
-    active.progress = direction ? Math.min(1, absDx / active.threshold) : 0;
-    // 锁定横向但不是候选 → 范围内的普通横向浏览，交给视觉层平移画布。
-    return { direction: active.direction, progress: active.progress, panBy: direction ? 0 : dx };
+    active.progress = progress;
+    // 候选成立后画布停在边界（panBy=0），否则按手指位移平移画布。
+    return { direction, progress, panBy: direction ? 0 : dx };
   };
 
   const end = (input: { pointerId: number; now: number }): SwipeDirection | null => {

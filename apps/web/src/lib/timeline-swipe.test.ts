@@ -92,13 +92,25 @@ describe("range swipe recognition", () => {
     expect(recognizer.end({ pointerId: 1, now: 1_600 })).toBe("next");
   });
 
-  it("keeps in-range scrolling inert: a gesture starting inside never becomes a candidate", () => {
+  it("pans in range without becoming a candidate while there is still scroll room", () => {
     const recognizer = noCooldown();
+    // 起手在范围中部：向两侧都在余量内，只是平移画布，不成为范围候选。
     recognizer.begin(beginInput(withOverflow(TIMELINE_WIDTH / 2)));
-    // 方向不由候选采用，但锁定横向后仍报告范围内平移量（panBy = 手指位移）。
     expect(recognizer.move({ pointerId: 1, clientX: 400 + THRESHOLD * 2, clientY: 300 })).toEqual({ direction: null, progress: 0, panBy: THRESHOLD * 2 });
     expect(recognizer.move({ pointerId: 1, clientX: 400 - THRESHOLD * 2, clientY: 300 })).toEqual({ direction: null, progress: 0, panBy: -THRESHOLD * 2 });
     expect(recognizer.end({ pointerId: 1, now: 1_100 })).toBeNull();
+  });
+
+  it("turns into a candidate once an in-range drag passes the edge by the threshold", () => {
+    const recognizer = noCooldown();
+    // 起手距右边界 100px：前 100px 只滚动，继续外滑越界达阈值即候选。
+    recognizer.begin(beginInput({ ...withOverflow(TIMELINE_WIDTH - 100) }));
+    expect(recognizer.move({ pointerId: 1, clientX: 400 - 100, clientY: 300 })).toEqual({ direction: null, progress: 0, panBy: -100 });
+    const progress = recognizer.move({ pointerId: 1, clientX: 400 - (100 + THRESHOLD), clientY: 300 });
+    expect(progress.direction).toBe("next");
+    expect(progress.progress).toBe(1);
+    expect(progress.panBy).toBe(0);
+    expect(recognizer.end({ pointerId: 1, now: 1_100 })).toBe("next");
   });
 
   it("keeps scrolling inward inert even at the boundary", () => {
@@ -141,6 +153,34 @@ describe("range swipe recognition", () => {
     expect(recognizer.isTracking()).toBe(false);
     expect(recognizer.move({ pointerId: 1, clientX: 400 + THRESHOLD, clientY: 300 })).toEqual({ direction: null, progress: 0, panBy: 0 });
     expect(recognizer.end({ pointerId: 1, now: 1_100 })).toBeNull();
+  });
+
+  it("stays pending on an ambiguous diagonal instead of cancelling the whole gesture", () => {
+    const recognizer = createRangeSwipeRecognizer();
+    recognizer.begin(beginInput());
+    // dx=10, dy=12：纵向略占优但未达 1.5 倍 → 含糊阶段，不取消也不锁定（真机抖动的典型形状）。
+    expect(recognizer.move({ pointerId: 1, clientX: 410, clientY: 312 })).toEqual({ direction: null, progress: 0, panBy: 0 });
+    expect(recognizer.isTracking()).toBe(true);
+    // 继续横滑达 1.5 倍后正常锁定并成为候选。
+    expect(recognizer.move({ pointerId: 1, clientX: 400 + THRESHOLD, clientY: 300 }).direction).toBe("previous");
+    expect(recognizer.end({ pointerId: 1, now: 1_100 })).toBe("previous");
+  });
+
+  it("starts turning the page as soon as the drag passes the far edge", () => {
+    // 起手贴近右边界（余量 8px）：左滑 8px 到边界只平移，继续越界达阈值即候选。
+    const recognizer = createRangeSwipeRecognizer();
+    recognizer.begin(beginInput({ ...withOverflow(TIMELINE_WIDTH - 8) }));
+    expect(recognizer.move({ pointerId: 1, clientX: 400 - 8, clientY: 300 })).toEqual({ direction: null, progress: 0, panBy: -8 });
+    expect(recognizer.move({ pointerId: 1, clientX: 400 - 8 - THRESHOLD, clientY: 300 }).direction).toBe("next");
+    expect(recognizer.end({ pointerId: 1, now: 1_100 })).toBe("next");
+
+    // 越界不足阈值：给出方向反馈（progress<1）但松手不提交。
+    const recognizer2 = createRangeSwipeRecognizer();
+    recognizer2.begin(beginInput({ ...withOverflow(TIMELINE_WIDTH - 8) }));
+    const partial = recognizer2.move({ pointerId: 1, clientX: 400 - 8 - 20, clientY: 300 });
+    expect(partial.direction).toBe("next");
+    expect(partial.progress).toBeLessThan(1);
+    expect(recognizer2.end({ pointerId: 1, now: 1_100 })).toBeNull();
   });
 
   it("ignores sub-slop jitter so a slow start is not cancelled", () => {

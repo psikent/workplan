@@ -473,8 +473,9 @@ function useRangeSwipeGesture(options: {
         clientX: event.clientX,
         clientY: event.clientY,
       });
-      // 只有锁定为横向候选后才阻止默认行为，避免干扰纵向原生滚动（spec R4）。
-      if (progress.direction) event.preventDefault();
+      // 手势一旦锁定为横向时间轴动作（翻页候选或月内平移），就阻止默认行为，
+      // 避免 iOS 原生滚动与应用自己的平移叠加、或在滚动开始时发出 pointercancel。
+      if (progress.direction || progress.panBy !== 0) event.preventDefault();
       // 锁定为横向范围切换候选后即捕获指针（spec D16）：指针移出时间轴也不丢后续事件。
       if (progress.direction) {
         lockedCandidate = true;

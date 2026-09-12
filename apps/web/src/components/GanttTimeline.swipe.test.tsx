@@ -314,20 +314,41 @@ describe("timeline swipe wiring", () => {
     expect(onRangeNavigate).not.toHaveBeenCalled();
   });
 
-  it("clamps the in-range pan to the available scroll", async () => {
+  it("turns the page when an in-range drag keeps going past the edge", async () => {
     const onRangeNavigate = vi.fn();
     const { container } = await renderGantt(onRangeNavigate);
     const row = container.querySelector(".grid-row")!;
     const ganttContainer = container.querySelector<HTMLElement>(".gantt-container")!;
     Object.defineProperty(ganttContainer, "scrollWidth", { configurable: true, value: TIMELINE_WIDTH * 2 });
     Object.defineProperty(ganttContainer, "clientWidth", { configurable: true, value: TIMELINE_WIDTH });
-    ganttContainer.scrollLeft = 10;
+    // 起手在范围内（右侧 100px 余量），随后一路左滑越过右边界。
+    ganttContainer.scrollLeft = TIMELINE_WIDTH - 100;
 
-    row.dispatchEvent(pointer("pointerdown", { clientX: 400, clientY: 300 }));
-    row.dispatchEvent(pointer("pointermove", { clientX: 400 + 500, clientY: 300 }));
+    row.dispatchEvent(pointer("pointerdown", { clientX: 800, clientY: 300 }));
+    // 前 100px 只滚动到右边界，仍是范围内浏览。
+    row.dispatchEvent(pointer("pointermove", { clientX: 700, clientY: 300 }));
+    expect(onRangeNavigate).not.toHaveBeenCalled();
+    expect(ganttContainer.scrollLeft).toBe(TIMELINE_WIDTH);
+    // 继续左滑、越界超过阈值 → 同一次手势接力翻到下一月。
+    row.dispatchEvent(pointer("pointermove", { clientX: 800 - 200, clientY: 300 }));
+    row.dispatchEvent(pointer("pointerup", { clientX: 800 - 200, clientY: 300 }));
+    expect(onRangeNavigate).toHaveBeenCalledWith("next");
+  });
 
-    expect(ganttContainer.scrollLeft).toBe(0);
-    row.dispatchEvent(pointer("pointerup", { clientX: 400 + 500, clientY: 300 }));
+  it("does not turn the page from a brief overshoot below the threshold", async () => {
+    const onRangeNavigate = vi.fn();
+    const { container } = await renderGantt(onRangeNavigate);
+    const row = container.querySelector(".grid-row")!;
+    const ganttContainer = container.querySelector<HTMLElement>(".gantt-container")!;
+    Object.defineProperty(ganttContainer, "scrollWidth", { configurable: true, value: TIMELINE_WIDTH * 2 });
+    Object.defineProperty(ganttContainer, "clientWidth", { configurable: true, value: TIMELINE_WIDTH });
+    ganttContainer.scrollLeft = TIMELINE_WIDTH - 100;
+
+    row.dispatchEvent(pointer("pointerdown", { clientX: 800, clientY: 300 }));
+    // 越界仅 20px（< 48px 阈值）：不足以翻页。
+    row.dispatchEvent(pointer("pointermove", { clientX: 800 - 120, clientY: 300 }));
+    row.dispatchEvent(pointer("pointerup", { clientX: 800 - 120, clientY: 300 }));
+
     expect(onRangeNavigate).not.toHaveBeenCalled();
   });
 
